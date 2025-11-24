@@ -1,9 +1,9 @@
 #include "MSX1PaletteQuantizerPalettes.h"
 #include <limits.h>
 
-// ---- basic_colors_msx1 (id 1..15) ----
-// Python ÇÃ basic_colors_msx1 ÇÇªÇÃÇ‹Ç‹èáî‘Ç…ï¿Ç◊ÇÈ
 const QuantColor kQuantColors[] = {
+
+    // ---- basic_colors_msx1 ----
     {   0,   0,   0 },   //  1: çï
     {  62, 184,  73 },   //  2: óŒ
     { 116, 208, 125 },   //  3: îñóŒ
@@ -20,7 +20,7 @@ const QuantColor kQuantColors[] = {
     { 204, 204, 204 },   // 14: äDêF
     { 255, 255, 255 },   // 15: îí
 
-    // ---- palette_diz_new ---- (Python ÇÃèá)
+    // ---- palette_diz_new ----
     {  44,  42, 112 },   // 16: dith_col2(1, 4)
     {  92,  47,  40 },   // 17: dith_col2(1, 6)
     {  50, 109, 119 },   // 18: dith_col2(1, 7)

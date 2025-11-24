@@ -1,7 +1,7 @@
 
 #pragma once
-#ifndef MYPLUG1_H
-#define MYPLUG1_H
+#ifndef MSX1_PALETTE_QUANTIZER_H
+#define MSX1_PALETTE_QUANTIZER_H
 
 #include "AEConfig.h"
 #include "entry.h"
@@ -47,6 +47,7 @@ inline void DebugLog(const char* /*fmt*/, ...) {}
 #define	STAGE_VERSION	PF_Stage_DEVELOP
 #define	BUILD_VERSION	1
 
+// ParamsSetup() ÇÃí«â¡èáÇ∆ïKÇ∏àÍívÇ≥ÇπÇÈÇ±Ç∆
 enum {
     PARAM_INPUT = 0,       // Input layer
 
@@ -86,15 +87,6 @@ typedef enum {
     COLOR_SYS_MSX2 = 2
 } ColorSystem;
 
-
-#define SLIDER_MIN			0
-#define	SLIDER_MAX			100
-
-#define RESTRICT_BOUNDS			0
-#define SLIDER_PRECISION		1
-#define DISPLAY_FLAGS			PF_ValueDisplayFlag_PERCENT
-
-
 extern "C" {
 
 	DllExport 
@@ -113,16 +105,16 @@ typedef struct {
 	A_u_char	blue, green, red, alpha;
 } PF_Pixel_BGRA_8u;
 
-typedef struct {
-	A_u_char	Pr, Pb, luma, alpha;
-} PF_Pixel_VUYA_8u;
-
-typedef struct {
-	PF_FpShort	blue, green, red, alpha;
-} PF_Pixel_BGRA_32f;
-
-typedef struct {
-	PF_FpShort	Pr, Pb, luma, alpha;
-} PF_Pixel_VUYA_32f;
+//typedef struct {
+//	A_u_char	Pr, Pb, luma, alpha;
+//} PF_Pixel_VUYA_8u;
+//
+//typedef struct {
+//	PF_FpShort	blue, green, red, alpha;
+//} PF_Pixel_BGRA_32f;
+//
+//typedef struct {
+//	PF_FpShort	Pr, Pb, luma, alpha;
+//} PF_Pixel_VUYA_32f;
 
 #endif
