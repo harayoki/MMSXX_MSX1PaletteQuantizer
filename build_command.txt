@@ -1,3 +1,0 @@
-x64 Native Tools Command Prompt for VS2022 にて
-
-F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\Effect\MyPluginA\Win>msbuild MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64

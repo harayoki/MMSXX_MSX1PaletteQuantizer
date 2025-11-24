@@ -1,0 +1,2 @@
+*.aex filter=lfs diff=lfs merge=lfs -text
+*.plugin filter=lfs diff=lfs merge=lfs -text
