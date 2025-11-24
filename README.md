@@ -38,11 +38,11 @@ https://note.com/harayoki/n/nef7d2f9b5380?from=notice
 Visual Studio (Windows) または Xcode (Mac) を使用してプロジェクトをビルドします。
 ビルドが成功すると、プラグインファイル（.aexまたは.plugin）が生成されます。
 
-* x64 Native Tools Command Prompt for VS2022 にて AESDK_ROOT を設定。
+* x64 Native Tools Command Prompt for VS2022 にて AESDK_ROOT に After Effects SDK のパスを設定。
   * `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
 * Command Prompt を再起動
 * このリポジトリのルートディレクトリに移動
-  * `cd ...\MMSXX_MSX1PaletteQuantizer`
+  * `cd {your_pc_path}\MMSXX_MSX1PaletteQuantizer`
 * msbuild コマンドでビルド
   * `msbuild Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
 
