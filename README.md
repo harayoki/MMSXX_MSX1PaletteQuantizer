@@ -1,60 +1,60 @@
 # MMSXX_MSX1PaletteQuantizer
 
-Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイン
+日本語版のドキュメント：[README_ja](README_ja.md)
 
-## 概要
+MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO
 
-「MSX1PaletteQuantizer」は、コンポジットに MSX1（TMS9918）の見た目を再現するエフェクトプラグインです。
-これにより、画像をMSX1特有のルーㇽに基づいた（15色横8ドット内に2色）グラフィックスタイルを模倣します。
+## Overview
 
-## 対応プラットフォーム
+"MSX1PaletteQuantizer" is an effect plugin that recreates the MSX1 (TMS9918) look in compositions.
+It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area).
+
+## Supported Platforms
 
 - Windows
-- Adobe After Effects CC 2018？以降
-- Adobe Premiere Pro CC 2018？以降
+- Adobe After Effects CC 2018? or later
+- Adobe Premiere Pro CC 2018? or later
 
-MacもXcodeでビルドすれば動作すると思います。
+It should also work on Mac if built with Xcode.
 
-## インストール
+## Installation
 
-1.  プラグインファイル（.aexまたは.plugin）を取得します。
-2.  After Effects / Premiere PRO の共通プラグインフォルダにプラグインファイルをコピーします。
+1.  Obtain the plugin file (.aex or .plugin).
+2.  Copy the plugin file to the common plugin folder of After Effects / Premiere PRO.
     - Windows: `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\`
 
-## 使用方法
+## How to Use
 
-1.  After Effectsを起動します。
-2.  フッテージをコンポジションに追加します。
-3.  エフェクトメニューから「MMSXX」>「MSX1PaletteQuantizer」を選択し、フッテージに適用します。
-4.  エフェクトコントロールパネルで設定を調整します。
+1.  Launch After Effects.
+2.  Add your footage to a composition.
+3.  Select "MMSXX" > "MSX1PaletteQuantizer" from the effects menu and apply it to the footage.
+4.  Adjust settings in the Effect Controls panel.
 
-プレミアも同様の手順で使用できます。
+The same steps can be used for Premiere Pro.
 
-以降の MSX1PaletteQuantizer の詳細な使用方法や設定については、以下のブログ記事を参照してください。
-https://note.com/harayoki/n/nef7d2f9b5380?from=notice
+For detailed usage and settings of MSX1PaletteQuantizer, please refer to:
+* [How to use in After Effects](docs/MSX1_effect_guide_en.md)
+* https://note.com/harayoki/n/nef7d2f9b5380?from=notice note article
 
-## Visual Studio 2022でのビルド手順 (Windows)
+## Build Instructions for Visual Studio 2022 (Windows)
 
-Visual Studio (Windows) または Xcode (Mac) を使用してプロジェクトをビルドします。
-ビルドが成功すると、プラグインファイル（.aexまたは.plugin）が生成されます。
+Build the project using Visual Studio (Windows) or Xcode (Mac).
+Upon successful build, a plugin file (.aex or .plugin) will be generated.
 
-* x64 Native Tools Command Prompt for VS2022 にて AESDK_ROOT に After Effects SDK のパスを設定。
-  * `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
-* Command Prompt を再起動
-* このリポジトリのルートディレクトリに移動
-  * `cd {your_pc_path}\MMSXX_MSX1PaletteQuantizer`
-* msbuild コマンドでビルド
-  * `msbuild Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
+*   In "x64 Native Tools Command Prompt for VS2022", set `AESDK_ROOT` to the After Effects SDK path.
+    *   `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
+*   Restart Command Prompt.
+*   Navigate to the root directory of this repository.
+    *   `cd {your_pc_path}\MMSXX_MSX1PaletteQuantizer`
+*   Build with `msbuild` command.
+    *   `msbuild Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
 
-Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成されます。
+`MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `Win\x64` folder.
 
-## Xcodeでのビルド手順 (Mac)
+## Build Instructions for Xcode (Mac)
 
-未検証。リポジトリに含まれる Xcode プロジェクトは内容が間違っている可能性があります。
+Untested. The Xcode project included in the repository may contain incorrect information.
 
+## License
 
-## ライセンス
-
-MITライセンスの下で公開されています。 [LICENSE](LICENSE)
-
-
+Released under the MIT License. [LICENSE](LICENSE)
