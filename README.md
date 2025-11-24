@@ -48,6 +48,11 @@ Visual Studio (Windows) または Xcode (Mac) を使用してプロジェクト�
 
 Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成されます。
 
+## Xcodeでのビルド手順 (Mac)
+
+未検証。リポジトリに含まれる Xcode プロジェクトは内容が間違っている可能性があります。
+
+
 ## ライセンス
 
 MITライセンスの下で公開されています。 [LICENSE](LICENSE)
