@@ -52,6 +52,7 @@ enum {
 
     PARAM_COLOR_SYSTEM,    // MSX1 / MSX2
     PARAM_USE_DITHER,      // Dither ON/OFF
+    PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette
     PARAM_USE_8DOT2COL,    // 8dot / 2col restriction mode
     PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSB)
     PARAM_WEIGHT_H,        // H intensity
@@ -63,7 +64,6 @@ enum {
     PARAM_PRE_HIGHLIGHT,   // Highlight correction
     PARAM_PRE_SKIN,        // Skin tone adjustment
 
-    PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette
     PARAM_NUM_PARAMS
 };
 

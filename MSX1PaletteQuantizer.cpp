@@ -502,6 +502,15 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Use dark dither palettes",
+        "Enable",
+        TRUE,
+        0,
+        PARAM_USE_DARK_DITHER
+    );
+
+    AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP(
         "8-dot / 2-color",
         6,
@@ -596,15 +605,6 @@ ParamsSetup (
         FALSE,
         0,
         PARAM_PRE_SKIN
-    );
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_CHECKBOX(
-        "Use dark dither palettes",
-        "Enable",
-        TRUE,
-        0,
-        PARAM_USE_DARK_DITHER
     );
 
     out_data->num_params = PARAM_NUM_PARAMS;
