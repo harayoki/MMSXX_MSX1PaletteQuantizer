@@ -2,6 +2,24 @@
 
 Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイン
 
+English documentation: [README_en](README.md)
+
+| source movie | result |
+|---------|--------|
+|![source_movie_capture](docs%2Fsource_movie_capture.png)|![result_capture](docs%2Fresult_capture.png)|
+
+## 動画サンプル
+
+
+* [Wing It in 8-bit MSX (TMS9918) Colors](https://www.youtube.com/watch?v=HZ43BCsNMus) - YouTube - (C) Blender Foundation | studio.blender.org
+
+|                                                |                                                |
+|------------------------------------------------|------------------------------------------------|
+| ![capture_00008.png](docs%2Fcapture_00010.png) | ![capture_00009.png](docs%2Fcapture_00011.png) |
+
+* [MSXガールin吉祥寺 ドット絵動画](https://www.youtube.com/watch?v=-X0sMmEDrdY) - YouTube
+* [元動画とエフェクト適用後の比較動画](https://www.youtube.com/shorts/yKph3DFmB7M) - YouTube Shorts
+
 ## 概要
 
 「MSX1PaletteQuantizer」は、コンポジットに MSX1（TMS9918）の見た目を再現するエフェクトプラグインです。
@@ -14,6 +32,10 @@ Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイ
 - Adobe Premiere Pro CC 2018？以降
 
 MacもXcodeでビルドすれば動作すると思います。
+
+## 免責事項
+
+このプラグインを使用することにより生じたいかなる損害についても、作者は一切の責任を負いません。自己の責任において使用してください。
 
 ## インストール
 
@@ -53,6 +75,10 @@ Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成されます。
 
 未検証。リポジトリに含まれる Xcode プロジェクトは内容が間違っている可能性があります。
 
+## 実装について
+
+プラグインはレガシーなC++で記載されています。GPU利用や並列処理、スマートレンダリングには対応していません。また8ビットモードのみ対応しています。
+以上を修正するコードの改変は大歓迎です。また無料・安価な動画編集ソフトへの移植（OpenFX形式など）も歓迎します。
 
 ## ライセンス
 

@@ -1,13 +1,32 @@
 # MMSXX_MSX1PaletteQuantizer
 
+MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO
+
 日本語版のドキュメント：[README_ja](README_ja.md)
 
-MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO
+| source movie | result |
+|---------|--------|
+|![source_movie_capture](docs%2Fsource_movie_capture.png)|![result_capture](docs%2Fresult_capture.png)|
+
+## sample movies
+
+* [Wing It in 8-bit MSX (TMS9918) Colors](https://www.youtube.com/watch?v=HZ43BCsNMus) - YouTube - (C) Blender Foundation | studio.blender.org
+
+|                                            |                                            |
+|------------------------------------------------|------------------------------------------------|
+| ![capture_00008.png](docs%2Fcapture_00010.png) | ![capture_00009.png](docs%2Fcapture_00011.png) |
+
+* [MSX Girl at Kichijoji station (in Tokyo) Pixel Art Video](https://www.youtube.com/watch?v=-X0sMmEDrdY) - YouTube
+* [Comparison Video of Original and Effect Applied](https://www.youtube.com/shorts/yKph3DFmB7M) - YouTube Shorts
 
 ## Overview
 
 "MSX1PaletteQuantizer" is an effect plugin that recreates the MSX1 (TMS9918) look in compositions.
 It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area).
+
+## Disclaimer
+
+The author assumes no responsibility for any damages caused by the use of this plugin. Use it at your own risk.
 
 ## Supported Platforms
 
@@ -54,6 +73,11 @@ Upon successful build, a plugin file (.aex or .plugin) will be generated.
 ## Build Instructions for Xcode (Mac)
 
 Untested. The Xcode project included in the repository may contain incorrect information.
+
+## Implementation Details
+
+The plugin is written in legacy C++. It does not support GPU utilization, parallel processing, or smart rendering. Additionally, it only supports 8-bit mode.  
+Code modifications to address these limitations are highly welcome. Porting to free or low-cost video editing software (e.g., OpenFX format) is also encouraged.
 
 ## License
 
