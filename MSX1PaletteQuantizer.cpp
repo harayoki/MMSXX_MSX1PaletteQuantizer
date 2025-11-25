@@ -546,7 +546,7 @@ ParamsSetup (
         "8-dot / 2-color",
         6,
         MSX1PQ_EIGHTDOT_MODE_BASIC1,
-        "なし|高速|基本|BEST|BEST属性|BEST遷移",
+        "None|Fast|Basic|Best|Best-Attr|Best-Trans",
         MSX1PQ_PARAM_USE_8DOT2COL
     );
 
