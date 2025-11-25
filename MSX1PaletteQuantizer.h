@@ -16,76 +16,48 @@
 #include "Param_Utils.h"
 #include "Smart_Utils.h"
 
-#ifdef AE_OS_WIN
-#include <Windows.h>
-#include <cstdarg>
-#include <cstdio>
-inline void DebugLog(const char* fmt, ...)
-{
-    char buf[512];
 
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-
-    OutputDebugStringA(buf);
-    OutputDebugStringA("\n");
-}
-
-#else  // Mac ÇÃèÍçáÅiAE_OS_WIN Ç™ñ¢íËã`Åj
-inline void DebugLog(const char* /*fmt*/, ...) {}
-#endif
-
-
-#define DESCRIPTION	"\nMSX1-style palette quantization and dithering."
-
-#define NAME			"MSX1 Palette Quantizer"
-#define	MAJOR_VERSION	5
-#define	MINOR_VERSION	6
-#define	BUG_VERSION		0
-#define	STAGE_VERSION	PF_Stage_DEVELOP
-#define	BUILD_VERSION	1
 
 // ParamsSetup() ÇÃí«â¡èáÇ∆ïKÇ∏àÍívÇ≥ÇπÇÈÇ±Ç∆
-enum {
-    PARAM_INPUT = 0,       // Input layer
+enum MSX1PQ_ParamId {
+    MSX1PQ_PARAM_INPUT = 0,       // Input layer
 
-    PARAM_COLOR_SYSTEM,    // MSX1 / MSX2
-    PARAM_USE_DITHER,      // Dither ON/OFF
-    PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette
-    PARAM_USE_8DOT2COL,    // 8dot / 2col restriction mode
-    PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSB)
-    PARAM_WEIGHT_H,        // H intensity
-    PARAM_WEIGHT_S,        // S intensity
-    PARAM_WEIGHT_B,        // B intensity
+    MSX1PQ_PARAM_COLOR_SYSTEM,    // MSX1 / MSX2
+    MSX1PQ_PARAM_USE_DITHER,      // Dither ON/OFF
+    MSX1PQ_PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette
+    MSX1PQ_PARAM_USE_8DOT2COL,    // 8dot / 2col restriction mode
+    MSX1PQ_PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSB)
+    MSX1PQ_PARAM_WEIGHT_H,        // H intensity
+    MSX1PQ_PARAM_WEIGHT_S,        // S intensity
+    MSX1PQ_PARAM_WEIGHT_B,        // B intensity
 
-    PARAM_PRE_SAT,         // Saturation boost
-    PARAM_PRE_GAMMA,       // Gamma to enhance shadows
-    PARAM_PRE_HIGHLIGHT,   // Highlight correction
-    PARAM_PRE_SKIN,        // Skin tone adjustment
+    MSX1PQ_PARAM_PRE_SAT,         // Saturation boost
+    MSX1PQ_PARAM_PRE_GAMMA,       // Gamma to enhance shadows
+    MSX1PQ_PARAM_PRE_HIGHLIGHT,   // Highlight correction
+    MSX1PQ_PARAM_PRE_SKIN,        // Skin tone adjustment
 
-    PARAM_NUM_PARAMS
+    MSX1PQ_PARAM_NUM_PARAMS
 };
 
-typedef enum {
-    DIST_MODE_RGB = 1,
-    DIST_MODE_HSB = 2
-} DistanceMode;
 
-typedef enum {
-    EIGHTDOT_MODE_NONE   = 1, // None
-    EIGHTDOT_MODE_FAST1  = 2, // Lightweight version
-    EIGHTDOT_MODE_BASIC1 = 3, // Standard version
-    EIGHTDOT_MODE_BEST1  = 4,  // Best version
-    EIGHTDOT_MODE_ATTR_BEST = 5, // Attribute cell BEST (8Å~N)
-    EIGHTDOT_MODE_PENALTY_BEST = 6  // Transition penalty BEST
-} EightDotMode;
+enum MSX1PQ_DistanceMode {
+     MSX1PQ_DIST_MODE_RGB = 1,
+     MSX1PQ_DIST_MODE_HSB = 2
+ };
 
-typedef enum {
-    COLOR_SYS_MSX1 = 1,
-    COLOR_SYS_MSX2 = 2
-} ColorSystem;
+enum MSX1PQ_EightDotMode {
+    MSX1PQ_EIGHTDOT_MODE_NONE   = 1, // None
+    MSX1PQ_EIGHTDOT_MODE_FAST1  = 2, // Lightweight version
+    MSX1PQ_EIGHTDOT_MODE_BASIC1 = 3, // Standard version
+    MSX1PQ_EIGHTDOT_MODE_BEST1  = 4,  // Best version
+    MSX1PQ_EIGHTDOT_MODE_ATTR_BEST = 5, // Attribute cell BEST (8Å~N)
+    MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST = 6  // Transition penalty BEST
+ };
+
+enum MSX1PQ_ColorSystem {
+    MSX1PQ_COLOR_SYS_MSX1 = 1,
+    MSX1PQ_COLOR_SYS_MSX2 = 2
+};
 
 extern "C" {
 

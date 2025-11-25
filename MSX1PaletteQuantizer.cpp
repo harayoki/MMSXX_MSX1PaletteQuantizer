@@ -17,6 +17,37 @@
 #include "MSX1PaletteQuantizerPalettes.h"
 
 
+#ifdef AE_OS_WIN
+#include <Windows.h>
+#include <cstdarg>
+#include <cstdio>
+inline void MSX1PQ_DebugLog(const char* fmt, ...)
+{
+    char buf[512];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    OutputDebugStringA(buf);
+    OutputDebugStringA("\n");
+}
+#else
+// Mac の場合（AE_OS_WIN が未定義）
+inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
+#endif
+
+namespace MSX1PQ {
+    constexpr char kPluginName[]        = "MSX1 Palette Quantizer";
+    constexpr char kPluginDescription[] = "\nMSX1-style palette quantization and dithering.";
+    constexpr int  kVersionMajor        = 5;
+    constexpr int  kVersionMinor        = 6;
+    constexpr int  kVersionBug          = 0;
+    constexpr int  kVersionStage        = PF_Stage_DEVELOP;
+    constexpr int  kVersionBuild        = 1;
+}
+
 typedef struct {
     A_Boolean use_dither;
     A_long use_8dot2col;
@@ -373,7 +404,7 @@ nearest_basic_hsb(A_u_char r8, A_u_char g8, A_u_char b8,
 static inline const QuantColor*
 get_basic_palette(A_long color_system)
 {
-    return (color_system == COLOR_SYS_MSX2)
+    return (color_system == MSX1PQ_COLOR_SYS_MSX2)
         ? kBasicColorsMsx2   // MSX2 用15色
         : kQuantColors;      // MSX1 用15色 (kQuantColors[0..14])
 }
@@ -412,13 +443,12 @@ About (
     PF_ParamDef      *params[],
     PF_LayerDef      *output )
 {
-    PF_SPRINTF( out_data->return_msg,
-                "%s, v%d.%d\r%s",
-                NAME,
-                MAJOR_VERSION,
-                MINOR_VERSION,
-                DESCRIPTION);
-
+    PF_SPRINTF(out_data->return_msg,
+               "%s, v%d.%d\n%s",
+               MSX1PQ::kPluginName,
+               MSX1PQ::kVersionMajor,
+               MSX1PQ::kVersionMinor,
+               MSX1PQ::kPluginDescription);
     return PF_Err_NONE;
 }
 
@@ -434,12 +464,13 @@ GlobalSetup (
     PF_LayerDef      *output )
 {
     PF_Err    err = PF_Err_NONE;
-
-    out_data->my_version = PF_VERSION( MAJOR_VERSION,
-                                       MINOR_VERSION,
-                                       BUG_VERSION,
-                                       STAGE_VERSION,
-                                       BUILD_VERSION);
+    out_data->my_version = PF_VERSION(
+        MSX1PQ::kVersionMajor,
+        MSX1PQ::kVersionMinor,
+        MSX1PQ::kVersionBug,
+        MSX1PQ::kVersionStage,
+        MSX1PQ::kVersionBuild
+    );
 
     // 8bit専用: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER は立てない
     // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
@@ -488,9 +519,9 @@ ParamsSetup (
     PF_ADD_POPUP(
         "Color system",
         2,                    // 項目数
-        COLOR_SYS_MSX1,       // デフォルト 1: MSX1
+        MSX1PQ_COLOR_SYS_MSX1,       // デフォルト 1: MSX1
         "MSX1|MSX2",
-        PARAM_COLOR_SYSTEM);
+        MSX1PQ_PARAM_COLOR_SYSTEM);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
@@ -498,7 +529,7 @@ ParamsSetup (
         "Use dithering",     // チェックON時のラベル
         TRUE,                // デフォルトON (TRUE: ディザ有効)
         0,
-        PARAM_USE_DITHER
+        MSX1PQ_PARAM_USE_DITHER
     );
 
     AEFX_CLR_STRUCT(def);
@@ -507,16 +538,16 @@ ParamsSetup (
         "Enable",
         TRUE,
         0,
-        PARAM_USE_DARK_DITHER
+        MSX1PQ_PARAM_USE_DARK_DITHER
     );
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP(
         "8-dot / 2-color",
         6,
-        EIGHTDOT_MODE_BASIC1,
+        MSX1PQ_EIGHTDOT_MODE_BASIC1,
         "なし|高速|基本|BEST|BEST属性|BEST遷移",
-        PARAM_USE_8DOT2COL
+        MSX1PQ_PARAM_USE_8DOT2COL
     );
 
     AEFX_CLR_STRUCT(def);
@@ -524,9 +555,9 @@ ParamsSetup (
     PF_ADD_POPUP(
         "Distance mode",      // ラベル
         2,                    // 項目数
-        DIST_MODE_HSB,        // デフォルト値 (2 = HSB)
+        MSX1PQ_DIST_MODE_HSB, // デフォルト値 (2 = HSB)
         "RGB|HSB",            // 順番に 1:RGB, 2:HSB
-        PARAM_DISTANCE_MODE
+        MSX1PQ_PARAM_DISTANCE_MODE
     );
 
     AEFX_CLR_STRUCT(def);
@@ -540,7 +571,7 @@ ParamsSetup (
         2,                    // 小数点以下2桁くらい
         0,                    // DISPLAY_FLAGS
         0,                    // 予約
-        PARAM_WEIGHT_H
+        MSX1PQ_PARAM_WEIGHT_H
     );
 
     AEFX_CLR_STRUCT(def);
@@ -554,7 +585,7 @@ ParamsSetup (
         2,
         0,
         0,
-        PARAM_WEIGHT_S
+        MSX1PQ_PARAM_WEIGHT_S
     );
 
     AEFX_CLR_STRUCT(def);
@@ -568,7 +599,7 @@ ParamsSetup (
         2,
         0,
         0,
-        PARAM_WEIGHT_B
+        MSX1PQ_PARAM_WEIGHT_B
     );
 
     AEFX_CLR_STRUCT(def);
@@ -577,7 +608,7 @@ ParamsSetup (
         "Enable",
         TRUE,
         0,
-        PARAM_PRE_SAT
+        MSX1PQ_PARAM_PRE_SAT
     );
 
     AEFX_CLR_STRUCT(def);
@@ -586,7 +617,7 @@ ParamsSetup (
         "Enable",
         TRUE,
         0,
-        PARAM_PRE_GAMMA
+        MSX1PQ_PARAM_PRE_GAMMA
     );
 
     AEFX_CLR_STRUCT(def);
@@ -595,7 +626,7 @@ ParamsSetup (
         "Enable",
         TRUE,
         0,
-        PARAM_PRE_HIGHLIGHT
+        MSX1PQ_PARAM_PRE_HIGHLIGHT
     );
 
     AEFX_CLR_STRUCT(def);
@@ -604,10 +635,10 @@ ParamsSetup (
         "Enable",
         FALSE,
         0,
-        PARAM_PRE_SKIN
+        MSX1PQ_PARAM_PRE_SKIN
     );
 
-    out_data->num_params = PARAM_NUM_PARAMS;
+    out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
 }
@@ -627,7 +658,7 @@ apply_8dot2col_dispatch_ARGB(
     A_long     color_system,
     A_long     mode)
 {
-    if (mode <= EIGHTDOT_MODE_NONE || mode >= 7) {
+    if (mode <= MSX1PQ_EIGHTDOT_MODE_NONE || mode >= 7) {
         return;
     }
     Apply8DotFn_ARGB fn = g_apply8dot_ARGB[mode];
@@ -645,7 +676,7 @@ apply_8dot2col_dispatch_BGRA(
     A_long            color_system,
     A_long            mode)
 {
-    if (mode <= EIGHTDOT_MODE_NONE || mode >= 7) {
+    if (mode <= MSX1PQ_EIGHTDOT_MODE_NONE || mode >= 7) {
         return;
     }
     Apply8DotFn_BGRA fn = g_apply8dot_BGRA[mode];
@@ -1425,7 +1456,7 @@ FilterImage8 (
     }
 
     const QuantColor &qc =
-        (qi->color_system == COLOR_SYS_MSX2)
+        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
         ? kBasicColorsMsx2[basic_idx]
         : kQuantColors[basic_idx];
 
@@ -1492,7 +1523,7 @@ FilterImageBGRA_8u (
     }
 
     const QuantColor &qc =
-        (qi->color_system == COLOR_SYS_MSX2)
+        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
             ? kBasicColorsMsx2[basic_idx]  // ★ MSX2 の 15色
             : kQuantColors[basic_idx];     // ★ MSX1 の 15色
 
@@ -1519,25 +1550,25 @@ Render (
 
     // ---- パラメータ読み取り ----
     QuantInfo qi;
-    qi.color_system    = params[PARAM_COLOR_SYSTEM]->u.pd.value;
-    qi.use_dither      = (params[PARAM_USE_DITHER]->u.bd.value != 0);
-    qi.use_8dot2col    = params[PARAM_USE_8DOT2COL]->u.pd.value;
-    qi.use_hsb         = (params[PARAM_DISTANCE_MODE]->u.pd.value == DIST_MODE_HSB);
+    qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
+    qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
+    qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
+    qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
 
-    qi.w_h = params[PARAM_WEIGHT_H]->u.fs_d.value;
-    qi.w_s = params[PARAM_WEIGHT_S]->u.fs_d.value;
-    qi.w_b = params[PARAM_WEIGHT_B]->u.fs_d.value;
+    qi.w_h = params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value;
+    qi.w_s = params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value;
+    qi.w_b = params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value;
 
     qi.w_h = clamp01f((float)qi.w_h);
     qi.w_s = clamp01f((float)qi.w_s);
     qi.w_b = clamp01f((float)qi.w_b);
 
-    qi.pre_sat       = (params[PARAM_PRE_SAT]->u.bd.value       != 0);
-    qi.pre_gamma     = (params[PARAM_PRE_GAMMA]->u.bd.value     != 0);
-    qi.pre_highlight = (params[PARAM_PRE_HIGHLIGHT]->u.bd.value != 0);
-    qi.pre_skin      = (params[PARAM_PRE_SKIN]->u.bd.value      != 0);
+    qi.pre_sat       = (params[MSX1PQ_PARAM_PRE_SAT]->u.bd.value       != 0);
+    qi.pre_gamma     = (params[MSX1PQ_PARAM_PRE_GAMMA]->u.bd.value     != 0);
+    qi.pre_highlight = (params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.bd.value != 0);
+    qi.pre_skin      = (params[MSX1PQ_PARAM_PRE_SKIN]->u.bd.value      != 0);
 
-    qi.use_dark_dither = (params[PARAM_USE_DARK_DITHER]->u.bd.value != 0);
+    qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
     // 画像サイズ（extent_hint ベース）
     const A_long width  = output->extent_hint.right  - output->extent_hint.left;
@@ -1567,14 +1598,14 @@ Render (
                 in_dataP,
                 0,
                 linesL,
-                &params[PARAM_INPUT]->u.ld,
+                &params[MSX1PQ_PARAM_INPUT]->u.ld,
                 NULL,
                 &qi,
                 FilterImageBGRA_8u,
                 output);
 
             // ---- 2パス目：8dot / 2color 後処理（基本1）----
-            if (!err && qi.use_8dot2col != EIGHTDOT_MODE_NONE) {
+            if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
                 // すでに width / height は上で計算済みでもOKですが、
                 // 明示しておくならこのままでも大丈夫です。
@@ -1619,14 +1650,14 @@ Render (
             in_dataP,
             0,
             linesL,
-            &params[PARAM_INPUT]->u.ld,
+            &params[MSX1PQ_PARAM_INPUT]->u.ld,
             NULL,
             &qi,
             FilterImage8,
             output);
 
         // ---- 2パス目：8dot / 2color 後処理（基本1）----
-        if (!err && qi.use_8dot2col != EIGHTDOT_MODE_NONE) {
+        if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
             A_long row_bytes = output->rowbytes;
             A_long row_pitch = (row_bytes >= 0)
@@ -1699,49 +1730,49 @@ UpdateParameterUI(
         kPFParamUtilsSuiteVersion3,
         out_data);
 
-    A_long mode = params[PARAM_DISTANCE_MODE]->u.pd.value;
-    A_Boolean enable_hsb = (mode == DIST_MODE_HSB);
+    A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
+    A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
 
-    // DebugLog("=== UpdateParameterUI CALLED ===");
-    // DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
+    // MSX1PQ_DebugLog("=== UpdateParameterUI CALLED ===");
+    // MSX1PQ_DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
     //          mode, enable_hsb ? 1 : 0);
 
     PF_ParamDef tmp;
 
     // --- H weight ---
-    tmp = *params[PARAM_WEIGHT_H];
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_H];
     if (enable_hsb)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // DebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MSX1PQ_DebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
-                                 PARAM_WEIGHT_H,
+                                 MSX1PQ_PARAM_WEIGHT_H,
                                  &tmp);
 
     // --- S weight ---
-    tmp = *params[PARAM_WEIGHT_S];
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_S];
     if (enable_hsb)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // DebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MSX1PQ_DebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
-                                 PARAM_WEIGHT_S,
+                                 MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
 
     // --- B weight ---
-    tmp = *params[PARAM_WEIGHT_B];
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_B];
     if (enable_hsb)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // DebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MSX1PQ_DebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
-                                 PARAM_WEIGHT_B,
+                                 MSX1PQ_PARAM_WEIGHT_B,
                                  &tmp);
 
-    // DebugLog("-> UpdateParameterUI done");
+    // MSX1PQ_DebugLog("-> UpdateParameterUI done");
 
     return err;
 }
@@ -1777,7 +1808,7 @@ EffectMain(
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
-                if (extraP->param_index == PARAM_DISTANCE_MODE) {
+                if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
                 }
 
