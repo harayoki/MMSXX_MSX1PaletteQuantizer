@@ -1,8 +1,8 @@
 /*
     MSX1PaletteQuantizer.cpp
 
-    MSX1 ƒpƒŒƒbƒg ƒGƒtƒFƒNƒg
-    AE / Premiere —¼‘Î‰B
+    MSX1 ãƒ‘ãƒ¬ãƒƒãƒˆ ã‚¨ãƒ•ã‚§ã‚¯ãƒˆ
+    AE / Premiere ä¸¡å¯¾å¿œã€‚
 
 */
 
@@ -34,7 +34,7 @@ inline void MSX1PQ_DebugLog(const char* fmt, ...)
     OutputDebugStringA("\n");
 }
 #else
-// Mac ‚Ìê‡iAE_OS_WIN ‚ª–¢’è‹`j
+// Mac ã®å ´åˆï¼ˆAE_OS_WIN ãŒæœªå®šç¾©ï¼‰
 inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
 #endif
 
@@ -79,7 +79,7 @@ typedef void (*Apply8DotFn_BGRA)(
     A_long            color_system);
 
 
-// æ‚ÉƒAƒ‹ƒSƒŠƒYƒ€ŠÖ”‚ğéŒ¾‚µ‚Ä‚¨‚­
+// å…ˆã«ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ é–¢æ•°ã‚’å®£è¨€ã—ã¦ãŠã
 template<typename PixelT>
 static void apply_8dot2col_basic1(
     PixelT* data, A_long row_pitch,
@@ -110,7 +110,7 @@ static void apply_8dot2col_attr_best_penalty(
     A_long width, A_long height,
     A_long color_system);
 
-// ƒ‚[ƒh ¨ ŠÖ” ‚Ìƒe[ƒuƒ‹iƒCƒ“ƒfƒbƒNƒX 0 ‚Í–¢g—pj
+// ãƒ¢ãƒ¼ãƒ‰ â†’ é–¢æ•° ã®ãƒ†ãƒ¼ãƒ–ãƒ«ï¼ˆã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ 0 ã¯æœªä½¿ç”¨ï¼‰
 
 static Apply8DotFn_ARGB g_apply8dot_ARGB[7] = {
     nullptr,
@@ -118,8 +118,8 @@ static Apply8DotFn_ARGB g_apply8dot_ARGB[7] = {
     apply_8dot2col_fast1<PF_Pixel8>,             // 2: FAST1
     apply_8dot2col_basic1<PF_Pixel8>,            // 3: BASIC1
     apply_8dot2col_best1<PF_Pixel8>,             // 4: BEST1
-    apply_8dot2col_attr_best<PF_Pixel8>,         // 5: “¯‚¶ƒZƒ‹“à‚Ìc‘Ñ‘S‘Ì‚ÌFƒqƒXƒgƒOƒ‰ƒ€
-    apply_8dot2col_attr_best_penalty<PF_Pixel8>, // 6: BEST + ‘JˆÚƒyƒiƒ‹ƒeƒB
+    apply_8dot2col_attr_best<PF_Pixel8>,         // 5: åŒã˜ã‚»ãƒ«å†…ã®ç¸¦å¸¯å…¨ä½“ã®è‰²ãƒ’ã‚¹ãƒˆã‚°ãƒ©ãƒ 
+    apply_8dot2col_attr_best_penalty<PF_Pixel8>, // 6: BEST + é·ç§»ãƒšãƒŠãƒ«ãƒ†ã‚£
 };
 
 static Apply8DotFn_BGRA g_apply8dot_BGRA[7] = {
@@ -152,11 +152,11 @@ static inline float min3f(float a, float b, float c)
     return (m < c) ? m : c;
 }
 
-// Šù‘¶: MSX1PQ::kQuantColors[]
+// æ—¢å­˜: MSX1PQ::kQuantColors[]
 extern const MSX1PQ::QuantColor MSX1PQ::kQuantColors[];
 extern const int        MSX1PQ::kNumQuantColors;
 
-// ƒpƒŒƒbƒg‚ÌHSB‚ğˆê“x‚¾‚¯ŒvZ‚µ‚ÄƒLƒƒƒbƒVƒ…
+// ãƒ‘ãƒ¬ãƒƒãƒˆã®HSBã‚’ä¸€åº¦ã ã‘è¨ˆç®—ã—ã¦ã‚­ãƒ£ãƒƒã‚·ãƒ¥
 static A_Boolean g_palette_hsb_initialized = FALSE;
 static float     g_palette_h[256];
 static float     g_palette_s[256];
@@ -199,16 +199,16 @@ rgb_to_hsb(A_u_char r8, A_u_char g8, A_u_char b8,
         if (hue < 0.0f) {
             hue += 360.0f;
         }
-        h = hue / 360.0f; // 0?1 ‚É³‹K‰»
+        h = hue / 360.0f; // 0?1 ã«æ­£è¦åŒ–
     }
 }
 
-// HSB -> RGB •ÏŠ·iŠÈˆÕ”Åj
+// HSB -> RGB å¤‰æ›ï¼ˆç°¡æ˜“ç‰ˆï¼‰
 static void
 hsb_to_rgb(float h, float s, float v,
            A_u_char &r8, A_u_char &g8, A_u_char &b8)
 {
-    h = h - floorf(h);      // ”O‚Ì‚½‚ß 0?1 ‚ÉŠÛ‚ß
+    h = h - floorf(h);      // å¿µã®ãŸã‚ 0?1 ã«ä¸¸ã‚
     s = clamp01f(s);
     v = clamp01f(v);
 
@@ -240,7 +240,7 @@ hsb_to_rgb(float h, float s, float v,
     b8 = (A_u_char)(clamp01f(b) * 255.0f + 0.5f);
 }
 
-// 1?4 ‚Ìƒ`ƒFƒbƒNƒ{ƒbƒNƒX—p‚Ì‘Oˆ—
+// 1?4 ã®ãƒã‚§ãƒƒã‚¯ãƒœãƒƒã‚¯ã‚¹ç”¨ã®å‰å‡¦ç†
 static void
 apply_preprocess(const QuantInfo *qi,
                  A_u_char &r8, A_u_char &g8, A_u_char &b8)
@@ -255,18 +255,18 @@ apply_preprocess(const QuantInfo *qi,
     float h, s, v;
     rgb_to_hsb(r8, g8, b8, h, s, v);
 
-    // 1: Ê“xƒu[ƒXƒg
+    // 1: å½©åº¦ãƒ–ãƒ¼ã‚¹ãƒˆ
     if (qi->pre_sat) {
         s *= 1.25f;
     }
 
-    // 2: ƒKƒ“ƒ}i•‚ğ­‚µ’÷‚ß‚éj
+    // 2: ã‚¬ãƒ³ãƒï¼ˆé»’ã‚’å°‘ã—ç· ã‚ã‚‹ï¼‰
     if (qi->pre_gamma) {
-        const float gamma = 1.2f;   // >1 ‚ÅˆÃ‚­‚È‚é
+        const float gamma = 1.2f;   // >1 ã§æš—ããªã‚‹
         v = powf(v, gamma);
     }
 
-    // 3: ƒnƒCƒ‰ƒCƒgŠñ‚è‚Ì•â³
+    // 3: ãƒã‚¤ãƒ©ã‚¤ãƒˆå¯„ã‚Šã®è£œæ­£
     if (qi->pre_highlight) {
         if (v > 0.5f) {
             float t = (v - 0.5f) / 0.5f; // 0?1
@@ -276,12 +276,12 @@ apply_preprocess(const QuantInfo *qi,
         }
     }
 
-    // 4: ”§FŠñ‚¹i‰©?ƒIƒŒƒ“ƒW•t‹ß‚¾‚¯­‚µÔŠñ‚èj
+    // 4: è‚Œè‰²å¯„ã›ï¼ˆé»„?ã‚ªãƒ¬ãƒ³ã‚¸ä»˜è¿‘ã ã‘å°‘ã—èµ¤å¯„ã‚Šï¼‰
     if (qi->pre_skin) {
         if (v > 0.2f && v < 0.95f && s > 0.2f) {
-            if (h > 0.03f && h < 0.18f) { // ‚¾‚¢‚½‚¢‰©?ƒIƒŒƒ“ƒW
-                float target = 0.07f;     // –Ú•WF‘ŠiƒIƒŒƒ“ƒWŠñ‚èj
-                float t      = 0.25f;     // ‚Ç‚ê‚­‚ç‚¢Šñ‚¹‚é‚©
+            if (h > 0.03f && h < 0.18f) { // ã ã„ãŸã„é»„?ã‚ªãƒ¬ãƒ³ã‚¸
+                float target = 0.07f;     // ç›®æ¨™è‰²ç›¸ï¼ˆã‚ªãƒ¬ãƒ³ã‚¸å¯„ã‚Šï¼‰
+                float t      = 0.25f;     // ã©ã‚Œãã‚‰ã„å¯„ã›ã‚‹ã‹
                 h = h * (1.0f - t) + target * t;
             }
         }
@@ -378,7 +378,7 @@ nearest_basic_hsb(A_u_char r8, A_u_char g8, A_u_char b8,
     int   best_idx = 0;
     float best_d2  = 1.0e30f;
 
-    // šŠî–{15F‚¾‚¯‚ğŒ©‚éi0..14j
+    // â˜…åŸºæœ¬15è‰²ã ã‘ã‚’è¦‹ã‚‹ï¼ˆ0..14ï¼‰
     for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
         float dh = fabsf(h - g_palette_h[i]);
         if (dh > 0.5f) {
@@ -400,16 +400,16 @@ nearest_basic_hsb(A_u_char r8, A_u_char g8, A_u_char b8,
     return best_idx; // 0..14
 }
 
-// MSX1/MSX2 ‹¤’Ê‚ÅuŠî–{15F‚ÌƒpƒŒƒbƒg”z—ñv‚ğ•Ô‚·
+// MSX1/MSX2 å…±é€šã§ã€ŒåŸºæœ¬15è‰²ã®ãƒ‘ãƒ¬ãƒƒãƒˆé…åˆ—ã€ã‚’è¿”ã™
 static inline const MSX1PQ::QuantColor*
 get_basic_palette(A_long color_system)
 {
     return (color_system == MSX1PQ_COLOR_SYS_MSX2)
-        ? MSX1PQ::kBasicColorsMsx2   // MSX2 —p15F
-        : MSX1PQ::kQuantColors;      // MSX1 —p15F (kQuantColors[0..14])
+        ? MSX1PQ::kBasicColorsMsx2   // MSX2 ç”¨15è‰²
+        : MSX1PQ::kQuantColors;      // MSX1 ç”¨15è‰² (kQuantColors[0..14])
 }
 
-// RGB -> Šî–{15FƒCƒ“ƒfƒbƒNƒX (0..14)
+// RGB -> åŸºæœ¬15è‰²ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ (0..14)
 static int
 find_basic_index_from_rgb(A_u_char r, A_u_char g, A_u_char b, A_long color_system)
 {
@@ -472,7 +472,7 @@ GlobalSetup (
         MSX1PQ::kVersionBuild
     );
 
-    // 8bitê—p: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER ‚Í—§‚Ä‚È‚¢
+    // 8bitå°‚ç”¨: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER ã¯ç«‹ã¦ãªã„
     // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
     //                         PF_OutFlag_NON_PARAM_VARY;
 
@@ -480,7 +480,7 @@ GlobalSetup (
 
 	out_data->out_flags  = PF_OutFlag_NONE;
 	out_data->out_flags2 = PF_OutFlag2_NONE;
-    // Premiere —pƒsƒNƒZƒ‹ƒtƒH[ƒ}ƒbƒgéŒ¾
+    // Premiere ç”¨ãƒ”ã‚¯ã‚»ãƒ«ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆå®£è¨€
     if (in_dataP->appl_id == kAppID_Premiere){
 
         AEFX_SuiteScoper<PF_PixelFormatSuite1> pixelFormatSuite =
@@ -489,12 +489,12 @@ GlobalSetup (
                                                     kPFPixelFormatSuiteVersion1,
                                                     out_data);
 
-        // ƒTƒ|[ƒg‚·‚éƒtƒH[ƒ}ƒbƒg‚¾‚¯“o˜^
+        // ã‚µãƒãƒ¼ãƒˆã™ã‚‹ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆã ã‘ç™»éŒ²
         (*pixelFormatSuite->ClearSupportedPixelFormats)(in_dataP->effect_ref);
         (*pixelFormatSuite->AddSupportedPixelFormat)(
                                                         in_dataP->effect_ref,
                                                         PrPixelFormat_BGRA_4444_8u);
-        // VUYA ‚â 32f ‚Í¡‰ñ‚ÍƒTƒ|[ƒg‚µ‚È‚¢
+        // VUYA ã‚„ 32f ã¯ä»Šå›ã¯ã‚µãƒãƒ¼ãƒˆã—ãªã„
     }
 
     return err;
@@ -514,20 +514,20 @@ ParamsSetup (
     PF_Err err = PF_Err_NONE;
     PF_ParamDef def;
 
-    // “ü—ÍƒŒƒCƒ„[‚ÍˆÃ–Ù‚É 0 ”Ô‚Æ‚µ‚Ä‘¶İ‚·‚é‚Ì‚Å‰½‚à‚µ‚È‚¢
+    // å…¥åŠ›ãƒ¬ã‚¤ãƒ¤ãƒ¼ã¯æš—é»™ã« 0 ç•ªã¨ã—ã¦å­˜åœ¨ã™ã‚‹ã®ã§ä½•ã‚‚ã—ãªã„
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP(
         "Color system",
-        2,                    // €–Ú”
-        MSX1PQ_COLOR_SYS_MSX1,       // ƒfƒtƒHƒ‹ƒg 1: MSX1
+        2,                    // é …ç›®æ•°
+        MSX1PQ_COLOR_SYS_MSX1,       // ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ 1: MSX1
         "MSX1|MSX2",
         MSX1PQ_PARAM_COLOR_SYSTEM);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "Dither",            // •\¦–¼
-        "Use dithering",     // ƒ`ƒFƒbƒNON‚Ìƒ‰ƒxƒ‹
-        TRUE,                // ƒfƒtƒHƒ‹ƒgON (TRUE: ƒfƒBƒU—LŒø)
+        "Dither",            // è¡¨ç¤ºå
+        "Use dithering",     // ãƒã‚§ãƒƒã‚¯ONæ™‚ã®ãƒ©ãƒ™ãƒ«
+        TRUE,                // ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆON (TRUE: ãƒ‡ã‚£ã‚¶æœ‰åŠ¹)
         0,
         MSX1PQ_PARAM_USE_DITHER
     );
@@ -546,31 +546,31 @@ ParamsSetup (
         "8-dot / 2-color",
         6,
         MSX1PQ_EIGHTDOT_MODE_BASIC1,
-        "‚È‚µ|‚‘¬|Šî–{|BEST|BEST‘®«|BEST‘JˆÚ",
+        "None|Fast|Basic|Best|Best-Attr|Best-Trans",
         MSX1PQ_PARAM_USE_8DOT2COL
     );
 
     AEFX_CLR_STRUCT(def);
     def.flags = PF_ParamFlag_SUPERVISE;
     PF_ADD_POPUP(
-        "Distance mode",      // ƒ‰ƒxƒ‹
-        2,                    // €–Ú”
-        MSX1PQ_DIST_MODE_HSB, // ƒfƒtƒHƒ‹ƒg’l (2 = HSB)
-        "RGB|HSB",            // ‡”Ô‚É 1:RGB, 2:HSB
+        "Distance mode",      // ãƒ©ãƒ™ãƒ«
+        2,                    // é …ç›®æ•°
+        MSX1PQ_DIST_MODE_HSB, // ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤ (2 = HSB)
+        "RGB|HSB",            // é †ç•ªã« 1:RGB, 2:HSB
         MSX1PQ_PARAM_DISTANCE_MODE
     );
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "H weight",           // •\¦–¼
+        "H weight",           // è¡¨ç¤ºå
         0,                    //
         1,                    //
         0,                    // SLIDER_MIN
         1,                    // SLIDER_MAX
-        1,                    // ƒfƒtƒHƒ‹ƒg’l 1.0
-        2,                    // ¬”“_ˆÈ‰º2Œ…‚­‚ç‚¢
+        1,                    // ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤ 1.0
+        2,                    // å°æ•°ç‚¹ä»¥ä¸‹2æ¡ãã‚‰ã„
         0,                    // DISPLAY_FLAGS
-        0,                    // —\–ñ
+        0,                    // äºˆç´„
         MSX1PQ_PARAM_WEIGHT_H
     );
 
@@ -645,7 +645,7 @@ ParamsSetup (
 
 
 // ------------------------------------------------------------
-// ‰¡8ƒhƒbƒg“à2F§ŒÀ
+// æ¨ª8ãƒ‰ãƒƒãƒˆå†…2è‰²åˆ¶é™
 // ------------------------------------------------------------
 
 
@@ -716,7 +716,7 @@ apply_8dot2col_basic1(
             int counts[15] = {0};
             int idx_list[8];
 
-            // 1) ƒuƒƒbƒN“à‚Ì basic15 ƒCƒ“ƒfƒbƒNƒX‚ğæ“¾•ƒJƒEƒ“ƒg
+            // 1) ãƒ–ãƒ­ãƒƒã‚¯å†…ã® basic15 ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã‚’å–å¾—ï¼†ã‚«ã‚¦ãƒ³ãƒˆ
             for (int i = 0; i < block_w; ++i) {
                 PixelT& p = row[x_start + i];
 
@@ -730,7 +730,7 @@ apply_8dot2col_basic1(
                 counts[idx]++;
             }
 
-            // 2) oŒ»” Top2
+            // 2) å‡ºç¾æ•° Top2
             int top1 = -1;
             int top2 = -1;
             for (int c = 0; c < MSX1PQ::kNumBasicColors; ++c) {
@@ -747,7 +747,7 @@ apply_8dot2col_basic1(
             if (top1 < 0) continue;
             if (top2 < 0) top2 = top1;
 
-            // 3) Top2 ˆÈŠO‚Í g‚Ç‚¿‚ç‚É‹ß‚¢‚©h ‚ÅŠñ‚¹‚é
+            // 3) Top2 ä»¥å¤–ã¯ â€œã©ã¡ã‚‰ã«è¿‘ã„ã‹â€ ã§å¯„ã›ã‚‹
             for (int i = 0; i < block_w; ++i) {
                 int idx = idx_list[i];
                 int new_idx = idx;
@@ -814,7 +814,7 @@ apply_8dot2col_fast1(
             ColorCount uniques[8];
             int        num_unique = 0;
 
-            // 1) ƒuƒƒbƒN“à‚Ìƒ†ƒj[ƒNF‚ğWŒviÅ‘å 8 í—Şj
+            // 1) ãƒ–ãƒ­ãƒƒã‚¯å†…ã®ãƒ¦ãƒ‹ãƒ¼ã‚¯è‰²ã‚’é›†è¨ˆï¼ˆæœ€å¤§ 8 ç¨®é¡ï¼‰
             for (int i = 0; i < block_w; ++i) {
                 PixelT& p = row[x_start + i];
 
@@ -837,11 +837,11 @@ apply_8dot2col_fast1(
             }
 
             if (num_unique <= 1) {
-                // ‚à‚Æ‚à‚Æ 0`1 F‚È‚ç 2F§ŒÀ‚Ì•K—v‚È‚µ
+                // ã‚‚ã¨ã‚‚ã¨ 0ï½1 è‰²ãªã‚‰ 2è‰²åˆ¶é™ã®å¿…è¦ãªã—
                 continue;
             }
 
-            // 2) oŒ»” Top2 ‚ğ’T‚·
+            // 2) å‡ºç¾æ•° Top2 ã‚’æ¢ã™
             int top1 = 0;
             int top2 = 1;
             if (uniques[top2].count > uniques[top1].count) {
@@ -860,11 +860,11 @@ apply_8dot2col_fast1(
             const ColorCount& c1 = uniques[top1];
             const ColorCount& c2 = uniques[top2];
 
-            // 3) Top2 ˆÈŠO‚ÌF‚Í g‚Ç‚¿‚ç‚É‹ß‚¢‚©h ‚ÅŠñ‚¹‚é
+            // 3) Top2 ä»¥å¤–ã®è‰²ã¯ â€œã©ã¡ã‚‰ã«è¿‘ã„ã‹â€ ã§å¯„ã›ã‚‹
             for (int i = 0; i < block_w; ++i) {
                 PixelT& p = row[x_start + i];
 
-                // ‚·‚Å‚É top1 / top2 ‚È‚ç‚»‚Ì‚Ü‚Ü
+                // ã™ã§ã« top1 / top2 ãªã‚‰ãã®ã¾ã¾
                 if ((p.red == c1.r && p.green == c1.g && p.blue == c1.b) ||
                     (p.red == c2.r && p.green == c2.g && p.blue == c2.b)) {
                     continue;
@@ -919,7 +919,7 @@ static void apply_8dot2col_best1(
             int block_w = (int)(x_end - x_start);
             if (block_w <= 0) continue;
 
-            // --- 1) ƒuƒƒbƒN“à‚Ì basic15 ƒCƒ“ƒfƒbƒNƒXWŒv ---
+            // --- 1) ãƒ–ãƒ­ãƒƒã‚¯å†…ã® basic15 ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹é›†è¨ˆ ---
             int counts[BASIC_COLORS] = {0};
             int idx_list[8] = {0};
 
@@ -945,7 +945,7 @@ static void apply_8dot2col_best1(
 
             if (num_unique <= 2) continue;
 
-            // --- 2) ‹——£ƒe[ƒuƒ‹i15~15 ŒÅ’èj ---
+            // --- 2) è·é›¢ãƒ†ãƒ¼ãƒ–ãƒ«ï¼ˆ15Ã—15 å›ºå®šï¼‰ ---
             long dist2[BASIC_COLORS][BASIC_COLORS];
 
             for (int i = 0; i < BASIC_COLORS; ++i) {
@@ -959,7 +959,7 @@ static void apply_8dot2col_best1(
                 }
             }
 
-            // --- 3) unique 2FƒyƒAÅ“K‰» ---
+            // --- 3) unique 2è‰²ãƒšã‚¢æœ€é©åŒ– ---
             long best_error = LONG_MAX;
             int  best_a = unique_indices[0];
             int  best_b = unique_indices[1];
@@ -991,7 +991,7 @@ static void apply_8dot2col_best1(
                 }
             }
 
-            // --- 4) best_a/best_b ‚ÉŠñ‚¹‚é ---
+            // --- 4) best_a/best_b ã«å¯„ã›ã‚‹ ---
             for (int i = 0; i < block_w; ++i) {
                 int src_idx = idx_list[i];
 
@@ -1011,13 +1011,13 @@ static void apply_8dot2col_best1(
 
 
 static const int ATTRCELL_HEIGHT   = 8;
-// 4 or 8 ‚Å’²®
-// 4FŠŠ‚ç‚©‚³T‚¦‚ßA‰ğ‘œŠ´—Dæ
-// 8F‘®«ƒZƒ‹Š´‹­‚ß
+// 4 or 8 ã§èª¿æ•´
+// 4ï¼šæ»‘ã‚‰ã‹ã•æ§ãˆã‚ã€è§£åƒæ„Ÿå„ªå…ˆ
+// 8ï¼šå±æ€§ã‚»ãƒ«æ„Ÿå¼·ã‚
 
 static const double ATTR_LAMBDA    = 0.3;
-// 0.1?0.2Fs‚ÌŒ©‚½–Ú—Dæi‘®«ƒZƒ‹Œø‰Ê‚Í‚Ù‚ñ‚Ì‚èj
-// 0.3ªFƒZƒ‹‘S‘Ì‚ÌŒXŒü‚ª‚©‚È‚èŒø‚¢‚Ä‚­‚é
+// 0.1?0.2ï¼šè¡Œã®è¦‹ãŸç›®å„ªå…ˆï¼ˆå±æ€§ã‚»ãƒ«åŠ¹æœã¯ã»ã‚“ã®ã‚Šï¼‰
+// 0.3â†‘ï¼šã‚»ãƒ«å…¨ä½“ã®å‚¾å‘ãŒã‹ãªã‚ŠåŠ¹ã„ã¦ãã‚‹
 
 template<typename PixelT>
 static void apply_8dot2col_attr_best(
@@ -1033,7 +1033,7 @@ static void apply_8dot2col_attr_best(
 
     const MSX1PQ::QuantColor* table = get_basic_palette(color_system);
 
-    // 15~15 ‹——£ƒe[ƒuƒ‹iƒZƒ‹“à‹¤’Êj
+    // 15Ã—15 è·é›¢ãƒ†ãƒ¼ãƒ–ãƒ«ï¼ˆã‚»ãƒ«å†…å…±é€šï¼‰
     long dist2[BASIC_COLORS][BASIC_COLORS];
     for (int i = 0; i < BASIC_COLORS; ++i) {
         const MSX1PQ::QuantColor& ci = table[i];
@@ -1048,7 +1048,7 @@ static void apply_8dot2col_attr_best(
 
     const A_long num_blocks_x = (width + 7) / 8;
 
-    // c•ûŒü‚ğ ATTRCELL_HEIGHT ‚²‚Æ‚Éu‘®«ƒZƒ‹v‚É•ª‚¯‚é
+    // ç¸¦æ–¹å‘ã‚’ ATTRCELL_HEIGHT ã”ã¨ã«ã€Œå±æ€§ã‚»ãƒ«ã€ã«åˆ†ã‘ã‚‹
     for (A_long y0 = 0; y0 < height; y0 += ATTRCELL_HEIGHT) {
 
         A_long cell_h = ATTRCELL_HEIGHT;
@@ -1057,7 +1057,7 @@ static void apply_8dot2col_attr_best(
         }
         if (cell_h <= 0) break;
 
-        // ŠeƒZƒ‹“à‚ÅAx •ûŒü‚Ì 8dot ƒuƒƒbƒN‚²‚Æ‚Éˆ—
+        // å„ã‚»ãƒ«å†…ã§ã€x æ–¹å‘ã® 8dot ãƒ–ãƒ­ãƒƒã‚¯ã”ã¨ã«å‡¦ç†
         for (A_long bx = 0; bx < num_blocks_x; ++bx) {
 
             A_long x_start = bx * 8;
@@ -1069,7 +1069,7 @@ static void apply_8dot2col_attr_best(
             int block_w = (int)(x_end - x_start);
             if (block_w <= 0) continue;
 
-            // --- (1) ‚±‚ÌƒZƒ‹•‚±‚Ì 8dot c‘Ñ‚Ì basic15 ƒqƒXƒgƒOƒ‰ƒ€ ---
+            // --- (1) ã“ã®ã‚»ãƒ«ï¼†ã“ã® 8dot ç¸¦å¸¯ã® basic15 ãƒ’ã‚¹ãƒˆã‚°ãƒ©ãƒ  ---
             int cell_counts[BASIC_COLORS] = {0};
 
             for (A_long yy = 0; yy < cell_h; ++yy) {
@@ -1086,7 +1086,7 @@ static void apply_8dot2col_attr_best(
                 }
             }
 
-            // --- (2) ƒZƒ‹“à‚ÌŠes 8~1 ƒuƒƒbƒN‚²‚Æ‚É 2FƒyƒA‚ğ‘I‚Ô ---
+            // --- (2) ã‚»ãƒ«å†…ã®å„è¡Œ 8Ã—1 ãƒ–ãƒ­ãƒƒã‚¯ã”ã¨ã« 2è‰²ãƒšã‚¢ã‚’é¸ã¶ ---
             for (A_long yy = 0; yy < cell_h; ++yy) {
                 A_long y = y0 + yy;
                 PixelT* row = data + y * row_pitch;
@@ -1094,7 +1094,7 @@ static void apply_8dot2col_attr_best(
                 int block_counts[BASIC_COLORS] = {0};
                 int idx_list[8];
 
-                // ‚±‚Ìs‚Ì 8~1 ƒuƒƒbƒN“à basic15 WŒv
+                // ã“ã®è¡Œã® 8Ã—1 ãƒ–ãƒ­ãƒƒã‚¯å†… basic15 é›†è¨ˆ
                 for (int i = 0; i < block_w; ++i) {
                     PixelT& p = row[x_start + i];
 
@@ -1107,7 +1107,7 @@ static void apply_8dot2col_attr_best(
                     block_counts[idx]++;
                 }
 
-                // unique ‚ÈFƒCƒ“ƒfƒbƒNƒX‚ğ—ñ‹“iÅ‘å 8 í—Şj
+                // unique ãªè‰²ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã‚’åˆ—æŒ™ï¼ˆæœ€å¤§ 8 ç¨®é¡ï¼‰
                 int unique_indices[8];
                 int num_unique = 0;
                 for (int k = 0; k < BASIC_COLORS && num_unique < 8; ++k) {
@@ -1116,7 +1116,7 @@ static void apply_8dot2col_attr_best(
                     }
                 }
                 if (num_unique <= 1) {
-                    // ‚à‚Æ‚à‚Æ 1F‚È‚ç 2F§ŒÀ‚·‚é•K—v‚È‚µ
+                    // ã‚‚ã¨ã‚‚ã¨ 1è‰²ãªã‚‰ 2è‰²åˆ¶é™ã™ã‚‹å¿…è¦ãªã—
                     continue;
                 }
 
@@ -1131,7 +1131,7 @@ static void apply_8dot2col_attr_best(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
-                        // --- err_block: ‚±‚Ìs(8~1)‚ÌŒë· ---
+                        // --- err_block: ã“ã®è¡Œ(8Ã—1)ã®èª¤å·® ---
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -1144,7 +1144,7 @@ static void apply_8dot2col_attr_best(
                             err_block += (long)cnt * d;
                         }
 
-                        // --- err_cell: ‚±‚ÌƒZƒ‹‘S‘Ì(8~N)‚ÌŒë· ---
+                        // --- err_cell: ã“ã®ã‚»ãƒ«å…¨ä½“(8Ã—N)ã®èª¤å·® ---
                         long err_cell = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = cell_counts[k];
@@ -1159,7 +1159,7 @@ static void apply_8dot2col_attr_best(
 
                         double score =
                             (double)err_block +
-                            ATTR_LAMBDA * (double)err_cell;  // © ‘®«ƒZƒ‹Šñ‚¹
+                            ATTR_LAMBDA * (double)err_cell;  // â† å±æ€§ã‚»ãƒ«å¯„ã›
 
                         if (first || score < best_score) {
                             first      = false;
@@ -1170,7 +1170,7 @@ static void apply_8dot2col_attr_best(
                     }
                 }
 
-                // --- ‘I‚Î‚ê‚½ best_a/best_b ‚ÅA‚±‚Ìs‚Ì 8~1 ƒuƒƒbƒN‚¾‚¯‚ğŠÛ‚ß‚é ---
+                // --- é¸ã°ã‚ŒãŸ best_a/best_b ã§ã€ã“ã®è¡Œã® 8Ã—1 ãƒ–ãƒ­ãƒƒã‚¯ã ã‘ã‚’ä¸¸ã‚ã‚‹ ---
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
 
@@ -1191,21 +1191,21 @@ static void apply_8dot2col_attr_best(
 
 
 static const double TRANSITION_LAMBDA = 0.5;
-// 0.3?1.0 ‚ÌŠÔ‚Å’²®—p
-// 0.3?0.5FÃ~‰æ‚Æ“®‰æ‚Ìƒoƒ‰ƒ“ƒX—Ç‚¢Š´‚¶
-// 0.8?1.0F“®‰æŒü‚¯E‰¡•ûŒü‚ÌƒKƒ`ƒƒ‚Â‚«‚©‚È‚è—}§
+// 0.3?1.0 ã®é–“ã§èª¿æ•´ç”¨
+// 0.3?0.5ï¼šé™æ­¢ç”»ã¨å‹•ç”»ã®ãƒãƒ©ãƒ³ã‚¹è‰¯ã„æ„Ÿã˜
+// 0.8?1.0ï¼šå‹•ç”»å‘ã‘ãƒ»æ¨ªæ–¹å‘ã®ã‚¬ãƒãƒ£ã¤ãã‹ãªã‚ŠæŠ‘åˆ¶
 
 static inline int transition_cost_pair(int prevA, int prevB, int a, int b)
 {
     if (prevA < 0 || prevB < 0) {
-        return 0; // 1—ñ–Ú‚Íƒyƒiƒ‹ƒeƒB–³‚µ
+        return 0; // 1åˆ—ç›®ã¯ãƒšãƒŠãƒ«ãƒ†ã‚£ç„¡ã—
     }
 
-    // “¯‚¶‡˜
+    // åŒã˜é †åº
     if (a == prevA && b == prevB) {
         return 0;
     }
-    // “ü‚ê‘Ö‚¦‚¾‚¯
+    // å…¥ã‚Œæ›¿ãˆã ã‘
     if (a == prevB && b == prevA) {
         return 1;
     }
@@ -1215,9 +1215,9 @@ static inline int transition_cost_pair(int prevA, int prevB, int a, int b)
         (b == prevA) || (b == prevB);
 
     if (share) {
-        return 3;   // •Ğ•û‚¾‚¯“¯‚¶
+        return 3;   // ç‰‡æ–¹ã ã‘åŒã˜
     }
-    return 5;       // —¼•ûˆá‚¤
+    return 5;       // ä¸¡æ–¹é•ã†
 }
 
 template<typename PixelT>
@@ -1248,7 +1248,7 @@ static void apply_8dot2col_attr_best_penalty(
 
     const A_long num_blocks_x = (width + 7) / 8;
 
-    // c•ûŒü‚Í ATTRCELL_HEIGHT ‚²‚Æ‚É‘®«ƒZƒ‹‚Å‹æØ‚é
+    // ç¸¦æ–¹å‘ã¯ ATTRCELL_HEIGHT ã”ã¨ã«å±æ€§ã‚»ãƒ«ã§åŒºåˆ‡ã‚‹
     for (A_long y0 = 0; y0 < height; y0 += ATTRCELL_HEIGHT) {
 
         A_long cell_h = ATTRCELL_HEIGHT;
@@ -1257,16 +1257,16 @@ static void apply_8dot2col_attr_best_penalty(
         }
         if (cell_h <= 0) break;
 
-        // ƒZƒ‹“à‚ÌŠes
+        // ã‚»ãƒ«å†…ã®å„è¡Œ
         for (A_long yy = 0; yy < cell_h; ++yy) {
 
             A_long y = y0 + yy;
             PixelT* row = data + y * row_pitch;
 
             int prevA = -1;
-            int prevB = -1;  // ¶ƒuƒƒbƒN‚Ì 2FƒyƒA
+            int prevB = -1;  // å·¦ãƒ–ãƒ­ãƒƒã‚¯ã® 2è‰²ãƒšã‚¢
 
-            // ‰¡•ûŒü‚É 8dot ƒuƒƒbƒN‚ğ‘–¸
+            // æ¨ªæ–¹å‘ã« 8dot ãƒ–ãƒ­ãƒƒã‚¯ã‚’èµ°æŸ»
             for (A_long bx = 0; bx < num_blocks_x; ++bx) {
 
                 A_long x_start = bx * 8;
@@ -1278,7 +1278,7 @@ static void apply_8dot2col_attr_best_penalty(
                 int block_w = (int)(x_end - x_start);
                 if (block_w <= 0) continue;
 
-                // --- (1) ‚±‚Ìs 8~1 ƒuƒƒbƒN‚Ì basic15 WŒv ---
+                // --- (1) ã“ã®è¡Œ 8Ã—1 ãƒ–ãƒ­ãƒƒã‚¯ã® basic15 é›†è¨ˆ ---
                 int block_counts[BASIC_COLORS] = {0};
                 int idx_list[8];
 
@@ -1302,11 +1302,11 @@ static void apply_8dot2col_attr_best_penalty(
                     }
                 }
                 if (num_unique <= 1) {
-                    // 1F‚È‚ç‚»‚Ì‚Ü‚Ü
+                    // 1è‰²ãªã‚‰ãã®ã¾ã¾
                     continue;
                 }
 
-                // --- (2) ‚±‚ÌƒZƒ‹•‚±‚ÌƒuƒƒbƒN‚Ìuc‘ÑvƒqƒXƒgƒOƒ‰ƒ€ ---
+                // --- (2) ã“ã®ã‚»ãƒ«ï¼†ã“ã®ãƒ–ãƒ­ãƒƒã‚¯ã®ã€Œç¸¦å¸¯ã€ãƒ’ã‚¹ãƒˆã‚°ãƒ©ãƒ  ---
                 int cell_counts[BASIC_COLORS] = {0};
                 for (A_long yyc = 0; yyc < cell_h; ++yyc) {
                     PixelT* rowc = data + (y0 + yyc) * row_pitch;
@@ -1322,7 +1322,7 @@ static void apply_8dot2col_attr_best_penalty(
                     }
                 }
 
-                // --- (3) 2FƒyƒAŒó•â‚ğ‘“–‚½‚èFblock + cell + ‰¡ƒyƒiƒ‹ƒeƒB ---
+                // --- (3) 2è‰²ãƒšã‚¢å€™è£œã‚’ç·å½“ãŸã‚Šï¼šblock + cell + æ¨ªãƒšãƒŠãƒ«ãƒ†ã‚£ ---
                 double best_score = 0.0;
                 bool   first      = true;
                 int    best_a     = unique_indices[0];
@@ -1376,7 +1376,7 @@ static void apply_8dot2col_attr_best_penalty(
                     }
                 }
 
-                // --- (4) ‘I‚Î‚ê‚½ƒyƒA‚Å‚±‚Ìs 8~1 ƒuƒƒbƒN‚¾‚¯‚ğŠÛ‚ß‚é ---
+                // --- (4) é¸ã°ã‚ŒãŸãƒšã‚¢ã§ã“ã®è¡Œ 8Ã—1 ãƒ–ãƒ­ãƒƒã‚¯ã ã‘ã‚’ä¸¸ã‚ã‚‹ ---
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
 
@@ -1391,7 +1391,7 @@ static void apply_8dot2col_attr_best_penalty(
                     p.blue  = qc.b;
                 }
 
-                // ¶ƒuƒƒbƒN‚ÌƒyƒA‚Æ‚µ‚Ä•Û‘¶i‰¡•ûŒüƒyƒiƒ‹ƒeƒB—pj
+                // å·¦ãƒ–ãƒ­ãƒƒã‚¯ã®ãƒšã‚¢ã¨ã—ã¦ä¿å­˜ï¼ˆæ¨ªæ–¹å‘ãƒšãƒŠãƒ«ãƒ†ã‚£ç”¨ï¼‰
                 prevA = best_a;
                 prevB = best_b;
             }
@@ -1400,7 +1400,7 @@ static void apply_8dot2col_attr_best_penalty(
 }
 
 // ---------------------------------------------------------------------------
-// 8bit ARGB (AE—p) —Êq‰»
+// 8bit ARGB (AEç”¨) é‡å­åŒ–
 // ---------------------------------------------------------------------------
 
 static PF_Err
@@ -1413,21 +1413,21 @@ FilterImage8 (
 {
     QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
 
-    // “ü—ÍF‚ğƒ[ƒJƒ‹ƒRƒs[
+    // å…¥åŠ›è‰²ã‚’ãƒ­ãƒ¼ã‚«ãƒ«ã‚³ãƒ”ãƒ¼
     A_u_char r = inP->red;
     A_u_char g = inP->green;
     A_u_char b = inP->blue;
 
-    // 1?4 ‚Ì‘Oˆ—
+    // 1?4 ã®å‰å‡¦ç†
     apply_preprocess(qi, r, g, b);
 
     int basic_idx = 0;
 
     if (qi && qi->use_dither) {
-        // ‚Ç‚±‚Ü‚Å‚ÌƒpƒŒƒbƒg‚ğg‚¤‚©
+        // ã©ã“ã¾ã§ã®ãƒ‘ãƒ¬ãƒƒãƒˆã‚’ä½¿ã†ã‹
         int num_colors = MSX1PQ::kNumQuantColors;
         if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex; // ’á‹P“xƒpƒŒƒbƒg‚ğœŠO
+            num_colors = MSX1PQ::kFirstDarkDitherIndex; // ä½è¼åº¦ãƒ‘ãƒ¬ãƒƒãƒˆã‚’é™¤å¤–
         }
 
         int palette_idx;
@@ -1444,7 +1444,7 @@ FilterImage8 (
 
         basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, xL, yL);
     } else {
-        // ƒfƒBƒUOFF: ’¼Ú15F‚Ö
+        // ãƒ‡ã‚£ã‚¶OFF: ç›´æ¥15è‰²ã¸
         if (qi && qi->use_hsb) {
             basic_idx = nearest_basic_hsb(
                 r, g, b,
@@ -1469,7 +1469,7 @@ FilterImage8 (
 }
 
 // ---------------------------------------------------------------------------
-// 8bit BGRA (Premiere—p) —Êq‰»
+// 8bit BGRA (Premiereç”¨) é‡å­åŒ–
 // ---------------------------------------------------------------------------
 static PF_Err
 FilterImageBGRA_8u (
@@ -1524,8 +1524,8 @@ FilterImageBGRA_8u (
 
     const MSX1PQ::QuantColor &qc =
         (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-            ? MSX1PQ::kBasicColorsMsx2[basic_idx]  // š MSX2 ‚Ì 15F
-            : MSX1PQ::kQuantColors[basic_idx];     // š MSX1 ‚Ì 15F
+            ? MSX1PQ::kBasicColorsMsx2[basic_idx]  // â˜… MSX2 ã® 15è‰²
+            : MSX1PQ::kQuantColors[basic_idx];     // â˜… MSX1 ã® 15è‰²
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
@@ -1548,7 +1548,7 @@ Render (
     PF_Err  err    = PF_Err_NONE;
     A_long  linesL = output->extent_hint.bottom - output->extent_hint.top;
 
-    // ---- ƒpƒ‰ƒ[ƒ^“Ç‚İæ‚è ----
+    // ---- ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿èª­ã¿å–ã‚Š ----
     QuantInfo qi;
     qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
     qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
@@ -1570,7 +1570,7 @@ Render (
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
-    // ‰æ‘œƒTƒCƒYiextent_hint ƒx[ƒXj
+    // ç”»åƒã‚µã‚¤ã‚ºï¼ˆextent_hint ãƒ™ãƒ¼ã‚¹ï¼‰
     const A_long width  = output->extent_hint.right  - output->extent_hint.left;
     const A_long height = output->extent_hint.bottom - output->extent_hint.top;
 
@@ -1587,7 +1587,7 @@ Render (
 
         if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
 
-            // ---- 1ƒpƒX–ÚF’Êí‚Ì—Êq‰»iƒfƒBƒU‚È‚Çj----
+            // ---- 1ãƒ‘ã‚¹ç›®ï¼šé€šå¸¸ã®é‡å­åŒ–ï¼ˆãƒ‡ã‚£ã‚¶ãªã©ï¼‰----
             AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
                 in_dataP,
                 kPFIterate8Suite,
@@ -1604,15 +1604,15 @@ Render (
                 FilterImageBGRA_8u,
                 output);
 
-            // ---- 2ƒpƒX–ÚF8dot / 2color Œãˆ—iŠî–{1j----
+            // ---- 2ãƒ‘ã‚¹ç›®ï¼š8dot / 2color å¾Œå‡¦ç†ï¼ˆåŸºæœ¬1ï¼‰----
             if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
-                // ‚·‚Å‚É width / height ‚Íã‚ÅŒvZÏ‚İ‚Å‚àOK‚Å‚·‚ªA
-                // –¾¦‚µ‚Ä‚¨‚­‚È‚ç‚±‚Ì‚Ü‚Ü‚Å‚à‘åä•v‚Å‚·B
+                // ã™ã§ã« width / height ã¯ä¸Šã§è¨ˆç®—æ¸ˆã¿ã§ã‚‚OKã§ã™ãŒã€
+                // æ˜ç¤ºã—ã¦ãŠããªã‚‰ã“ã®ã¾ã¾ã§ã‚‚å¤§ä¸ˆå¤«ã§ã™ã€‚
                 A_long width  = output->extent_hint.right  - output->extent_hint.left;
                 A_long height = output->extent_hint.bottom - output->extent_hint.top;
 
-                // BGRA_4444_8u —p‚Ìƒsƒbƒ`
+                // BGRA_4444_8u ç”¨ã®ãƒ”ãƒƒãƒ
                 A_long row_pitch = output->rowbytes / sizeof(MSX1PQ_Pixel_BGRA_8u);
 
                 MSX1PQ_Pixel_BGRA_8u* base =
@@ -1639,7 +1639,7 @@ Render (
     } else {
         // AE: ARGB32 8bit
 
-        // ---- 1ƒpƒX–ÚF’Êí‚Ì—Êq‰» ----
+        // ---- 1ãƒ‘ã‚¹ç›®ï¼šé€šå¸¸ã®é‡å­åŒ– ----
         AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
             in_dataP,
             kPFIterate8Suite,
@@ -1656,7 +1656,7 @@ Render (
             FilterImage8,
             output);
 
-        // ---- 2ƒpƒX–ÚF8dot / 2color Œãˆ—iŠî–{1j----
+        // ---- 2ãƒ‘ã‚¹ç›®ï¼š8dot / 2color å¾Œå‡¦ç†ï¼ˆåŸºæœ¬1ï¼‰----
         if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
             A_long row_bytes = output->rowbytes;
@@ -1667,7 +1667,7 @@ Render (
             PF_Pixel8* start =
                 reinterpret_cast<PF_Pixel8*>(output->data);
 
-            // rowbytes < 0iã‚©‚ç‰º‚Å‚Í‚È‚­‰º‚©‚çãj‚É”õ‚¦‚½•â³
+            // rowbytes < 0ï¼ˆä¸Šã‹ã‚‰ä¸‹ã§ã¯ãªãä¸‹ã‹ã‚‰ä¸Šï¼‰ã«å‚™ãˆãŸè£œæ­£
             if (row_bytes < 0) {
                 start = reinterpret_cast<PF_Pixel8*>(
                     reinterpret_cast<char*>(output->data)
@@ -1688,7 +1688,7 @@ Render (
 }
 
 // ---------------------------------------------------------------------------
-// ƒGƒ“ƒgƒŠ“o˜^
+// ã‚¨ãƒ³ãƒˆãƒªç™»éŒ²
 // ---------------------------------------------------------------------------
 
 extern "C" DllExport
@@ -1723,7 +1723,7 @@ UpdateParameterUI(
 {
     PF_Err err = PF_Err_NONE;
 
-    // ParamUtilsSuite3 ‚ğæ‚é
+    // ParamUtilsSuite3 ã‚’å–ã‚‹
     AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
         in_data,
         kPFParamUtilsSuite,
@@ -1817,10 +1817,10 @@ EffectMain(
             case PF_Cmd_RENDER:
                 err = Render(in_dataP, out_data, params, output);
                 break;
-            // SMART_RENDER / SMART_PRE_RENDER ‚Í 8bitê—p‚É‚Â‚«–¢‘Î‰
+            // SMART_RENDER / SMART_PRE_RENDER ã¯ 8bitå°‚ç”¨ã«ã¤ãæœªå¯¾å¿œ
         }
     } catch(PF_Err &thrown_err) {
-        // AE ‚É—áŠO‚ğ”ò‚Î‚³‚È‚¢
+        // AE ã«ä¾‹å¤–ã‚’é£›ã°ã•ãªã„
         err = thrown_err;
     }
     return err;

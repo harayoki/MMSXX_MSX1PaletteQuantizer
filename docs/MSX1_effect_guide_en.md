@@ -30,8 +30,8 @@ It is recommended to apply the following adjustments before the MSX1 effect.
     - **Fast**: Uses the two most frequently occurring colors, operates quickly.
     - **Basic**: Selects two colors based on color distance from the appearing colors.
     - **Best**: Re-selects the two most optimal colors from the 15-palette that represent the colors appearing within 8 pixels. (Recommended)
-    - **Best Attribute**: In addition to "Best", considers the colors of the surrounding upper and lower pixels to select two colors.
-    - **Best Transition**: In addition to "Best Attribute", considers the colors of the left and right frames to select two colors.
+    - **Best-Atttr**: In addition to "Best", considers the colors of the surrounding upper and lower pixels to select two colors.
+    - **Best-Tran**: In addition to "Best Attribute", considers the colors of the left and right frames to select two colors.
 -   **Color Distance**: Selects the color distance calculation method from RGB or HSB.
 -   **HSB Weight**: Adjusts the weighting (Hue, Saturation, Brightness) for color distance calculation in the HSB space.
 

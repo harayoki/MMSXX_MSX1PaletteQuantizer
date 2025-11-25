@@ -18,7 +18,7 @@
 
 
 
-// ParamsSetup() �̒ǉ����ƕK����v�����邱��
+// ParamsSetup() の追加順と必ず一致させること
 enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_INPUT = 0,       // Input layer
 
@@ -50,7 +50,7 @@ enum MSX1PQ_EightDotMode {
     MSX1PQ_EIGHTDOT_MODE_FAST1  = 2, // Lightweight version
     MSX1PQ_EIGHTDOT_MODE_BASIC1 = 3, // Standard version
     MSX1PQ_EIGHTDOT_MODE_BEST1  = 4,  // Best version
-    MSX1PQ_EIGHTDOT_MODE_ATTR_BEST = 5, // Attribute cell BEST (8�~N)
+    MSX1PQ_EIGHTDOT_MODE_ATTR_BEST = 5, // Attribute cell BEST (8×N)
     MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST = 6  // Transition penalty BEST
  };
 

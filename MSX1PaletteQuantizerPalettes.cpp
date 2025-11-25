@@ -4,21 +4,21 @@
 const MSX1PQ::QuantColor MSX1PQ::kQuantColors[] = {
 
     // ---- basic_colors_msx1 ----
-    {   0,   0,   0 },   //  1: •
-    {  62, 184,  73 },   //  2: —Î
-    { 116, 208, 125 },   //  3: ”–—Î
-    {  89,  85, 224 },   //  4: Ž‡
-    { 128, 118, 241 },   //  5: ”–Ž‡
-    { 185,  94,  81 },   //  6: Ô
-    { 101, 219, 239 },   //  7: …F
-    { 219, 101,  89 },   //  8: ÔŽ‡
-    { 255, 137, 125 },   //  9: ƒsƒ“ƒN
-    { 204, 195,  94 },   // 10: ‰©“yF
-    { 222, 208, 135 },   // 11: –¾‚é‚¢‰©F
-    {  58, 162,  65 },   // 12: [—Î
-    { 183, 102, 181 },   // 13: ÔŽ‡
-    { 204, 204, 204 },   // 14: ŠDF
-    { 255, 255, 255 },   // 15: ”’
+    {   0,   0,   0 },   //  1: é»’
+    {  62, 184,  73 },   //  2: ç·‘
+    { 116, 208, 125 },   //  3: è–„ç·‘
+    {  89,  85, 224 },   //  4: ç´«
+    { 128, 118, 241 },   //  5: è–„ç´«
+    { 185,  94,  81 },   //  6: èµ¤
+    { 101, 219, 239 },   //  7: æ°´è‰²
+    { 219, 101,  89 },   //  8: èµ¤ç´«
+    { 255, 137, 125 },   //  9: ãƒ”ãƒ³ã‚¯
+    { 204, 195,  94 },   // 10: é»„åœŸè‰²
+    { 222, 208, 135 },   // 11: æ˜Žã‚‹ã„é»„è‰²
+    {  58, 162,  65 },   // 12: æ·±ç·‘
+    { 183, 102, 181 },   // 13: èµ¤ç´«
+    { 204, 204, 204 },   // 14: ç°è‰²
+    { 255, 255, 255 },   // 15: ç™½
 
     // ---- palette_diz_new ----
     {  44,  42, 112 },   // 16: dith_col2(1, 4)
@@ -133,10 +133,10 @@ const MSX1PQ::QuantColor MSX1PQ::kBasicColorsMsx2[15] = {
 
 const int MSX1PQ::kNumQuantColors = sizeof(MSX1PQ::kQuantColors) / sizeof(MSX1PQ::kQuantColors[0]);
 const int MSX1PQ::kNumBasicColors = 15;
-const int MSX1PQ::kNumDarkDitherColors  = 6; // palette_low_luminance ‚ÌŒÂ”
+const int MSX1PQ::kNumDarkDitherColors  = 6; // palette_low_luminance ã®å€‹æ•°
 const int MSX1PQ::kFirstDarkDitherIndex = MSX1PQ::kNumQuantColors - MSX1PQ::kNumDarkDitherColors;
 
-// ---- ƒfƒBƒUƒpƒ^[ƒ“¶¬ƒ}ƒNƒ ----
+// ---- ãƒ‡ã‚£ã‚¶ãƒ‘ã‚¿ãƒ¼ãƒ³ç”Ÿæˆãƒžã‚¯ãƒ­ ----
 #define MAKE_LINE_PATTERN(NAME, COL1_ID, COL2_ID) \
     static const A_u_char NAME[] = { \
         (A_u_char)((COL1_ID) - 1), \
@@ -151,7 +151,7 @@ const int MSX1PQ::kFirstDarkDitherIndex = MSX1PQ::kNumQuantColors - MSX1PQ::kNum
         (A_u_char)((COL2_ID) - 1), (A_u_char)((COL1_ID) - 1)  \
     }
 
-// Šî–{15F‚Ì 1x1 ƒpƒ^[ƒ“ (id 1..15 ¨ index 0..14)
+// åŸºæœ¬15è‰²ã® 1x1 ãƒ‘ã‚¿ãƒ¼ãƒ³ (id 1..15 â†’ index 0..14)
 static const A_u_char kPattern_basic_1[]  = {  0 };
 static const A_u_char kPattern_basic_2[]  = {  1 };
 static const A_u_char kPattern_basic_3[]  = {  2 };
@@ -168,7 +168,7 @@ static const A_u_char kPattern_basic_13[] = { 12 };
 static const A_u_char kPattern_basic_14[] = { 13 };
 static const A_u_char kPattern_basic_15[] = { 14 };
 
-// ---- line_dithering —p (dith_col2 ‚ÌƒyƒA‘S•”) ----
+// ---- line_dithering ç”¨ (dith_col2 ã®ãƒšã‚¢å…¨éƒ¨) ----
 MAKE_LINE_PATTERN(kPattern_1_4,   1,  4);
 MAKE_LINE_PATTERN(kPattern_1_6,   1,  6);
 MAKE_LINE_PATTERN(kPattern_1_7,   1,  7);
@@ -251,7 +251,7 @@ MAKE_LINE_PATTERN(kPattern_11_15, 11, 15);
 MAKE_LINE_PATTERN(kPattern_13_15, 13, 15);
 MAKE_LINE_PATTERN(kPattern_14_15, 14, 15);
 
-// ---- dark_dithering —p (palette_low_luminance) ----
+// ---- dark_dithering ç”¨ (palette_low_luminance) ----
 MAKE_DARK_PATTERN(kPattern_dark_1_6,   1,  6);
 MAKE_DARK_PATTERN(kPattern_dark_1_10,  1, 10);
 MAKE_DARK_PATTERN(kPattern_dark_1_12,  1, 12);
@@ -259,8 +259,8 @@ MAKE_DARK_PATTERN(kPattern_dark_1_4,   1,  4);
 MAKE_DARK_PATTERN(kPattern_dark_1_7,   1,  7);
 MAKE_DARK_PATTERN(kPattern_dark_1_13,  1, 13);
 
-// ---- ƒpƒŒƒbƒgƒCƒ“ƒfƒbƒNƒX ¨ ƒfƒBƒUƒpƒ^[ƒ“ ----
-// MSX1PQ::kQuantColors ‚Æ“¯‚¶‡”Ô‚Å•À‚×‚é
+// ---- ãƒ‘ãƒ¬ãƒƒãƒˆã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ â†’ ãƒ‡ã‚£ã‚¶ãƒ‘ã‚¿ãƒ¼ãƒ³ ----
+// MSX1PQ::kQuantColors ã¨åŒã˜é †ç•ªã§ä¸¦ã¹ã‚‹
 const MSX1PQ::DitherPattern MSX1PQ::kPaletteDither[] = {
     // basic 15 (1x1)
     { kPattern_basic_1,  1, 1 }, //  0
@@ -279,7 +279,7 @@ const MSX1PQ::DitherPattern MSX1PQ::kPaletteDither[] = {
     { kPattern_basic_14, 1, 1 }, // 13
     { kPattern_basic_15, 1, 1 }, // 14
 
-    // palette_diz_new (‘S•” line_dithering: 1x2)
+    // palette_diz_new (å…¨éƒ¨ line_dithering: 1x2)
     { kPattern_1_4,   1, 2 }, // 15: (44,42,112)
     { kPattern_1_6,   1, 2 }, // 16
     { kPattern_1_7,   1, 2 }, // 17
@@ -351,7 +351,7 @@ const MSX1PQ::DitherPattern MSX1PQ::kPaletteDither[] = {
 
     { kPattern_10_11, 1, 2 }, // 77
     { kPattern_3_15,  1, 2 }, // 78
-    { kPattern_4_5,   1, 2 }, // 79 (108,102,232 ‚à 4,5)
+    { kPattern_4_5,   1, 2 }, // 79 (108,102,232 ã‚‚ 4,5)
     { kPattern_5_7,   1, 2 }, // 80
     { kPattern_14_15, 1, 2 }, // 81
 
@@ -361,7 +361,7 @@ const MSX1PQ::DitherPattern MSX1PQ::kPaletteDither[] = {
     { kPattern_9_11,  1, 2 }, // 85
     { kPattern_6_15,  1, 2 }, // 86
     { kPattern_8_15,  1, 2 }, // 87
-    { kPattern_11_15, 1, 2 }, // 88 (Ä—˜—p)
+    { kPattern_11_15, 1, 2 }, // 88 (å†åˆ©ç”¨)
 
     // palette_low_luminance (dark_dithering: 2x4)
     { kPattern_dark_1_6,   2, 4 }, // 89
@@ -391,7 +391,7 @@ MSX1PQ::palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
     }
 
     if (!dp || !dp->pattern || dp->width == 0 || dp->height == 0) {
-        // –¢’è‹`Žž‚Í‚Æ‚è‚ ‚¦‚¸ basic 15 ‚ÉŠÛ‚ß‚é
+        // æœªå®šç¾©æ™‚ã¯ã¨ã‚Šã‚ãˆãš basic 15 ã«ä¸¸ã‚ã‚‹
         if (palette_idx < MSX1PQ::kNumBasicColors) {
             return palette_idx;
         } else {
@@ -414,7 +414,7 @@ MSX1PQ::palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
     return basic_idx;
 }
 
-// ---- ƒfƒBƒU–³‚µ—p Å‹ß–T basic15 ----
+// ---- ãƒ‡ã‚£ã‚¶ç„¡ã—ç”¨ æœ€è¿‘å‚ basic15 ----
 int
 MSX1PQ::nearest_basic_rgb(A_u_char r, A_u_char g, A_u_char b)
 {
