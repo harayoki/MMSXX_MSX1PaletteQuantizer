@@ -41,11 +41,25 @@ inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
 namespace MSX1PQ {
     constexpr char kPluginName[]        = "MSX1 Palette Quantizer";
     constexpr char kPluginDescription[] = "\nMSX1-style palette quantization and dithering.";
-    constexpr int  kVersionMajor        = 5;
-    constexpr int  kVersionMinor        = 6;
+    constexpr int  kVersionMajor        = 0;
+    constexpr int  kVersionMinor        = 2;
     constexpr int  kVersionBug          = 0;
-    constexpr int  kVersionStage        = PF_Stage_DEVELOP;
+    constexpr int  kVersionStage        = PF_Stage_ALPHA;
+    /*
+	PF_Stage_DEVELOP,
+	PF_Stage_ALPHA,
+	PF_Stage_BETA,
+	PF_Stage_RELEASE
+	*/
     constexpr int  kVersionBuild        = 1;
+
+    constexpr unsigned long kVersionPacked = PF_VERSION(
+        kVersionMajor,
+        kVersionMinor,
+        kVersionBug,
+        kVersionStage,
+        kVersionBuild
+    );
 }
 
 typedef struct {
@@ -444,10 +458,11 @@ About (
     PF_LayerDef      *output )
 {
     PF_SPRINTF(out_data->return_msg,
-               "%s, v%d.%d\n%s",
+               "%s, v%d.%d (%lu)\n%s",
                MSX1PQ::kPluginName,
                MSX1PQ::kVersionMajor,
                MSX1PQ::kVersionMinor,
+               MSX1PQ::kVersionPacked,
                MSX1PQ::kPluginDescription);
     return PF_Err_NONE;
 }
@@ -464,14 +479,8 @@ GlobalSetup (
     PF_LayerDef      *output )
 {
     PF_Err    err = PF_Err_NONE;
-    out_data->my_version = PF_VERSION(
-        MSX1PQ::kVersionMajor,
-        MSX1PQ::kVersionMinor,
-        MSX1PQ::kVersionBug,
-        MSX1PQ::kVersionStage,
-        MSX1PQ::kVersionBuild
-    );
-
+    out_data->my_version = MSX1PQ::kVersionPacked;
+    // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
     // 8bit専用: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER は立てない
     // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
     //                         PF_OutFlag_NON_PARAM_VARY;
