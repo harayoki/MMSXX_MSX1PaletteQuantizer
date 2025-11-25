@@ -1,7 +1,7 @@
 #include "MSX1PaletteQuantizerPalettes.h"
 #include <limits.h>
 
-const QuantColor kQuantColors[] = {
+const MSX1PQ::QuantColor MSX1PQ::kQuantColors[] = {
 
     // ---- basic_colors_msx1 ----
     {   0,   0,   0 },   //  1: 黒
@@ -113,7 +113,7 @@ const QuantColor kQuantColors[] = {
     {  61,  34,  61 },   // 95: dark_dithering(1,13)
 };
 
-const QuantColor kBasicColorsMsx2[15] = {
+const MSX1PQ::QuantColor MSX1PQ::kBasicColorsMsx2[15] = {
     { 0x00, 0x00, 0x00 }, // 1
     { 0x22, 0xDD, 0x22 }, // 2
     { 0x66, 0xFF, 0x66 }, // 3
@@ -131,10 +131,10 @@ const QuantColor kBasicColorsMsx2[15] = {
     { 0xFF, 0xFF, 0xFF }, // 15
 };
 
-const int kNumQuantColors = sizeof(kQuantColors) / sizeof(kQuantColors[0]);
-const int kNumBasicColors = 15;
-const int kNumDarkDitherColors  = 6; // palette_low_luminance の個数
-const int kFirstDarkDitherIndex = kNumQuantColors - kNumDarkDitherColors;
+const int MSX1PQ::kNumQuantColors = sizeof(MSX1PQ::kQuantColors) / sizeof(MSX1PQ::kQuantColors[0]);
+const int MSX1PQ::kNumBasicColors = 15;
+const int MSX1PQ::kNumDarkDitherColors  = 6; // palette_low_luminance の個数
+const int MSX1PQ::kFirstDarkDitherIndex = MSX1PQ::kNumQuantColors - MSX1PQ::kNumDarkDitherColors;
 
 // ---- ディザパターン生成マクロ ----
 #define MAKE_LINE_PATTERN(NAME, COL1_ID, COL2_ID) \
@@ -260,8 +260,8 @@ MAKE_DARK_PATTERN(kPattern_dark_1_7,   1,  7);
 MAKE_DARK_PATTERN(kPattern_dark_1_13,  1, 13);
 
 // ---- パレットインデックス → ディザパターン ----
-// kQuantColors と同じ順番で並べる
-const DitherPattern kPaletteDither[] = {
+// MSX1PQ::kQuantColors と同じ順番で並べる
+const MSX1PQ::DitherPattern MSX1PQ::kPaletteDither[] = {
     // basic 15 (1x1)
     { kPattern_basic_1,  1, 1 }, //  0
     { kPattern_basic_2,  1, 1 }, //  1
@@ -372,30 +372,30 @@ const DitherPattern kPaletteDither[] = {
     { kPattern_dark_1_13,  2, 4 }, // 94
 };
 
-const int kNumPaletteDither =
-    sizeof(kPaletteDither) / sizeof(kPaletteDither[0]);
+const int MSX1PQ::kNumPaletteDither =
+    sizeof(MSX1PQ::kPaletteDither) / sizeof(MSX1PQ::kPaletteDither[0]);
 
-// ---- palette_index_to_basic_index ----
+// ---- MSX1PQ::palette_index_to_basic_index ----
 int
-palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
+MSX1PQ::palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
 {
     if (palette_idx < 0) {
         palette_idx = 0;
-    } else if (palette_idx >= kNumQuantColors) {
-        palette_idx = kNumQuantColors - 1;
+    } else if (palette_idx >= MSX1PQ::kNumQuantColors) {
+        palette_idx = MSX1PQ::kNumQuantColors - 1;
     }
 
-    const DitherPattern* dp = nullptr;
-    if (palette_idx < kNumPaletteDither) {
-        dp = &kPaletteDither[palette_idx];
+    const MSX1PQ::DitherPattern* dp = nullptr;
+    if (palette_idx < MSX1PQ::kNumPaletteDither) {
+        dp = &MSX1PQ::kPaletteDither[palette_idx];
     }
 
     if (!dp || !dp->pattern || dp->width == 0 || dp->height == 0) {
         // 未定義時はとりあえず basic 15 に丸める
-        if (palette_idx < kNumBasicColors) {
+        if (palette_idx < MSX1PQ::kNumBasicColors) {
             return palette_idx;
         } else {
-            return palette_idx % kNumBasicColors;
+            return palette_idx % MSX1PQ::kNumBasicColors;
         }
     }
 
@@ -409,22 +409,22 @@ palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
 
     int basic_idx = dp->pattern[idx]; // 0..14
     if (basic_idx < 0) basic_idx = 0;
-    if (basic_idx >= kNumBasicColors) basic_idx = kNumBasicColors - 1;
+    if (basic_idx >= MSX1PQ::kNumBasicColors) basic_idx = kNumBasicColors - 1;
 
     return basic_idx;
 }
 
 // ---- ディザ無し用 最近傍 basic15 ----
 int
-nearest_basic_rgb(A_u_char r, A_u_char g, A_u_char b)
+MSX1PQ::nearest_basic_rgb(A_u_char r, A_u_char g, A_u_char b)
 {
     int  best_idx  = 0;
     long best_dist = LONG_MAX;
 
-    for (int i = 0; i < kNumBasicColors; i++) {
-        long dr = (long)r - (long)kQuantColors[i].r;
-        long dg = (long)g - (long)kQuantColors[i].g;
-        long db = (long)b - (long)kQuantColors[i].b;
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
+        long dr = (long)r - (long)MSX1PQ::kQuantColors[i].r;
+        long dg = (long)g - (long)MSX1PQ::kQuantColors[i].g;
+        long db = (long)b - (long)MSX1PQ::kQuantColors[i].b;
 
         long dist = dr * dr + dg * dg + db * db;
         if (dist < best_dist) {

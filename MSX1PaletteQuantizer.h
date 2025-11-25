@@ -75,7 +75,7 @@ extern "C" {
 
 typedef struct {
 	A_u_char	blue, green, red, alpha;
-} PF_Pixel_BGRA_8u;
+} MSX1PQ_Pixel_BGRA_8u;
 
 //typedef struct {
 //	A_u_char	Pr, Pb, luma, alpha;
