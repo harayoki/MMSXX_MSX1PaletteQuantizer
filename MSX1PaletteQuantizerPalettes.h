@@ -4,40 +4,40 @@
 #include "AE_Effect.h"
 
 namespace MSX1PQ {
-    // MSX1 ƒJƒ‰[1‚Â•ª
+    // MSX1 ã‚«ãƒ©ãƒ¼1ã¤åˆ†
     typedef struct {
         A_u_char r;
         A_u_char g;
         A_u_char b;
     } QuantColor;
 
-    // ƒfƒBƒUƒpƒ^[ƒ“
+    // ãƒ‡ã‚£ã‚¶ãƒ‘ã‚¿ãƒ¼ãƒ³
     typedef struct {
-        const A_u_char* pattern; // ’·‚³ = width * height, ’l‚Í 0..14 (Šî–{15FƒCƒ“ƒfƒbƒNƒX)
+        const A_u_char* pattern; // é•·ã• = width * height, å€¤ã¯ 0..14 (åŸºæœ¬15è‰²ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹)
         A_u_char        width;
         A_u_char        height;
     } DitherPattern;
 
-    // ƒpƒŒƒbƒg”z—ñ (MSX1Šî–{F + ƒfƒBƒU’†ŠÔF + ’á‹P“xƒpƒŒƒbƒg)
+    // ãƒ‘ãƒ¬ãƒƒãƒˆé…åˆ— (MSX1åŸºæœ¬è‰² + ãƒ‡ã‚£ã‚¶ä¸­é–“è‰² + ä½è¼åº¦ãƒ‘ãƒ¬ãƒƒãƒˆ)
     extern const QuantColor kQuantColors[];
     extern const int        kNumQuantColors;
 
-    // Šî–{15F‚Ì”
+    // åŸºæœ¬15è‰²ã®æ•°
     extern const int        kNumBasicColors;
 
-    // ƒpƒŒƒbƒg‚²‚Æ‚ÌƒfƒBƒUŠ„‚è“–‚Ä
+    // ãƒ‘ãƒ¬ãƒƒãƒˆã”ã¨ã®ãƒ‡ã‚£ã‚¶å‰²ã‚Šå½“ã¦
     extern const DitherPattern kPaletteDither[];
     extern const int           kNumPaletteDither;
 
-    // ƒpƒŒƒbƒgƒCƒ“ƒfƒbƒNƒX{À•W ¨ Šî–{15FƒCƒ“ƒfƒbƒNƒX
+    // ãƒ‘ãƒ¬ãƒƒãƒˆã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ï¼‹åº§æ¨™ â†’ åŸºæœ¬15è‰²ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹
     int palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL);
 
-    // ƒfƒBƒU‚È‚µ—pFRGB ¨ Šî–{15FƒCƒ“ƒfƒbƒNƒX
+    // ãƒ‡ã‚£ã‚¶ãªã—ç”¨ï¼šRGB â†’ åŸºæœ¬15è‰²ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹
     int nearest_basic_rgb(A_u_char r, A_u_char g, A_u_char b);
 
-    // ’á‹P“xƒfƒBƒUƒpƒŒƒbƒg‚Ì”ÍˆÍ
-    extern const int kNumDarkDitherColors;   // —á: 6
-    extern const int kFirstDarkDitherIndex;  // —á: MSX1PQ::kNumQuantColors - 6
+    // ä½è¼åº¦ãƒ‡ã‚£ã‚¶ãƒ‘ãƒ¬ãƒƒãƒˆã®ç¯„å›²
+    extern const int kNumDarkDitherColors;   // ä¾‹: 6
+    extern const int kFirstDarkDitherIndex;  // ä¾‹: MSX1PQ::kNumQuantColors - 6
 
     extern const QuantColor kBasicColorsMsx2[];
 
