@@ -1038,7 +1038,7 @@ static void apply_8dot2col_attr_best(
         return;
     }
 
-    const MSX1PQ::QuantColor* table = get_basic_palette(color_system);
+    const MSX1PQCore::QuantColor* table = get_basic_palette(color_system);
 
     // 15×15 距離テーブル（セル内共通）
     long dist2[BASIC_COLORS][BASIC_COLORS];
