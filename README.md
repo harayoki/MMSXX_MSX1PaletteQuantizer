@@ -66,7 +66,7 @@ Upon successful build, a plugin file (.aex or .plugin) will be generated.
 *   Navigate to the root directory of this repository.
     *   `cd {your_pc_path}\MMSXX_MSX1PaletteQuantizer`
 *   Build with `msbuild` command.
-    *   `msbuild Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
+    *   `msbuild platform\Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
 
 `MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `Win\x64` folder.
 

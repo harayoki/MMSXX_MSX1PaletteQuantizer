@@ -1,4 +1,3 @@
-
 #pragma once
 #ifndef MSX1_PALETTE_QUANTIZER_H
 #define MSX1_PALETTE_QUANTIZER_H
@@ -76,17 +75,5 @@ extern "C" {
 typedef struct {
 	A_u_char	blue, green, red, alpha;
 } MSX1PQ_Pixel_BGRA_8u;
-
-//typedef struct {
-//	A_u_char	Pr, Pb, luma, alpha;
-//} PF_Pixel_VUYA_8u;
-//
-//typedef struct {
-//	PF_FpShort	blue, green, red, alpha;
-//} PF_Pixel_BGRA_32f;
-//
-//typedef struct {
-//	PF_FpShort	Pr, Pb, luma, alpha;
-//} PF_Pixel_VUYA_32f;
 
 #endif
