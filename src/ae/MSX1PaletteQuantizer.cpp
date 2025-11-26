@@ -42,7 +42,7 @@ namespace MSX1PQ {
     constexpr char kPluginName[]        = "MSX1 Palette Quantizer";
     constexpr char kPluginDescription[] = "\nMSX1-style palette quantization and dithering.";
     constexpr int  kVersionMajor        = 0;
-    constexpr int  kVersionMinor        = 2;
+    constexpr int  kVersionMinor        = 3;
     constexpr int  kVersionBug          = 0;
     constexpr int  kVersionStage        = PF_Stage_ALPHA;
     /*
