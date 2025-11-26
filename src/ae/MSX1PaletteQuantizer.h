@@ -1,4 +1,3 @@
-
 #pragma once
 #ifndef MSX1_PALETTE_QUANTIZER_H
 #define MSX1_PALETTE_QUANTIZER_H
@@ -16,7 +15,9 @@
 #include "Param_Utils.h"
 #include "Smart_Utils.h"
 
+#include <cstdint>
 
+#include "../core/MSX1PQCore.h"
 
 // ParamsSetup() の追加順と必ず一致させること
 enum MSX1PQ_ParamId {
@@ -39,54 +40,22 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_NUM_PARAMS
 };
 
-
-enum MSX1PQ_DistanceMode {
-     MSX1PQ_DIST_MODE_RGB = 1,
-     MSX1PQ_DIST_MODE_HSB = 2
- };
-
-enum MSX1PQ_EightDotMode {
-    MSX1PQ_EIGHTDOT_MODE_NONE   = 1, // None
-    MSX1PQ_EIGHTDOT_MODE_FAST1  = 2, // Lightweight version
-    MSX1PQ_EIGHTDOT_MODE_BASIC1 = 3, // Standard version
-    MSX1PQ_EIGHTDOT_MODE_BEST1  = 4,  // Best version
-    MSX1PQ_EIGHTDOT_MODE_ATTR_BEST = 5, // Attribute cell BEST (8×N)
-    MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST = 6  // Transition penalty BEST
- };
-
-enum MSX1PQ_ColorSystem {
-    MSX1PQ_COLOR_SYS_MSX1 = 1,
-    MSX1PQ_COLOR_SYS_MSX2 = 2
-};
-
 extern "C" {
 
-	DllExport 
-	PF_Err
-	EffectMain (	
-		PF_Cmd			cmd,
-		PF_InData		*in_data,
-		PF_OutData		*out_data,
-		PF_ParamDef		*params[],
-		PF_LayerDef		*output,
-		void			*extra);
+        DllExport
+        PF_Err
+        EffectMain (
+                PF_Cmd                  cmd,
+                PF_InData               *in_data,
+                PF_OutData              *out_data,
+                PF_ParamDef             *params[],
+                PF_LayerDef             *output,
+                void                    *extra);
 
 }
 
 typedef struct {
-	A_u_char	blue, green, red, alpha;
+        std::uint8_t blue, green, red, alpha;
 } MSX1PQ_Pixel_BGRA_8u;
 
-//typedef struct {
-//	A_u_char	Pr, Pb, luma, alpha;
-//} PF_Pixel_VUYA_8u;
-//
-//typedef struct {
-//	PF_FpShort	blue, green, red, alpha;
-//} PF_Pixel_BGRA_32f;
-//
-//typedef struct {
-//	PF_FpShort	Pr, Pb, luma, alpha;
-//} PF_Pixel_VUYA_32f;
-
-#endif
+#endif // MSX1_PALETTE_QUANTIZER_H

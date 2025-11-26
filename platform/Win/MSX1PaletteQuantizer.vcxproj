@@ -322,6 +322,7 @@
     <ClInclude Include="$(AESDK_ROOT)Headers\AEFX_SuiteHandlerTemplate.h" />
     <ClInclude Include="$(AESDK_ROOT)Headers\AE_PluginData.h" />
     <ClInclude Include="..\..\src\ae\MSX1PaletteQuantizer.h" />
+    <ClInclude Include="..\..\src\core\MSX1PQCore.h" />
     <ClInclude Include="..\..\src\core\MSX1PQPalettes.h" />
     <ClInclude Include="$(AESDK_ROOT)Util\Smart_Utils.h" />
     <ClInclude Include="$(AESDK_ROOT)Util\String_Utils.h" />
@@ -381,6 +382,7 @@ cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)
   <ItemGroup>
     <ClCompile Include="$(AESDK_ROOT)Util\Smart_Utils.cpp" />
     <ClCompile Include="..\..\src\ae\MSX1PaletteQuantizer.cpp" />
+    <ClCompile Include="..\..\src\core\MSX1PQCore.cpp" />
     <ClCompile Include="..\..\src\core\MSX1PQPalettes.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

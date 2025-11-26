@@ -8,9 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		25F5A54E0B2A1A6B00D969DF /* Smart_Utils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 25F5A54C0B2A1A6B00D969DF /* Smart_Utils.cpp */; };
-		7EF36FD516F29A14002A3CB3 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7EF36FD416F29A14002A3CB3 /* Cocoa.framework */; };
-		D075387F09940A81000099DF /* MSX1PaletteQuantizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */; };
-		D075388309940AA7000099DF /* MSX1PaletteQuantizerPiPL.r in Resources */ = {isa = PBXBuildFile; fileRef = D075388209940AA7000099DF /* MSX1PaletteQuantizerPiPL.r */; };
+                7EF36FD516F29A14002A3CB3 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7EF36FD416F29A14002A3CB3 /* Cocoa.framework */; };
+                D075387F09940A81000099DF /* MSX1PaletteQuantizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */; };
+                D075388309940AA7000099DF /* MSX1PaletteQuantizerPiPL.r in Resources */ = {isa = PBXBuildFile; fileRef = D075388209940AA7000099DF /* MSX1PaletteQuantizerPiPL.r */; };
+                E1E3A0110A00000100000011 /* MSX1PQCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1E3A0010A00000100000001 /* MSX1PQCore.cpp */; };
+                E1E3A0120A00000100000012 /* MSX1PQPalettes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1E3A0030A00000100000003 /* MSX1PQPalettes.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,11 +25,15 @@
                7E5643281F6C7CEF00B5EAFE /* entry.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = entry.h; path = "$(AESDK_ROOT)/Util/entry.h"; sourceTree = "<group>"; };
                7EE914711A5C884A009CD299 /* AEFX_SuiteHandlerTemplate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AEFX_SuiteHandlerTemplate.h; path = "$(AESDK_ROOT)/Headers/AEFX_SuiteHandlerTemplate.h"; sourceTree = "<group>"; };
 		7EF36FD416F29A14002A3CB3 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
-		C4E618CC095A3CE80012CA3F /* MSX1PaletteQuantizer.plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MSX1PaletteQuantizer.plugin; sourceTree = BUILT_PRODUCTS_DIR; };
+               C4E618CC095A3CE80012CA3F /* MSX1PaletteQuantizer.plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MSX1PaletteQuantizer.plugin; sourceTree = BUILT_PRODUCTS_DIR; };
                D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MSX1PaletteQuantizer.cpp; path = ../../src/ae/MSX1PaletteQuantizer.cpp; sourceTree = "<group>"; };
                D075388209940AA7000099DF /* MSX1PaletteQuantizerPiPL.r */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.rez; name = MSX1PaletteQuantizerPiPL.r; path = ../../src/ae/MSX1PaletteQuantizerPiPL.r; sourceTree = "<group>"; };
                D0D30D350A48C36000AC30E7 /* AE_Effect.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = AE_Effect.h; path = "$(AESDK_ROOT)/Headers/AE_Effect.h"; sourceTree = "<group>"; };
                D0D30D360A48C37000AC30E7 /* MSX1PaletteQuantizer.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = MSX1PaletteQuantizer.h; path = ../../src/ae/MSX1PaletteQuantizer.h; sourceTree = "<group>"; };
+               E1E3A0010A00000100000001 /* MSX1PQCore.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MSX1PQCore.cpp; path = ../../src/core/MSX1PQCore.cpp; sourceTree = "<group>"; };
+               E1E3A0020A00000100000002 /* MSX1PQCore.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = MSX1PQCore.h; path = ../../src/core/MSX1PQCore.h; sourceTree = "<group>"; };
+               E1E3A0030A00000100000003 /* MSX1PQPalettes.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MSX1PQPalettes.cpp; path = ../../src/core/MSX1PQPalettes.cpp; sourceTree = "<group>"; };
+               E1E3A0040A00000100000004 /* MSX1PQPalettes.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = MSX1PQPalettes.h; path = ../../src/core/MSX1PQPalettes.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,14 +57,18 @@
 			name = Resources;
 			sourceTree = "<group>";
 		};
-		C4E6187C095A3C800012CA3F = {
-			isa = PBXGroup;
-			children = (
-				D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */,
-				D0D30D360A48C37000AC30E7 /* MSX1PaletteQuantizer.h */,
-				25F5A63F0B2A1D4C00D969DF /* Resources */,
-				D0FE57630993C4FD00139A60 /* Supporting Code */,
-				7EF36FD416F29A14002A3CB3 /* Cocoa.framework */,
+                C4E6187C095A3C800012CA3F = {
+                        isa = PBXGroup;
+                        children = (
+                                D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */,
+                                D0D30D360A48C37000AC30E7 /* MSX1PaletteQuantizer.h */,
+                                E1E3A0010A00000100000001 /* MSX1PQCore.cpp */,
+                                E1E3A0020A00000100000002 /* MSX1PQCore.h */,
+                                E1E3A0030A00000100000003 /* MSX1PQPalettes.cpp */,
+                                E1E3A0040A00000100000004 /* MSX1PQPalettes.h */,
+                                25F5A63F0B2A1D4C00D969DF /* Resources */,
+                                D0FE57630993C4FD00139A60 /* Supporting Code */,
+                                7EF36FD416F29A14002A3CB3 /* Cocoa.framework */,
 				C4E6188C095A3C800012CA3F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -145,13 +155,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		C4E618C9095A3CE80012CA3F /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D075387F09940A81000099DF /* MSX1PaletteQuantizer.cpp in Sources */,
-				25F5A54E0B2A1A6B00D969DF /* Smart_Utils.cpp in Sources */,
-			);
+                C4E618C9095A3CE80012CA3F /* Sources */ = {
+                        isa = PBXSourcesBuildPhase;
+                        buildActionMask = 2147483647;
+                        files = (
+                                E1E3A0110A00000100000011 /* MSX1PQCore.cpp in Sources */,
+                                E1E3A0120A00000100000012 /* MSX1PQPalettes.cpp in Sources */,
+                                D075387F09940A81000099DF /* MSX1PaletteQuantizer.cpp in Sources */,
+                                25F5A54E0B2A1A6B00D969DF /* Smart_Utils.cpp in Sources */,
+                        );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
