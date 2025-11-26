@@ -274,9 +274,14 @@ void QuantizePixel(
 
     const int idx = FindNearestPaletteIndex(config, r, g, b);
 
-    out_r = kQuantColors[idx].r;
-    out_g = kQuantColors[idx].g;
-    out_b = kQuantColors[idx].b;
+    // ディザ有効時は、座標依存のディザパターンを通して基本15色に変換
+    const int basic_idx = config.useDither
+        ? palette_index_to_basic_index(idx, x, y)
+        : idx;
+
+    out_r = kQuantColors[basic_idx].r;
+    out_g = kQuantColors[basic_idx].g;
+    out_b = kQuantColors[basic_idx].b;
 }
 
 void ProcessImageRGBA8(
