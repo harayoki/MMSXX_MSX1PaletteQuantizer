@@ -321,8 +321,8 @@
   <ItemGroup>
     <ClInclude Include="$(AESDK_ROOT)Headers\AEFX_SuiteHandlerTemplate.h" />
     <ClInclude Include="$(AESDK_ROOT)Headers\AE_PluginData.h" />
-    <ClInclude Include="..\MSX1PaletteQuantizer.h" />
-    <ClInclude Include="..\MSX1PaletteQuantizerPalettes.h" />
+    <ClInclude Include="..\..\MSX1PaletteQuantizer.h" />
+    <ClInclude Include="..\..\MSX1PaletteQuantizerPalettes.h" />
     <ClInclude Include="$(AESDK_ROOT)Util\Smart_Utils.h" />
     <ClInclude Include="$(AESDK_ROOT)Util\String_Utils.h" />
     <ClInclude Include="$(AESDK_ROOT)Headers\A.h" />
@@ -348,24 +348,24 @@
     <ClInclude Include="$(AESDK_ROOT)Headers\PrSDKPixelFormat.h" />
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="..\MSX1PaletteQuantizerPiPL.r">
+    <CustomBuild Include="..\..\MSX1PaletteQuantizerPiPL.r">
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling the PiPL</Message>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Compiling the PiPL</Message>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling the PiPL</Message>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Compiling the PiPL</Message>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">cl /I "$(AESDK_ROOT)Headers" /EP ".."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">cl /I "$(AESDK_ROOT)Headers" /EP "..\\.."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
 "$(AESDK_ROOT)Resources\PiPLTool" "$(IntDir)%(Filename).rr" "$(IntDir)%(Filename).rrc"
 cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)"\\"%(Filename)".rc
 </Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">cl /I "$(AESDK_ROOT)Headers" /EP ".."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">cl /I "$(AESDK_ROOT)Headers" /EP "..\\.."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
 "$(AESDK_ROOT)Resources\PiPLTool" "$(IntDir)%(Filename).rr" "$(IntDir)%(Filename).rrc"
 cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)"\\"%(Filename)".rc
 </Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">cl /I "$(AESDK_ROOT)Headers" /EP ".."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">cl /I "$(AESDK_ROOT)Headers" /EP "..\\.."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
 "$(AESDK_ROOT)Resources\PiPLTool" "$(IntDir)%(Filename).rr" "$(IntDir)%(Filename).rrc"
 cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)"\\"%(Filename)".rc
 </Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">cl /I "$(AESDK_ROOT)Headers" /EP ".."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">cl /I "$(AESDK_ROOT)Headers" /EP "..\\.."\\"%(Filename).r" &gt; "$(IntDir)"\\"%(Filename).rr"
 "$(AESDK_ROOT)Resources\PiPLTool" "$(IntDir)%(Filename).rr" "$(IntDir)%(Filename).rrc"
 cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)"\\"%(Filename)".rc
 </Command>
@@ -380,8 +380,8 @@ cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(AESDK_ROOT)Util\Smart_Utils.cpp" />
-    <ClCompile Include="..\MSX1PaletteQuantizer.cpp" />
-    <ClCompile Include="..\MSX1PaletteQuantizerPalettes.cpp" />
+    <ClCompile Include="..\..\MSX1PaletteQuantizer.cpp" />
+    <ClCompile Include="..\..\MSX1PaletteQuantizerPalettes.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
