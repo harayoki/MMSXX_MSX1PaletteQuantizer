@@ -247,39 +247,59 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_CHECKBOX(
+    PF_ADD_FLOAT_SLIDERX(
         "Pre 1: Saturation boost",
-        "Enable",
-        TRUE,
+        0,
+        10,
+        0,
+        10,
+        1,
+        2,
+        0,
         0,
         MSX1PQ_PARAM_PRE_SAT
     );
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_CHECKBOX(
+    PF_ADD_FLOAT_SLIDERX(
         "Pre 2: Gamma (darker)",
-        "Enable",
-        TRUE,
+        0,
+        10,
+        0,
+        10,
+        1,
+        2,
+        0,
         0,
         MSX1PQ_PARAM_PRE_GAMMA
     );
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_CHECKBOX(
+    PF_ADD_FLOAT_SLIDERX(
         "Pre 3: Highlight adjust",
-        "Enable",
-        TRUE,
+        0,
+        10,
+        0,
+        10,
+        1,
+        2,
+        0,
         0,
         MSX1PQ_PARAM_PRE_HIGHLIGHT
     );
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_CHECKBOX(
-        "Pre 4: Skin tone bias",
-        "Enable",
-        FALSE,
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 4: Hue rotate",
+        -180,
+        180,
+        -180,
+        180,
         0,
-        MSX1PQ_PARAM_PRE_SKIN
+        0,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_HUE
     );
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
@@ -539,10 +559,10 @@ Render (
     qi.w_b = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
 
-    qi.pre_sat       = (params[MSX1PQ_PARAM_PRE_SAT]->u.bd.value       != 0);
-    qi.pre_gamma     = (params[MSX1PQ_PARAM_PRE_GAMMA]->u.bd.value     != 0);
-    qi.pre_highlight = (params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.bd.value != 0);
-    qi.pre_skin      = (params[MSX1PQ_PARAM_PRE_SKIN]->u.bd.value      != 0);
+    qi.pre_sat       = static_cast<float>(params[MSX1PQ_PARAM_PRE_SAT]->u.fs_d.value);
+    qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
+    qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
+    qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 

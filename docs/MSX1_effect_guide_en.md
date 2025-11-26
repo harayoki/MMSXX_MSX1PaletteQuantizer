@@ -36,8 +36,8 @@ It is recommended to apply the following adjustments before the MSX1 effect.
 -   **HSB Weight**: Adjusts the weighting (Hue, Saturation, Brightness) for color distance calculation in the HSB space.
 
 ## Pre-processing
--   **Saturation Boost**: Boosts saturation.
--   **Dark Boost**: Boosts dark areas.
--   **Bright Boost**: Boosts bright areas.
--   **Skin Color Boost**: Adjusts the skin color range.
+-   **Saturation Boost**: Adjusts saturation with a slider (0 to 10, default 1).
+-   **Gamma (Darker)**: Darkens midtones with a slider (0 to 10, default 1).
+-   **Highlight Adjust**: Boosts bright areas with a slider (0 to 10, default 1).
+-   **Hue Rotate**: Rotates hue from -180 to 180 degrees (integer values).
 
