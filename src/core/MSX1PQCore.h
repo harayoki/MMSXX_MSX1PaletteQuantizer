@@ -35,10 +35,9 @@ struct QuantInfo {
     float w_h{};
     float w_s{};
     float w_b{};
-    bool  pre_sat{};
-    bool  pre_gamma{};
-    bool  pre_highlight{};
-    bool  pre_skin{};
+    float pre_sat{};
+    float pre_gamma{};
+    float pre_highlight{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
 };

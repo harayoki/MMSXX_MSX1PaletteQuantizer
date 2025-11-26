@@ -115,39 +115,31 @@ void apply_preprocess(const QuantInfo *qi,
 {
     if (!qi) return;
 
-    if (!qi->pre_sat && !qi->pre_gamma &&
-        !qi->pre_highlight && !qi->pre_skin) {
+    if (qi->pre_sat <= 0.0f && qi->pre_gamma <= 0.0f &&
+        qi->pre_highlight <= 0.0f) {
         return;
     }
 
     float h, s, v;
     rgb_to_hsb(r8, g8, b8, h, s, v);
 
-    if (qi->pre_sat) {
-        s *= 1.25f;
+    if (qi->pre_sat > 0.0f) {
+        const float sat_scale = 1.0f + (1.25f - 1.0f) * qi->pre_sat;
+        s *= sat_scale;
     }
 
-    if (qi->pre_gamma) {
-        const float gamma = 1.2f;
+    if (qi->pre_gamma > 0.0f) {
+        const float gamma = 1.0f + (1.2f - 1.0f) * qi->pre_gamma;
         v = powf(v, gamma);
     }
 
-    if (qi->pre_highlight) {
+    if (qi->pre_highlight > 0.0f) {
         if (v > 0.5f) {
             float t = (v - 0.5f) / 0.5f;
-            t *= 1.3f;
+            const float highlight_scale = 1.0f + (1.3f - 1.0f) * qi->pre_highlight;
+            t *= highlight_scale;
             t  = clamp01f(t);
             v  = 0.5f + t * 0.5f;
-        }
-    }
-
-    if (qi->pre_skin) {
-        if (v > 0.2f && v < 0.95f && s > 0.2f) {
-            if (h > 0.03f && h < 0.18f) {
-                float target = 0.07f;
-                float t      = 0.25f;
-                h = h * (1.0f - t) + target * t;
-            }
         }
     }
 
