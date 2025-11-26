@@ -35,7 +35,7 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_PRE_SAT,         // Saturation boost
     MSX1PQ_PARAM_PRE_GAMMA,       // Gamma to enhance shadows
     MSX1PQ_PARAM_PRE_HIGHLIGHT,   // Highlight correction
-    MSX1PQ_PARAM_PRE_SKIN,        // Skin tone adjustment
+    MSX1PQ_PARAM_PRE_HUE,         // Hue rotation
 
     MSX1PQ_PARAM_NUM_PARAMS
 };
