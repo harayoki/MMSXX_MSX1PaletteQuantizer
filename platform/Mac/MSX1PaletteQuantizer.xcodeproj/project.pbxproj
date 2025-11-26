@@ -24,10 +24,10 @@
 		7EE914711A5C884A009CD299 /* AEFX_SuiteHandlerTemplate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AEFX_SuiteHandlerTemplate.h; path = ../../../Headers/AEFX_SuiteHandlerTemplate.h; sourceTree = "<group>"; };
 		7EF36FD416F29A14002A3CB3 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		C4E618CC095A3CE80012CA3F /* MSX1PaletteQuantizer.plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MSX1PaletteQuantizer.plugin; sourceTree = BUILT_PRODUCTS_DIR; };
-		D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MSX1PaletteQuantizer.cpp; path = ../MSX1PaletteQuantizer.cpp; sourceTree = SOURCE_ROOT; };
-		D075388209940AA7000099DF /* MSX1PaletteQuantizerPiPL.r */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.rez; name = MSX1PaletteQuantizerPiPL.r; path = ../MSX1PaletteQuantizerPiPL.r; sourceTree = SOURCE_ROOT; };
+                D075387E09940A81000099DF /* MSX1PaletteQuantizer.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MSX1PaletteQuantizer.cpp; path = ../src/ae/MSX1PaletteQuantizer.cpp; sourceTree = SOURCE_ROOT; };
+                D075388209940AA7000099DF /* MSX1PaletteQuantizerPiPL.r */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.rez; name = MSX1PaletteQuantizerPiPL.r; path = ../src/ae/MSX1PaletteQuantizerPiPL.r; sourceTree = SOURCE_ROOT; };
 		D0D30D350A48C36000AC30E7 /* AE_Effect.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = AE_Effect.h; path = ../../../Headers/AE_Effect.h; sourceTree = SOURCE_ROOT; };
-		D0D30D360A48C37000AC30E7 /* MSX1PaletteQuantizer.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = MSX1PaletteQuantizer.h; path = ../MSX1PaletteQuantizer.h; sourceTree = SOURCE_ROOT; };
+                D0D30D360A48C37000AC30E7 /* MSX1PaletteQuantizer.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = MSX1PaletteQuantizer.h; path = ../src/ae/MSX1PaletteQuantizer.h; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
