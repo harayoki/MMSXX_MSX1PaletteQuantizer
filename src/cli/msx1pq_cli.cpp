@@ -22,7 +22,7 @@ struct CliOptions {
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
     bool use_dither{true};
     bool use_dark_dither{true};
-    int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1};
+    int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
     bool use_hsb{true};
     float weight_h{1.0f};
     float weight_s{0.5f};
@@ -52,16 +52,16 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::English) 
     if (lang == UsageLanguage::Japanese) {
         std::cout << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
                   << "オプション:\n"
-                  << "  --color-system <msx1|msx2>   (既定: msx1)\n"
-                  << "  --dither / --no-dither       (既定: dither)\n"
-                  << "  --dark-dither / --no-dark-dither (既定: ダークディザーパレットを使用)\n"
-                  << "  --8dot <none|fast|basic|best|best-attr|best-trans> (既定: basic)\n"
-                  << "  --distance <rgb|hsb>         (既定: hsb)\n"
+                  << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
+                  << "  --dither / --no-dither       (デフォルト: dither)\n"
+                  << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
+                  << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
+                  << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
                   << "  --pre-sat <0-10> --pre-gamma <0-10> --pre-highlight <0-10> --pre-hue <-180-180>\n"
-                  << "  -f, --force                  確認せずに上書き\n"
-                  << "  --help-ja                    この日本語の使い方を表示\n"
-                  << "  -h, --help                   英語の使い方を表示\n";
+                  << "  -f, --force                  上書き時に確認しない\n"
+                  << "  --help-ja                    この日本語のUSAGEを表示\n"
+                  << "  -h, --help                   英語のUSAGEを表示\n";
         return;
     }
 
@@ -70,7 +70,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::English) 
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
-              << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: basic)\n"
+              << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
               << "  --pre-sat <0-10> --pre-gamma <0-10> --pre-highlight <0-10> --pre-hue <-180-180>\n"
