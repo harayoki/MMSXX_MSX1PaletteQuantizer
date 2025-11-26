@@ -532,13 +532,12 @@ Render (
     qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
     qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
 
-    qi.w_h = params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value;
-    qi.w_s = params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value;
-    qi.w_b = params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value;
-
-    qi.w_h = clamp01f((float)qi.w_h);
-    qi.w_s = clamp01f((float)qi.w_s);
-    qi.w_b = clamp01f((float)qi.w_b);
+    qi.w_h = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value));
+    qi.w_s = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value));
+    qi.w_b = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
 
     qi.pre_sat       = (params[MSX1PQ_PARAM_PRE_SAT]->u.bd.value       != 0);
     qi.pre_gamma     = (params[MSX1PQ_PARAM_PRE_GAMMA]->u.bd.value     != 0);
