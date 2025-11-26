@@ -43,7 +43,28 @@ static_assert(sizeof(RgbaPixel) == 4, "RgbaPixel must be tightly packed");
 
 namespace {
 
-void print_usage(const char* prog) {
+enum class UsageLanguage {
+    English,
+    Japanese,
+};
+
+void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::English) {
+    if (lang == UsageLanguage::Japanese) {
+        std::cout << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
+                  << "オプション:\n"
+                  << "  --color-system <msx1|msx2>   (既定: msx1)\n"
+                  << "  --dither / --no-dither       (既定: dither)\n"
+                  << "  --dark-dither / --no-dark-dither (既定: ダークディザーパレットを使用)\n"
+                  << "  --8dot <none|fast|basic|best|best-attr|best-trans> (既定: basic)\n"
+                  << "  --distance <rgb|hsb>         (既定: hsb)\n"
+                  << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+                  << "  --pre-sat <0-10> --pre-gamma <0-10> --pre-highlight <0-10> --pre-hue <-180-180>\n"
+                  << "  -f, --force                  確認せずに上書き\n"
+                  << "  --help-ja                    この日本語の使い方を表示\n"
+                  << "  -h, --help                   英語の使い方を表示\n";
+        return;
+    }
+
     std::cout << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
               << "Options:\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
@@ -53,7 +74,9 @@ void print_usage(const char* prog) {
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
               << "  --pre-sat <0-10> --pre-gamma <0-10> --pre-highlight <0-10> --pre-hue <-180-180>\n"
-              << "  -f, --force                  Overwrite without confirmation\n";
+              << "  -f, --force                  Overwrite without confirmation\n"
+              << "  --help-ja                    Show this usage in Japanese\n"
+              << "  -h, --help                   Show this usage in English\n";
 }
 
 std::optional<int> parse_8dot_mode(const std::string& value) {
@@ -141,7 +164,10 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
         } else if (arg == "--help" || arg == "-h") {
-            print_usage(argv[0]);
+            print_usage(argv[0], UsageLanguage::English);
+            return false;
+        } else if (arg == "--help-ja") {
+            print_usage(argv[0], UsageLanguage::Japanese);
             return false;
         } else {
             throw std::runtime_error("Unknown argument: " + arg);
