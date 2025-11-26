@@ -54,7 +54,7 @@ MacもXcodeでビルドすれば動作すると思います。
 
 以降の MSX1PaletteQuantizer の詳細な使用方法や設定については、
 * [After Effectsでの使い方](docs/MSX1_effect_guide_ja.md)
-* https://note.com/harayoki/n/nef7d2f9b5380?from=notice note記事
+* https://note.com/harayoki/n/nef7d2f9b5380 note記事
 
 ## Visual Studio 2022でのビルド手順 (Windows)
 
