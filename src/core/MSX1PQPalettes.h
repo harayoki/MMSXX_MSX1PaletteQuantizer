@@ -1,21 +1,20 @@
 #pragma once
 
-#include "AEConfig.h"
-#include "AE_Effect.h"
+#include <cstdint>
 
 namespace MSX1PQ {
     // MSX1 カラー1つ分
     typedef struct {
-        A_u_char r;
-        A_u_char g;
-        A_u_char b;
+        std::uint8_t r;
+        std::uint8_t g;
+        std::uint8_t b;
     } QuantColor;
 
     // ディザパターン
     typedef struct {
-        const A_u_char* pattern; // 長さ = width * height, 値は 0..14 (基本15色インデックス)
-        A_u_char        width;
-        A_u_char        height;
+        const std::uint8_t* pattern; // 長さ = width * height, 値は 0..14 (基本15色インデックス)
+        std::uint8_t        width;
+        std::uint8_t        height;
     } DitherPattern;
 
     // パレット配列 (MSX1基本色 + ディザ中間色 + 低輝度パレット)
@@ -30,10 +29,10 @@ namespace MSX1PQ {
     extern const int           kNumPaletteDither;
 
     // パレットインデックス＋座標 → 基本15色インデックス
-    int palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL);
+    int palette_index_to_basic_index(int palette_idx, std::int32_t x, std::int32_t y);
 
     // ディザなし用：RGB → 基本15色インデックス
-    int nearest_basic_rgb(A_u_char r, A_u_char g, A_u_char b);
+    int nearest_basic_rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
     // 低輝度ディザパレットの範囲
     extern const int kNumDarkDitherColors;   // 例: 6

@@ -1,0 +1,803 @@
+/*
+    MSX1PaletteQuantizer.cpp
+
+    MSX1 パレット エフェクト
+    AE / Premiere 両対応。
+
+*/
+
+#include "AEConfig.h"
+#include "entry.h"
+#include "AE_Effect.h"
+#include "AE_EffectCB.h"
+#include "Param_Utils.h"
+#include "AEFX_SuiteHelper.h"
+#include "AEGP_SuiteHandler.h"
+#include "MSX1PaletteQuantizer.h"
+#include "MSX1PQPalettes.h"
+
+
+#ifdef AE_OS_WIN
+#include <Windows.h>
+#include <cstdarg>
+#include <cstdio>
+inline void MSX1PQ_DebugLog(const char* fmt, ...)
+{
+    char buf[512];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    OutputDebugStringA(buf);
+    OutputDebugStringA("\n");
+}
+#else
+// Mac の場合（AE_OS_WIN が未定義）
+inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
+#endif
+
+namespace MSX1PQ {
+    constexpr char kPluginName[]        = "MSX1 Palette Quantizer";
+    constexpr char kPluginDescription[] = "\nMSX1-style palette quantization and dithering.";
+    constexpr int  kVersionMajor        = 0;
+    constexpr int  kVersionMinor        = 3;
+    constexpr int  kVersionBug          = 0;
+    constexpr int  kVersionStage        = PF_Stage_ALPHA;
+    /*
+	PF_Stage_DEVELOP,
+	PF_Stage_ALPHA,
+	PF_Stage_BETA,
+	PF_Stage_RELEASE
+	*/
+    constexpr int  kVersionBuild        = 1;
+
+    constexpr unsigned long kVersionPacked = PF_VERSION(
+        kVersionMajor,
+        kVersionMinor,
+        kVersionBug,
+        kVersionStage,
+        kVersionBuild
+    );
+}
+
+using MSX1PQCore::QuantInfo;
+using MSX1PQCore::apply_preprocess;
+using MSX1PQCore::find_basic_index_from_rgb;
+using MSX1PQCore::get_basic_palette;
+using MSX1PQCore::nearest_basic_hsb;
+using MSX1PQCore::nearest_palette_hsb;
+using MSX1PQCore::nearest_palette_rgb;
+using MSX1PQCore::clamp01f;
+using MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1;
+using MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2;
+using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST;
+using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1;
+using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1;
+using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1;
+using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE;
+using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST;
+using MSX1PQCore::MSX1PQ_DIST_MODE_HSB;
+using MSX1PQCore::MSX1PQ_DIST_MODE_RGB;
+
+// ---------------------------------------------------------------------------
+// About
+// ---------------------------------------------------------------------------
+
+static PF_Err
+About (
+    PF_InData        *in_data,
+    PF_OutData       *out_data,
+    PF_ParamDef      *params[],
+    PF_LayerDef      *output )
+{
+    PF_SPRINTF(out_data->return_msg,
+               "%s, v%d.%d (%lu)\n%s",
+               MSX1PQ::kPluginName,
+               MSX1PQ::kVersionMajor,
+               MSX1PQ::kVersionMinor,
+               MSX1PQ::kVersionPacked,
+               MSX1PQ::kPluginDescription);
+    return PF_Err_NONE;
+}
+
+// ---------------------------------------------------------------------------
+// GlobalSetup
+// ---------------------------------------------------------------------------
+
+static PF_Err
+GlobalSetup (
+    PF_InData        *in_dataP,
+    PF_OutData       *out_data,
+    PF_ParamDef      *params[],
+    PF_LayerDef      *output )
+{
+    PF_Err    err = PF_Err_NONE;
+    out_data->my_version = MSX1PQ::kVersionPacked;
+    // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
+    // 8bit専用: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER は立てない
+    // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
+    //                         PF_OutFlag_NON_PARAM_VARY;
+
+    // out_data->out_flags2 =  PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+
+	out_data->out_flags  = PF_OutFlag_NONE;
+	out_data->out_flags2 = PF_OutFlag2_NONE;
+    // Premiere 用ピクセルフォーマット宣言
+    if (in_dataP->appl_id == kAppID_Premiere){
+
+        AEFX_SuiteScoper<PF_PixelFormatSuite1> pixelFormatSuite =
+            AEFX_SuiteScoper<PF_PixelFormatSuite1>( in_dataP,
+                                                    kPFPixelFormatSuite,
+                                                    kPFPixelFormatSuiteVersion1,
+                                                    out_data);
+
+        // サポートするフォーマットだけ登録
+        (*pixelFormatSuite->ClearSupportedPixelFormats)(in_dataP->effect_ref);
+        (*pixelFormatSuite->AddSupportedPixelFormat)(
+                                                        in_dataP->effect_ref,
+                                                        PrPixelFormat_BGRA_4444_8u);
+        // VUYA や 32f は今回はサポートしない
+    }
+
+    return err;
+}
+
+// ---------------------------------------------------------------------------
+// ParamsSetup
+// ---------------------------------------------------------------------------
+
+static PF_Err
+ParamsSetup (
+    PF_InData        *in_data,
+    PF_OutData       *out_data,
+    PF_ParamDef      *params[],
+    PF_LayerDef      *output)
+{
+    PF_Err err = PF_Err_NONE;
+    PF_ParamDef def;
+
+    // 入力レイヤーは暗黙に 0 番として存在するので何もしない
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POPUP(
+        "Color system",
+        2,                    // 項目数
+        MSX1PQ_COLOR_SYS_MSX1,       // デフォルト 1: MSX1
+        "MSX1|MSX2",
+        MSX1PQ_PARAM_COLOR_SYSTEM);
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Dither",            // 表示名
+        "Use dithering",     // チェックON時のラベル
+        TRUE,                // デフォルトON (TRUE: ディザ有効)
+        0,
+        MSX1PQ_PARAM_USE_DITHER
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Use dark dither palettes",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_USE_DARK_DITHER
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POPUP(
+        "8-dot / 2-color",
+        6,
+        MSX1PQ_EIGHTDOT_MODE_BASIC1,
+        "None|Fast|Basic|Best|Best-Attr|Best-Trans",
+        MSX1PQ_PARAM_USE_8DOT2COL
+    );
+
+    AEFX_CLR_STRUCT(def);
+    def.flags = PF_ParamFlag_SUPERVISE;
+    PF_ADD_POPUP(
+        "Distance mode",      // ラベル
+        2,                    // 項目数
+        MSX1PQ_DIST_MODE_HSB, // デフォルト値 (2 = HSB)
+        "RGB|HSB",            // 順番に 1:RGB, 2:HSB
+        MSX1PQ_PARAM_DISTANCE_MODE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "H weight",           // 表示名
+        0,                    //
+        1,                    //
+        0,                    // SLIDER_MIN
+        1,                    // SLIDER_MAX
+        1,                    // デフォルト値 1.0
+        2,                    // 小数点以下2桁くらい
+        0,                    // DISPLAY_FLAGS
+        0,                    // 予約
+        MSX1PQ_PARAM_WEIGHT_H
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "S weight",
+        0,
+        1,
+        0,
+        1,
+        0.5,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_S
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "B weight",
+        0,
+        1,
+        0,
+        1,
+        0.75,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_B
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Pre 1: Saturation boost",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_PRE_SAT
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Pre 2: Gamma (darker)",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_PRE_GAMMA
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Pre 3: Highlight adjust",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_PRE_HIGHLIGHT
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Pre 4: Skin tone bias",
+        "Enable",
+        FALSE,
+        0,
+        MSX1PQ_PARAM_PRE_SKIN
+    );
+
+    out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
+
+    return err;
+}
+
+
+// ------------------------------------------------------------
+// 横8ドット内2色制限
+// ------------------------------------------------------------
+
+static void
+apply_8dot2col_dispatch_ARGB(
+    PF_Pixel8* data,
+    A_long     row_pitch,
+    A_long     width,
+    A_long     height,
+    A_long     color_system,
+    A_long     mode)
+{
+    if (mode <= MSX1PQ_EIGHTDOT_MODE_NONE || mode >= 7) {
+        return;
+    }
+
+    const auto pitch = static_cast<std::ptrdiff_t>(row_pitch);
+    const auto w     = static_cast<std::int32_t>(width);
+    const auto h     = static_cast<std::int32_t>(height);
+    const int  cs    = static_cast<int>(color_system);
+
+    switch (mode) {
+    case MSX1PQ_EIGHTDOT_MODE_FAST1:
+        MSX1PQCore::apply_8dot2col_fast1(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_BASIC1:
+        MSX1PQCore::apply_8dot2col_basic1(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_BEST1:
+        MSX1PQCore::apply_8dot2col_best1(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
+        MSX1PQCore::apply_8dot2col_attr_best(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
+        MSX1PQCore::apply_8dot2col_attr_best_penalty(data, pitch, w, h, cs);
+        break;
+    default:
+        break;
+    }
+}
+
+static void
+apply_8dot2col_dispatch_BGRA(
+    MSX1PQ_Pixel_BGRA_8u* data,
+    A_long            row_pitch,
+    A_long            width,
+    A_long            height,
+    A_long            color_system,
+    A_long            mode)
+{
+    if (mode <= MSX1PQ_EIGHTDOT_MODE_NONE || mode >= 7) {
+        return;
+    }
+
+    const auto pitch = static_cast<std::ptrdiff_t>(row_pitch);
+    const auto w     = static_cast<std::int32_t>(width);
+    const auto h     = static_cast<std::int32_t>(height);
+    const int  cs    = static_cast<int>(color_system);
+
+    switch (mode) {
+    case MSX1PQ_EIGHTDOT_MODE_FAST1:
+        MSX1PQCore::apply_8dot2col_fast1(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_BASIC1:
+        MSX1PQCore::apply_8dot2col_basic1(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_BEST1:
+        MSX1PQCore::apply_8dot2col_best1(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
+        MSX1PQCore::apply_8dot2col_attr_best(data, pitch, w, h, cs);
+        break;
+    case MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
+        MSX1PQCore::apply_8dot2col_attr_best_penalty(data, pitch, w, h, cs);
+        break;
+    default:
+        break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8bit ARGB (AE用) 量子化
+// ---------------------------------------------------------------------------
+
+static PF_Err
+FilterImage8 (
+    void        *refcon,
+    A_long      xL,
+    A_long      yL,
+    PF_Pixel8   *inP,
+    PF_Pixel8   *outP)
+{
+    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+
+    // 入力色をローカルコピー
+    A_u_char r = inP->red;
+    A_u_char g = inP->green;
+    A_u_char b = inP->blue;
+
+    // 1?4 の前処理
+    apply_preprocess(qi, r, g, b);
+
+    int basic_idx = 0;
+
+    if (qi && qi->use_dither) {
+        // どこまでのパレットを使うか
+        int num_colors = MSX1PQ::kNumQuantColors;
+        if (!qi->use_dark_dither) {
+            num_colors = MSX1PQ::kFirstDarkDitherIndex; // 低輝度パレットを除外
+        }
+
+        int palette_idx;
+        if (qi->use_hsb) {
+            palette_idx = nearest_palette_hsb(
+                r, g, b,
+                qi->w_h, qi->w_s, qi->w_b,
+                num_colors);
+        } else {
+            palette_idx = nearest_palette_rgb(
+                r, g, b,
+                num_colors);
+        }
+
+        basic_idx = MSX1PQ::palette_index_to_basic_index(
+            palette_idx,
+            static_cast<std::int32_t>(xL),
+            static_cast<std::int32_t>(yL));
+    } else {
+        // ディザOFF: 直接15色へ
+        if (qi && qi->use_hsb) {
+            basic_idx = nearest_basic_hsb(
+                r, g, b,
+                qi->w_h, qi->w_s, qi->w_b);
+        } else {
+            basic_idx = MSX1PQ::nearest_basic_rgb(
+                r, g, b);
+        }
+    }
+
+    const MSX1PQ::QuantColor &qc =
+        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
+        ? MSX1PQ::kBasicColorsMsx2[basic_idx]
+        : MSX1PQ::kQuantColors[basic_idx];
+
+    outP->alpha = inP->alpha;
+    outP->red   = qc.r;
+    outP->green = qc.g;
+    outP->blue  = qc.b;
+
+    return PF_Err_NONE;
+}
+
+// ---------------------------------------------------------------------------
+// 8bit BGRA (Premiere用) 量子化
+// ---------------------------------------------------------------------------
+static PF_Err
+FilterImageBGRA_8u (
+    void        *refcon,
+    A_long      xL,
+    A_long      yL,
+    PF_Pixel8   *inP,
+    PF_Pixel8   *outP)
+{
+    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+
+    MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
+    MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
+
+    A_u_char r = inBGRA_8uP->red;
+    A_u_char g = inBGRA_8uP->green;
+    A_u_char b = inBGRA_8uP->blue;
+
+    apply_preprocess(qi, r, g, b);
+
+    int basic_idx = 0;
+
+    if (qi && qi->use_dither) {
+        int num_colors = MSX1PQ::kNumQuantColors;
+        if (!qi->use_dark_dither) {
+            num_colors = MSX1PQ::kFirstDarkDitherIndex;
+        }
+
+        int palette_idx;
+        if (qi->use_hsb) {
+            palette_idx = nearest_palette_hsb(
+                r, g, b,
+                qi->w_h, qi->w_s, qi->w_b,
+                num_colors);
+        } else {
+            palette_idx = nearest_palette_rgb(
+                r, g, b,
+                num_colors);
+        }
+
+        basic_idx = MSX1PQ::palette_index_to_basic_index(
+            palette_idx,
+            static_cast<std::int32_t>(xL),
+            static_cast<std::int32_t>(yL));
+    } else {
+        if (qi && qi->use_hsb) {
+            basic_idx = nearest_basic_hsb(
+                r, g, b,
+                qi->w_h, qi->w_s, qi->w_b);
+        } else {
+            basic_idx = MSX1PQ::nearest_basic_rgb(
+                r, g, b);
+        }
+    }
+
+    const MSX1PQ::QuantColor &qc =
+        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
+            ? MSX1PQ::kBasicColorsMsx2[basic_idx]  // ★ MSX2 の 15色
+            : MSX1PQ::kQuantColors[basic_idx];     // ★ MSX1 の 15色
+
+    outBGRA_8uP->alpha = inBGRA_8uP->alpha;
+    outBGRA_8uP->red   = qc.r;
+    outBGRA_8uP->green = qc.g;
+    outBGRA_8uP->blue  = qc.b;
+
+    return PF_Err_NONE;
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+static PF_Err
+Render (
+    PF_InData        *in_dataP,
+    PF_OutData       *out_data,
+    PF_ParamDef      *params[],
+    PF_LayerDef      *output )
+{
+    PF_Err  err    = PF_Err_NONE;
+    A_long  linesL = output->extent_hint.bottom - output->extent_hint.top;
+
+    // ---- パラメータ読み取り ----
+    QuantInfo qi;
+    qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
+    qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
+    qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
+    qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
+
+    qi.w_h = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value));
+    qi.w_s = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value));
+    qi.w_b = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
+
+    qi.pre_sat       = (params[MSX1PQ_PARAM_PRE_SAT]->u.bd.value       != 0);
+    qi.pre_gamma     = (params[MSX1PQ_PARAM_PRE_GAMMA]->u.bd.value     != 0);
+    qi.pre_highlight = (params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.bd.value != 0);
+    qi.pre_skin      = (params[MSX1PQ_PARAM_PRE_SKIN]->u.bd.value      != 0);
+
+    qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
+
+    // 画像サイズ（extent_hint ベース）
+    const A_long width  = output->extent_hint.right  - output->extent_hint.left;
+    const A_long height = output->extent_hint.bottom - output->extent_hint.top;
+
+    if (in_dataP->appl_id == kAppID_Premiere) {
+
+        AEFX_SuiteScoper<PF_PixelFormatSuite1> pixelFormatSuite(
+            in_dataP,
+            kPFPixelFormatSuite,
+            kPFPixelFormatSuiteVersion1,
+            out_data);
+
+        PrPixelFormat destinationPixelFormat = PrPixelFormat_BGRA_4444_8u;
+        pixelFormatSuite->GetPixelFormat(output, &destinationPixelFormat);
+
+        if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
+
+            // ---- 1パス目：通常の量子化（ディザなど）----
+            AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
+                in_dataP,
+                kPFIterate8Suite,
+                kPFIterate8SuiteVersion2,
+                out_data);
+
+            iterate8Suite->iterate(
+                in_dataP,
+                0,
+                linesL,
+                &params[MSX1PQ_PARAM_INPUT]->u.ld,
+                NULL,
+                &qi,
+                FilterImageBGRA_8u,
+                output);
+
+            // ---- 2パス目：8dot / 2color 後処理（基本1）----
+            if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+
+                // すでに width / height は上で計算済みでもOKですが、
+                // 明示しておくならこのままでも大丈夫です。
+                A_long width  = output->extent_hint.right  - output->extent_hint.left;
+                A_long height = output->extent_hint.bottom - output->extent_hint.top;
+
+                // BGRA_4444_8u 用のピッチ
+                A_long row_pitch = output->rowbytes / sizeof(MSX1PQ_Pixel_BGRA_8u);
+
+                MSX1PQ_Pixel_BGRA_8u* base =
+                    reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(output->data);
+
+                MSX1PQ_Pixel_BGRA_8u* data =
+                    base + output->extent_hint.top * row_pitch
+                         + output->extent_hint.left;
+
+                apply_8dot2col_dispatch_BGRA(
+                    data,
+                    row_pitch,
+                    width,
+                    height,
+                    qi.color_system,
+                    qi.use_8dot2col);
+            }
+
+
+        } else {
+            err = PF_Err_UNRECOGNIZED_PARAM_TYPE;
+        }
+
+    } else {
+        // AE: ARGB32 8bit
+
+        // ---- 1パス目：通常の量子化 ----
+        AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
+            in_dataP,
+            kPFIterate8Suite,
+            kPFIterate8SuiteVersion2,
+            out_data);
+
+        iterate8Suite->iterate(
+            in_dataP,
+            0,
+            linesL,
+            &params[MSX1PQ_PARAM_INPUT]->u.ld,
+            NULL,
+            &qi,
+            FilterImage8,
+            output);
+
+        // ---- 2パス目：8dot / 2color 後処理（基本1）----
+        if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+
+            A_long row_bytes = output->rowbytes;
+            A_long row_pitch = (row_bytes >= 0)
+                ? (row_bytes / (A_long)sizeof(PF_Pixel8))
+                : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
+
+            PF_Pixel8* start =
+                reinterpret_cast<PF_Pixel8*>(output->data);
+
+            // rowbytes < 0（上から下ではなく下から上）に備えた補正
+            if (row_bytes < 0) {
+                start = reinterpret_cast<PF_Pixel8*>(
+                    reinterpret_cast<char*>(output->data)
+                    + (height - 1) * (-row_bytes));
+            }
+
+            apply_8dot2col_dispatch_ARGB(
+                start,
+                row_pitch,
+                width,
+                height,
+                qi.color_system,
+                qi.use_8dot2col);
+        }
+    }
+
+    return err;
+}
+
+// ---------------------------------------------------------------------------
+// エントリ登録
+// ---------------------------------------------------------------------------
+
+extern "C" DllExport
+PF_Err PluginDataEntryFunction2(
+    PF_PluginDataPtr inPtr,
+    PF_PluginDataCB2 inPluginDataCallBackPtr,
+    SPBasicSuite* inSPBasicSuitePtr,
+    const char* inHostName,
+    const char* inHostVersion)
+{
+    PF_Err result = PF_Err_INVALID_CALLBACK;
+
+    result = PF_REGISTER_EFFECT_EXT2(
+        inPtr,
+        inPluginDataCallBackPtr,
+        "MSX1PaletteQuantizer", // Name
+        "MMSXX_MSX1PaletteQuantizer", // Match Name
+        "MMSXX",     // Category
+        AE_RESERVED_INFO, // Reserved Info
+        "EffectMain", // Entry point
+        "https://www.example.com"); // support URL
+
+    return result;
+}
+
+
+static PF_Err
+UpdateParameterUI(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    PF_ParamDef *params[])
+{
+    PF_Err err = PF_Err_NONE;
+
+    // ParamUtilsSuite3 を取る
+    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+        in_data,
+        kPFParamUtilsSuite,
+        kPFParamUtilsSuiteVersion3,
+        out_data);
+
+    A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
+    A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
+
+    // MSX1PQ_DebugLog("=== UpdateParameterUI CALLED ===");
+    // MSX1PQ_DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
+    //          mode, enable_hsb ? 1 : 0);
+
+    PF_ParamDef tmp;
+
+    // --- H weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_H];
+    if (enable_hsb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    // MSX1PQ_DebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_H,
+                                 &tmp);
+
+    // --- S weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_S];
+    if (enable_hsb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    // MSX1PQ_DebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_S,
+                                 &tmp);
+
+    // --- B weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_B];
+    if (enable_hsb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    // MSX1PQ_DebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_B,
+                                 &tmp);
+
+    // MSX1PQ_DebugLog("-> UpdateParameterUI done");
+
+    return err;
+}
+
+
+PF_Err
+EffectMain(
+    PF_Cmd         cmd,
+    PF_InData      *in_dataP,
+    PF_OutData     *out_data,
+    PF_ParamDef    *params[],
+    PF_LayerDef    *output,
+    void           *extra)
+{
+    PF_Err  err = PF_Err_NONE;
+
+    try {
+        switch (cmd)
+        {
+            case PF_Cmd_ABOUT:
+                err = About(in_dataP, out_data, params, output);
+                break;
+            case PF_Cmd_GLOBAL_SETUP:
+                err = GlobalSetup(in_dataP, out_data, params, output);
+                break;
+            // case PF_Cmd_UPDATE_PARAMS_UI:
+            //     return UpdateParameterUI(in_dataP, out_data, params);
+            case PF_Cmd_PARAMS_SETUP:
+                err = ParamsSetup(in_dataP, out_data, params, output);
+                break;
+            case PF_Cmd_USER_CHANGED_PARAM:
+            {
+                PF_UserChangedParamExtra *extraP =
+                    reinterpret_cast<PF_UserChangedParamExtra*>(extra);
+
+                if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
+                    UpdateParameterUI(in_dataP, out_data, params);
+                }
+
+                break;
+            }
+            case PF_Cmd_RENDER:
+                err = Render(in_dataP, out_data, params, output);
+                break;
+            // SMART_RENDER / SMART_PRE_RENDER は 8bit専用につき未対応
+        }
+    } catch(PF_Err &thrown_err) {
+        // AE に例外を飛ばさない
+        err = thrown_err;
+    }
+    return err;
+}

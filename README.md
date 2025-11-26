@@ -66,13 +66,15 @@ Upon successful build, a plugin file (.aex or .plugin) will be generated.
 *   Navigate to the root directory of this repository.
     *   `cd {your_pc_path}\MMSXX_MSX1PaletteQuantizer`
 *   Build with `msbuild` command.
-    *   `msbuild Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
+    *   `msbuild platform\Win\MSX1PaletteQuantizer.sln /p:Configuration=Release /p:Platform=x64`
 
-`MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `Win\x64` folder.
+`MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `platform\Win\x64` folder.
 
 ## Build Instructions for Xcode (Mac)
 
-Untested. The Xcode project included in the repository may contain incorrect information.
+*   Set the `AESDK_ROOT` environment variable to the root of your After Effects SDK installation (e.g., `/Applications/Adobe After Effects 2023/Support Files/After Effects SDK`).
+*   Open `platform/Mac/MSX1PaletteQuantizer.xcodeproj` in Xcode.
+*   Build the `MSX1PaletteQuantizer` target to produce `MSX1PaletteQuantizer.plugin`.
 
 ## Implementation Details
 
