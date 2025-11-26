@@ -1,4 +1,4 @@
-#include "MSX1PaletteQuantizerPalettes.h"
+#include "MSX1PQPalettes.h"
 #include <limits.h>
 
 const MSX1PQ::QuantColor MSX1PQ::kQuantColors[] = {
@@ -138,35 +138,35 @@ const int MSX1PQ::kFirstDarkDitherIndex = MSX1PQ::kNumQuantColors - MSX1PQ::kNum
 
 // ---- ディザパターン生成マクロ ----
 #define MAKE_LINE_PATTERN(NAME, COL1_ID, COL2_ID) \
-    static const A_u_char NAME[] = { \
-        (A_u_char)((COL1_ID) - 1), \
-        (A_u_char)((COL2_ID) - 1)  \
+    static const std::uint8_t NAME[] = { \
+        (std::uint8_t)((COL1_ID) - 1), \
+        (std::uint8_t)((COL2_ID) - 1)  \
     }
 
 #define MAKE_DARK_PATTERN(NAME, COL1_ID, COL2_ID) \
-    static const A_u_char NAME[] = { \
-        (A_u_char)((COL1_ID) - 1), (A_u_char)((COL1_ID) - 1), \
-        (A_u_char)((COL1_ID) - 1), (A_u_char)((COL2_ID) - 1), \
-        (A_u_char)((COL1_ID) - 1), (A_u_char)((COL1_ID) - 1), \
-        (A_u_char)((COL2_ID) - 1), (A_u_char)((COL1_ID) - 1)  \
+    static const std::uint8_t NAME[] = { \
+        (std::uint8_t)((COL1_ID) - 1), (std::uint8_t)((COL1_ID) - 1), \
+        (std::uint8_t)((COL1_ID) - 1), (std::uint8_t)((COL2_ID) - 1), \
+        (std::uint8_t)((COL1_ID) - 1), (std::uint8_t)((COL1_ID) - 1), \
+        (std::uint8_t)((COL2_ID) - 1), (std::uint8_t)((COL1_ID) - 1)  \
     }
 
 // 基本15色の 1x1 パターン (id 1..15 → index 0..14)
-static const A_u_char kPattern_basic_1[]  = {  0 };
-static const A_u_char kPattern_basic_2[]  = {  1 };
-static const A_u_char kPattern_basic_3[]  = {  2 };
-static const A_u_char kPattern_basic_4[]  = {  3 };
-static const A_u_char kPattern_basic_5[]  = {  4 };
-static const A_u_char kPattern_basic_6[]  = {  5 };
-static const A_u_char kPattern_basic_7[]  = {  6 };
-static const A_u_char kPattern_basic_8[]  = {  7 };
-static const A_u_char kPattern_basic_9[]  = {  8 };
-static const A_u_char kPattern_basic_10[] = {  9 };
-static const A_u_char kPattern_basic_11[] = { 10 };
-static const A_u_char kPattern_basic_12[] = { 11 };
-static const A_u_char kPattern_basic_13[] = { 12 };
-static const A_u_char kPattern_basic_14[] = { 13 };
-static const A_u_char kPattern_basic_15[] = { 14 };
+static const std::uint8_t kPattern_basic_1[]  = {  0 };
+static const std::uint8_t kPattern_basic_2[]  = {  1 };
+static const std::uint8_t kPattern_basic_3[]  = {  2 };
+static const std::uint8_t kPattern_basic_4[]  = {  3 };
+static const std::uint8_t kPattern_basic_5[]  = {  4 };
+static const std::uint8_t kPattern_basic_6[]  = {  5 };
+static const std::uint8_t kPattern_basic_7[]  = {  6 };
+static const std::uint8_t kPattern_basic_8[]  = {  7 };
+static const std::uint8_t kPattern_basic_9[]  = {  8 };
+static const std::uint8_t kPattern_basic_10[] = {  9 };
+static const std::uint8_t kPattern_basic_11[] = { 10 };
+static const std::uint8_t kPattern_basic_12[] = { 11 };
+static const std::uint8_t kPattern_basic_13[] = { 12 };
+static const std::uint8_t kPattern_basic_14[] = { 13 };
+static const std::uint8_t kPattern_basic_15[] = { 14 };
 
 // ---- line_dithering 用 (dith_col2 のペア全部) ----
 MAKE_LINE_PATTERN(kPattern_1_4,   1,  4);
@@ -377,7 +377,7 @@ const int MSX1PQ::kNumPaletteDither =
 
 // ---- MSX1PQ::palette_index_to_basic_index ----
 int
-MSX1PQ::palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
+MSX1PQ::palette_index_to_basic_index(int palette_idx, std::int32_t xL, std::int32_t yL)
 {
     if (palette_idx < 0) {
         palette_idx = 0;
@@ -399,13 +399,13 @@ MSX1PQ::palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
         }
     }
 
-    A_long ix = (xL >= 0) ? xL : -xL;
-    A_long iy = (yL >= 0) ? yL : -yL;
+    std::int32_t ix = (xL >= 0) ? xL : -xL;
+    std::int32_t iy = (yL >= 0) ? yL : -yL;
 
-    A_long dx = ix % dp->width;
-    A_long dy = iy % dp->height;
+    std::int32_t dx = ix % dp->width;
+    std::int32_t dy = iy % dp->height;
 
-    A_long idx = dy * dp->width + dx;
+    std::int32_t idx = dy * dp->width + dx;
 
     int basic_idx = dp->pattern[idx]; // 0..14
     if (basic_idx < 0) basic_idx = 0;
@@ -416,7 +416,7 @@ MSX1PQ::palette_index_to_basic_index(int palette_idx, A_long xL, A_long yL)
 
 // ---- ディザ無し用 最近傍 basic15 ----
 int
-MSX1PQ::nearest_basic_rgb(A_u_char r, A_u_char g, A_u_char b)
+MSX1PQ::nearest_basic_rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b)
 {
     int  best_idx  = 0;
     long best_dist = LONG_MAX;

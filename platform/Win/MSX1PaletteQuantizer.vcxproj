@@ -113,7 +113,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>
@@ -167,7 +167,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>
@@ -222,7 +222,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
@@ -276,7 +276,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
@@ -322,7 +322,7 @@
     <ClInclude Include="$(AESDK_ROOT)Headers\AEFX_SuiteHandlerTemplate.h" />
     <ClInclude Include="$(AESDK_ROOT)Headers\AE_PluginData.h" />
     <ClInclude Include="..\..\src\ae\MSX1PaletteQuantizer.h" />
-    <ClInclude Include="..\..\src\ae\MSX1PaletteQuantizerPalettes.h" />
+    <ClInclude Include="..\..\src\core\MSX1PQPalettes.h" />
     <ClInclude Include="$(AESDK_ROOT)Util\Smart_Utils.h" />
     <ClInclude Include="$(AESDK_ROOT)Util\String_Utils.h" />
     <ClInclude Include="$(AESDK_ROOT)Headers\A.h" />
@@ -381,7 +381,7 @@ cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)
   <ItemGroup>
     <ClCompile Include="$(AESDK_ROOT)Util\Smart_Utils.cpp" />
     <ClCompile Include="..\..\src\ae\MSX1PaletteQuantizer.cpp" />
-    <ClCompile Include="..\..\src\ae\MSX1PaletteQuantizerPalettes.cpp" />
+    <ClCompile Include="..\..\src\core\MSX1PQPalettes.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
