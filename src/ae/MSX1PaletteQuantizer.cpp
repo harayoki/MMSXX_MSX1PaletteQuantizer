@@ -14,7 +14,7 @@
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
 #include "MSX1PaletteQuantizer.h"
-#include "MSX1PaletteQuantizerPalettes.h"
+#include "MSX1PQPalettes.h"
 
 
 #ifdef AE_OS_WIN
@@ -1451,7 +1451,10 @@ FilterImage8 (
                 num_colors);
         }
 
-        basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, xL, yL);
+        basic_idx = MSX1PQ::palette_index_to_basic_index(
+            palette_idx,
+            static_cast<std::int32_t>(xL),
+            static_cast<std::int32_t>(yL));
     } else {
         // ディザOFF: 直接15色へ
         if (qi && qi->use_hsb) {
@@ -1519,7 +1522,10 @@ FilterImageBGRA_8u (
                 num_colors);
         }
 
-        basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, xL, yL);
+        basic_idx = MSX1PQ::palette_index_to_basic_index(
+            palette_idx,
+            static_cast<std::int32_t>(xL),
+            static_cast<std::int32_t>(yL));
     } else {
         if (qi && qi->use_hsb) {
             basic_idx = nearest_basic_hsb(
