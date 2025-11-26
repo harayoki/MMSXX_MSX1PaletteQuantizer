@@ -73,7 +73,9 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 
 ## Xcodeでのビルド手順 (Mac)
 
-未検証。リポジトリに含まれる Xcode プロジェクトは内容が間違っている可能性があります。
+*   After Effects SDK をインストールしたパスを `AESDK_ROOT` 環境変数に設定します（例：`/Applications/Adobe After Effects 2023/Support Files/After Effects SDK`）。
+*   `platform/Mac/MSX1PaletteQuantizer.xcodeproj` を Xcode で開きます。
+*   `MSX1PaletteQuantizer` ターゲットをビルドして `MSX1PaletteQuantizer.plugin` を生成します。
 
 ## 実装について
 
