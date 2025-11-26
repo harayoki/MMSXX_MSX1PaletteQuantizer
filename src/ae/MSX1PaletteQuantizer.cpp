@@ -288,6 +288,20 @@ ParamsSetup (
         MSX1PQ_PARAM_PRE_HIGHLIGHT
     );
 
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 4: Hue rotate",
+        -180,
+        180,
+        -180,
+        180,
+        0,
+        0,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_HUE
+    );
+
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
@@ -548,6 +562,7 @@ Render (
     qi.pre_sat       = static_cast<float>(params[MSX1PQ_PARAM_PRE_SAT]->u.fs_d.value);
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
     qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
+    qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
