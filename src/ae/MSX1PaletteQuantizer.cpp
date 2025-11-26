@@ -14,7 +14,7 @@
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
 #include "MSX1PaletteQuantizer.h"
-#include "MSX1PaletteQuantizerPalettes.h"
+#include "../core/MSX1PQPalettes.h"
 
 
 #ifdef AE_OS_WIN
@@ -166,9 +166,7 @@ static inline float min3f(float a, float b, float c)
     return (m < c) ? m : c;
 }
 
-// 既存: MSX1PQ::kQuantColors[]
-extern const MSX1PQ::QuantColor MSX1PQ::kQuantColors[];
-extern const int        MSX1PQ::kNumQuantColors;
+namespace MSX1PQCore = MSX1PQ::Core;
 
 // パレットのHSBを一度だけ計算してキャッシュ
 static A_Boolean g_palette_hsb_initialized = FALSE;
@@ -311,11 +309,11 @@ ensure_palette_hsb_initialized()
     if (g_palette_hsb_initialized) {
         return;
     }
-    for (int i = 0; i < MSX1PQ::kNumQuantColors; i++) {
+    for (int i = 0; i < MSX1PQCore::kNumQuantColors; i++) {
         float h, s, v;
-        rgb_to_hsb(MSX1PQ::kQuantColors[i].r,
-                   MSX1PQ::kQuantColors[i].g,
-                   MSX1PQ::kQuantColors[i].b,
+        rgb_to_hsb(MSX1PQCore::kQuantColors[i].r,
+                   MSX1PQCore::kQuantColors[i].g,
+                   MSX1PQCore::kQuantColors[i].b,
                    h, s, v);
         g_palette_h[i] = h;
         g_palette_s[i] = s;
@@ -332,7 +330,7 @@ nearest_palette_rgb(A_u_char r8, A_u_char g8, A_u_char b8,
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
-        const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[i];
+        const MSX1PQCore::QuantColor &qc = MSX1PQCore::kQuantColors[i];
         float dr = (float)r8 - (float)qc.r;
         float dg = (float)g8 - (float)qc.g;
         float db = (float)b8 - (float)qc.b;
@@ -393,7 +391,7 @@ nearest_basic_hsb(A_u_char r8, A_u_char g8, A_u_char b8,
     float best_d2  = 1.0e30f;
 
     // ★基本15色だけを見る（0..14）
-    for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
+    for (int i = 0; i < MSX1PQCore::kNumBasicColors; i++) {
         float dh = fabsf(h - g_palette_h[i]);
         if (dh > 0.5f) {
             dh = 1.0f - dh;
@@ -415,24 +413,24 @@ nearest_basic_hsb(A_u_char r8, A_u_char g8, A_u_char b8,
 }
 
 // MSX1/MSX2 共通で「基本15色のパレット配列」を返す
-static inline const MSX1PQ::QuantColor*
+static inline const MSX1PQCore::QuantColor*
 get_basic_palette(A_long color_system)
 {
     return (color_system == MSX1PQ_COLOR_SYS_MSX2)
-        ? MSX1PQ::kBasicColorsMsx2   // MSX2 用15色
-        : MSX1PQ::kQuantColors;      // MSX1 用15色 (kQuantColors[0..14])
+        ? MSX1PQCore::kBasicColorsMsx2   // MSX2 用15色
+        : MSX1PQCore::kQuantColors;      // MSX1 用15色 (kQuantColors[0..14])
 }
 
 // RGB -> 基本15色インデックス (0..14)
 static int
 find_basic_index_from_rgb(A_u_char r, A_u_char g, A_u_char b, A_long color_system)
 {
-    const MSX1PQ::QuantColor* table = get_basic_palette(color_system);
+    const MSX1PQCore::QuantColor* table = get_basic_palette(color_system);
 
     int  best_idx  = 0;
     long best_dist = 0x7fffffffL;
 
-    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+    for (int i = 0; i < MSX1PQCore::kNumBasicColors; ++i) {
         long dr = (long)r - (long)table[i].r;
         long dg = (long)g - (long)table[i].g;
         long db = (long)b - (long)table[i].b;
@@ -707,7 +705,7 @@ apply_8dot2col_basic1(
         return;
     }
 
-    const MSX1PQ::QuantColor* table = get_basic_palette(color_system);
+    const MSX1PQCore::QuantColor* table = get_basic_palette(color_system);
 
     for (A_long y = 0; y < height; ++y) {
 
@@ -733,7 +731,7 @@ apply_8dot2col_basic1(
                     p.red, p.green, p.blue, color_system);
 
                 if (idx < 0) idx = 0;
-                if (idx >= MSX1PQ::kNumBasicColors) idx = MSX1PQ::kNumBasicColors - 1;
+                if (idx >= MSX1PQCore::kNumBasicColors) idx = MSX1PQCore::kNumBasicColors - 1;
 
                 idx_list[i] = idx;
                 counts[idx]++;
@@ -742,7 +740,7 @@ apply_8dot2col_basic1(
             // 2) 出現数 Top2
             int top1 = -1;
             int top2 = -1;
-            for (int c = 0; c < MSX1PQ::kNumBasicColors; ++c) {
+            for (int c = 0; c < MSX1PQCore::kNumBasicColors; ++c) {
                 int cnt = counts[c];
                 if (cnt <= 0) continue;
 
@@ -762,9 +760,9 @@ apply_8dot2col_basic1(
                 int new_idx = idx;
 
                 if (idx != top1 && idx != top2) {
-                    const MSX1PQ::QuantColor& src = table[idx];
-                    const MSX1PQ::QuantColor& c1  = table[top1];
-                    const MSX1PQ::QuantColor& c2  = table[top2];
+                    const MSX1PQCore::QuantColor& src = table[idx];
+                    const MSX1PQCore::QuantColor& c1  = table[top1];
+                    const MSX1PQCore::QuantColor& c2  = table[top2];
 
                     long dr1 = (long)src.r - (long)c1.r;
                     long dg1 = (long)src.g - (long)c1.g;
@@ -779,7 +777,7 @@ apply_8dot2col_basic1(
                     new_idx = (d1 <= d2) ? top1 : top2;
                 }
 
-                const MSX1PQ::QuantColor& qc = table[new_idx];
+                const MSX1PQCore::QuantColor& qc = table[new_idx];
                 PixelT& p = row[x_start + i];
                 p.red   = qc.r;
                 p.green = qc.g;
@@ -912,7 +910,7 @@ static void apply_8dot2col_best1(
         return;
     }
 
-    const MSX1PQ::QuantColor* table = get_basic_palette(color_system);
+    const MSX1PQCore::QuantColor* table = get_basic_palette(color_system);
 
     for (A_long y = 0; y < height; ++y) {
 
@@ -958,9 +956,9 @@ static void apply_8dot2col_best1(
             long dist2[BASIC_COLORS][BASIC_COLORS];
 
             for (int i = 0; i < BASIC_COLORS; ++i) {
-                const MSX1PQ::QuantColor& ci = table[i];
+                const MSX1PQCore::QuantColor& ci = table[i];
                 for (int j = 0; j < BASIC_COLORS; ++j) {
-                    const MSX1PQ::QuantColor& cj = table[j];
+                    const MSX1PQCore::QuantColor& cj = table[j];
                     long dr = (long)ci.r - (long)cj.r;
                     long dg = (long)ci.g - (long)cj.g;
                     long db = (long)ci.b - (long)cj.b;
@@ -1008,7 +1006,7 @@ static void apply_8dot2col_best1(
                 long dB = dist2[src_idx][best_b];
                 int  new_idx = (dA <= dB) ? best_a : best_b;
 
-                const MSX1PQ::QuantColor& qc = table[new_idx];
+                const MSX1PQCore::QuantColor& qc = table[new_idx];
                 PixelT& p = row[x_start + i];
                 p.red   = qc.r;
                 p.green = qc.g;
@@ -1045,9 +1043,9 @@ static void apply_8dot2col_attr_best(
     // 15×15 距離テーブル（セル内共通）
     long dist2[BASIC_COLORS][BASIC_COLORS];
     for (int i = 0; i < BASIC_COLORS; ++i) {
-        const MSX1PQ::QuantColor& ci = table[i];
+        const MSX1PQCore::QuantColor& ci = table[i];
         for (int j = 0; j < BASIC_COLORS; ++j) {
-            const MSX1PQ::QuantColor& cj = table[j];
+            const MSX1PQCore::QuantColor& cj = table[j];
             long dr = (long)ci.r - (long)cj.r;
             long dg = (long)ci.g - (long)cj.g;
             long db = (long)ci.b - (long)cj.b;
@@ -1187,7 +1185,7 @@ static void apply_8dot2col_attr_best(
                     long dB = dist2[src_idx][best_b];
                     int  new_idx = (dA <= dB) ? best_a : best_b;
 
-                    const MSX1PQ::QuantColor& qc = table[new_idx];
+                    const MSX1PQCore::QuantColor& qc = table[new_idx];
                     PixelT& p = row[x_start + i];
                     p.red   = qc.r;
                     p.green = qc.g;
@@ -1241,13 +1239,13 @@ static void apply_8dot2col_attr_best_penalty(
         return;
     }
 
-    const MSX1PQ::QuantColor* table = get_basic_palette(color_system);
+    const MSX1PQCore::QuantColor* table = get_basic_palette(color_system);
 
     long dist2[BASIC_COLORS][BASIC_COLORS];
     for (int i = 0; i < BASIC_COLORS; ++i) {
-        const MSX1PQ::QuantColor& ci = table[i];
+        const MSX1PQCore::QuantColor& ci = table[i];
         for (int j = 0; j < BASIC_COLORS; ++j) {
-            const MSX1PQ::QuantColor& cj = table[j];
+            const MSX1PQCore::QuantColor& cj = table[j];
             long dr = (long)ci.r - (long)cj.r;
             long dg = (long)ci.g - (long)cj.g;
             long db = (long)ci.b - (long)cj.b;
@@ -1393,7 +1391,7 @@ static void apply_8dot2col_attr_best_penalty(
                     long dB = dist2[src_idx][best_b];
                     int  new_idx = (dA <= dB) ? best_a : best_b;
 
-                    const MSX1PQ::QuantColor& qc = table[new_idx];
+                    const MSX1PQCore::QuantColor& qc = table[new_idx];
                     PixelT& p = row[x_start + i];
                     p.red   = qc.r;
                     p.green = qc.g;
@@ -1434,9 +1432,9 @@ FilterImage8 (
 
     if (qi && qi->use_dither) {
         // どこまでのパレットを使うか
-        int num_colors = MSX1PQ::kNumQuantColors;
+        int num_colors = MSX1PQCore::kNumQuantColors;
         if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex; // 低輝度パレットを除外
+            num_colors = MSX1PQCore::kFirstDarkDitherIndex; // 低輝度パレットを除外
         }
 
         int palette_idx;
@@ -1451,7 +1449,7 @@ FilterImage8 (
                 num_colors);
         }
 
-        basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, xL, yL);
+        basic_idx = MSX1PQCore::palette_index_to_basic_index(palette_idx, xL, yL);
     } else {
         // ディザOFF: 直接15色へ
         if (qi && qi->use_hsb) {
@@ -1459,15 +1457,15 @@ FilterImage8 (
                 r, g, b,
                 qi->w_h, qi->w_s, qi->w_b);
         } else {
-            basic_idx = MSX1PQ::nearest_basic_rgb(
+            basic_idx = MSX1PQCore::nearest_basic_rgb(
                 r, g, b);
         }
     }
 
-    const MSX1PQ::QuantColor &qc =
+    const MSX1PQCore::QuantColor &qc =
         (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-        ? MSX1PQ::kBasicColorsMsx2[basic_idx]
-        : MSX1PQ::kQuantColors[basic_idx];
+        ? MSX1PQCore::kBasicColorsMsx2[basic_idx]
+        : MSX1PQCore::kQuantColors[basic_idx];
 
     outP->alpha = inP->alpha;
     outP->red   = qc.r;
@@ -1502,9 +1500,9 @@ FilterImageBGRA_8u (
     int basic_idx = 0;
 
     if (qi && qi->use_dither) {
-        int num_colors = MSX1PQ::kNumQuantColors;
+        int num_colors = MSX1PQCore::kNumQuantColors;
         if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex;
+            num_colors = MSX1PQCore::kFirstDarkDitherIndex;
         }
 
         int palette_idx;
@@ -1519,22 +1517,22 @@ FilterImageBGRA_8u (
                 num_colors);
         }
 
-        basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, xL, yL);
+        basic_idx = MSX1PQCore::palette_index_to_basic_index(palette_idx, xL, yL);
     } else {
         if (qi && qi->use_hsb) {
             basic_idx = nearest_basic_hsb(
                 r, g, b,
                 qi->w_h, qi->w_s, qi->w_b);
         } else {
-            basic_idx = MSX1PQ::nearest_basic_rgb(
+            basic_idx = MSX1PQCore::nearest_basic_rgb(
                 r, g, b);
         }
     }
 
-    const MSX1PQ::QuantColor &qc =
+    const MSX1PQCore::QuantColor &qc =
         (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-            ? MSX1PQ::kBasicColorsMsx2[basic_idx]  // ★ MSX2 の 15色
-            : MSX1PQ::kQuantColors[basic_idx];     // ★ MSX1 の 15色
+            ? MSX1PQCore::kBasicColorsMsx2[basic_idx]  // ★ MSX2 の 15色
+            : MSX1PQCore::kQuantColors[basic_idx];     // ★ MSX1 の 15色
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
