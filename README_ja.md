@@ -1,4 +1,4 @@
-# MMSXX_MSX1PaletteQuantizer
+# MMSXX_MSX1PaletteQuantizer (AfterEffecst / Premiere PRO 向けプラグイン)
 
 Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイン
 
