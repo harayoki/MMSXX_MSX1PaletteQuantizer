@@ -72,6 +72,7 @@ using MSX1PQCore::nearest_basic_hsb;
 using MSX1PQCore::nearest_palette_hsb;
 using MSX1PQCore::nearest_palette_rgb;
 using MSX1PQCore::clamp01f;
+using MSX1PQCore::clamp_value;
 using MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1;
 using MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST;
@@ -575,7 +576,7 @@ Render (
     qi.w_b = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
 
-    qi.pre_posterize = std::clamp(
+    qi.pre_posterize = clamp_value(
         static_cast<int>(params[MSX1PQ_PARAM_PRE_POSTERIZE]->u.fs_d.value + 0.5),
         1,
         255);
