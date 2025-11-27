@@ -48,18 +48,20 @@ if exist "%EXTRA_DIR%" (
     echo Additional items directory not found: %EXTRA_DIR%
 )
 
-for /f %%I in ('powershell -NoProfile -Command "(Get-Date).ToString(''yyyyMMdd'')"') do set "TODAY=%%I"
-set "ZIP_NAME=MSX1PaletteQuantizer_!TODAY!.zip"
+for /f %%I in ('powershell -NoProfile -Command "(Get-Date -Format yyyyMMdd)"') do set "TODAY=%%I"
+for /f %%V in ('type "%SCRIPT_DIR%version.txt"') do set "VERSION=%%V"
+set "ZIP_NAME=MSX1PaletteQuantizer_!TODAY!_!VERSION!.zip"
 set "ZIP_PATH=%DIST_DIR%\%ZIP_NAME%"
 
 if exist "%ZIP_PATH%" del /f /q "%ZIP_PATH%"
 
 echo Creating ZIP archive: %ZIP_PATH%
-powershell -NoProfile -Command "Set-StrictMode -Version Latest; Set-Location '%DIST_DIR%'; $global:LASTEXITCODE = 0; $items = Get-ChildItem -Force | Where-Object { $_.Extension -ne '.zip' }; if (-not $items) { Write-Error 'No files to archive.'; exit 1 }; Compress-Archive -Path $items -DestinationPath '%ZIP_PATH%' -Force; $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } elseif ($?) { 0 } else { 1 }; exit $exitCode"
+powershell -NoProfile -Command "Set-StrictMode -Version Latest; Set-Location '%DIST_DIR%'; $global:LASTEXITCODE = 0; $items = Get-ChildItem -Force | Where-Object { $_.Extension -ne '.zip' -and $_.Name -ne '.keep' }; if (-not $items) { Write-Error 'No files to archive.'; exit 1 }; Compress-Archive -Path $items -DestinationPath '%ZIP_PATH%' -Force; $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } elseif ($?) { 0 } else { 1 }; exit $exitCode"
 if errorlevel 1 (
     echo Failed to create ZIP archive.
     exit /b 1
 )
 
 echo Completed packaging.
+
 endlocal
