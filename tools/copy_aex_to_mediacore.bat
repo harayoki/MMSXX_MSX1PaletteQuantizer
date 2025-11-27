@@ -1,42 +1,48 @@
 @echo off
 setlocal
 
-echo ã“ã®ã‚¹ã‚¯ãƒªãƒ—ãƒˆã¯ã€platform\Win\dist ã«ã‚ã‚‹ MSX1PaletteQuantizer.aex ã‚’ Adobe MediaCore ãƒ•ã‚©ãƒ«ãƒ€ã«ã‚³ãƒ”ãƒ¼ã—ã¾ã™ã€‚ï¼ˆç®¡ç†è€…æ¨©é™ãŒå¿…è¦ï¼‰
+echo ‚±‚ÌƒXƒNƒŠƒvƒg‚Í MSX1PaletteQuantizer.aex ‚ð Adobe MediaCore ƒtƒHƒ‹ƒ_‚ÉƒRƒs[‚µ‚Ü‚·B
+echo (ŠÇ—ŽÒŒ ŒÀ‚ª•K—v‚Å‚·)
 
-set "TARGET_DIR=C:\\Program Files\\Adobe\\Common\\Plug-ins\\7.0\\MediaCore"
+set "TARGET_DIR=C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore"
 
-:: Check for administrator privileges
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ç®¡ç†è€…æ¨©é™ãŒå¿…è¦ã§ã™ã€‚ç®¡ç†è€…ã¨ã—ã¦å†å®Ÿè¡Œã—ã¾ã™ã€‚
-    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WorkingDirectory '%~dp0'"
-    exit /b
+:: Check for administrator privileges and relaunch if necessary
+>nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
+if '%errorlevel%' NEQ '0' (
+    echo ŠÇ—ŽÒŒ ŒÀ‚ª•K—v‚Å‚·BŠÇ—ŽÒ‚Æ‚µ‚ÄÄŽÀs‚µ‚Ü‚·B
+    PAUSE
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& {Start-Process -FilePath '%~f0' -Verb RunAs}"
+    goto :eof
 )
 
 :: Resolve repository root based on this script location
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
-set "SOURCE_AEX=%REPO_ROOT%\platform\Win\dist\MSX1PaletteQuantizer.aex"
+set "SOURCE_AEX=%REPO_ROOT%\platform\Win\x64\MSX1PaletteQuantizer.aex"
 
 if not exist "%SOURCE_AEX%" (
-    echo aex ãƒ•ã‚¡ã‚¤ãƒ«ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“: %SOURCE_AEX%
+    echo aex ƒtƒ@ƒCƒ‹‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñ: %SOURCE_AEX%
+    PAUSE
     exit /b 1
 )
 
 if not exist "%TARGET_DIR%" (
-    echo ã‚³ãƒ”ãƒ¼å…ˆãƒ•ã‚©ãƒ«ãƒ€ãŒå­˜åœ¨ã—ã¾ã›ã‚“ã€‚%TARGET_DIR%
+    echo ƒRƒs[æƒtƒHƒ‹ƒ_‚ª‘¶Ý‚µ‚Ü‚¹‚ñ: %TARGET_DIR%
+    PAUSE
     exit /b 1
 )
 
-echo ã‚³ãƒ”ãƒ¼å…ƒ: %SOURCE_AEX%
-echo ã‚³ãƒ”ãƒ¼å…ˆ: %TARGET_DIR%
+echo ƒRƒs[Œ³: %SOURCE_AEX%
+echo ƒRƒs[æ: %TARGET_DIR%
 
-echo ã‚³ãƒ”ãƒ¼ä¸­...
+echo ƒRƒs[‚µ‚Ä‚¢‚Ü‚·...
 copy /Y "%SOURCE_AEX%" "%TARGET_DIR%"
 if %errorlevel% neq 0 (
-    echo ã‚³ãƒ”ãƒ¼ã«å¤±æ•—ã—ã¾ã—ãŸã€‚
+    echo ƒRƒs[‚ÉŽ¸”s‚µ‚Ü‚µ‚½B
+    PAUSE
     exit /b 1
 )
 
-echo ã‚³ãƒ”ãƒ¼ãŒå®Œäº†ã—ã¾ã—ãŸã€‚
+echo ƒRƒs[‚ªŠ®—¹‚µ‚Ü‚µ‚½B
 endlocal
+PAUSE
