@@ -1,6 +1,6 @@
 # MMSXX_MSX1PaletteQuantizer (AfterEffecst / Premiere PRO 向けプラグイン)
 
-Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイン
+Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイン / コマンドラインツール
 
 English documentation: [README_en](README.md)
 
@@ -84,6 +84,12 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 
 ## ライセンス
 
-MITライセンスの下で公開されています。 [LICENSE](LICENSE)
+* MITライセンスの下で公開されています。
+  * [LICENSE](LICENSE)
+
+* CLI版にはPNGエンコーダ/デコーダライブラリ「lodepng」を使用しています。
+  * https://github.com/lvandeve/lodepng/
+  * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)[README_ja.md](README_ja.md)
+
 
 

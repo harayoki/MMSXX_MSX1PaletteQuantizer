@@ -300,7 +300,7 @@ bool write_png(const fs::path& output_path, const std::vector<RgbaPixel>& pixels
 
     const unsigned error = lodepng::encode(output_path.string(), raw, width, height);
     if (error) {
-        std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng::lodepng_error_text(error) << ")\n";
+        std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
         return false;
     }
     return true;
@@ -313,7 +313,7 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
 
     const unsigned error = lodepng::decode(raw, width, height, input.string());
     if (error) {
-        std::cerr << "Failed to read PNG: " << input << " (" << lodepng::lodepng_error_text(error) << ")\n";
+        std::cerr << "Failed to read PNG: " << input << " (" << lodepng_error_text(error) << ")\n";
         return false;
     }
 

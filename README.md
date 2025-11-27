@@ -1,6 +1,6 @@
 # MMSXX_MSX1PaletteQuantizer (for AfterFX / Premiere PRO)
 
-MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO
+MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 
 日本語版のドキュメント：[README_ja](README_ja.md)
 
@@ -83,4 +83,8 @@ Code modifications to address these limitations are highly welcome. Porting to f
 
 ## License
 
-Released under the MIT License. [LICENSE](LICENSE)
+* Released under the MIT License.
+  * [LICENSE](LICENSE)
+* The CLI version uses the PNG encoder/decoder library "lodepng".
+  * https://github.com/lvandeve/lodepng/
+  * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
