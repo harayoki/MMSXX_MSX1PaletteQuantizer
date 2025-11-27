@@ -46,6 +46,12 @@ struct QuantInfo {
 
 float clamp01f(float v);
 
+template <typename T>
+constexpr T clamp_value(const T& v, const T& lo, const T& hi)
+{
+    return (v < lo) ? lo : (v > hi ? hi : v);
+}
+
 void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                 float &h, float &s, float &v);
 
