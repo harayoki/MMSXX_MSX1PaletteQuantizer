@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -43,40 +44,77 @@ static_assert(sizeof(RgbaPixel) == 4, "RgbaPixel must be tightly packed");
 
 namespace {
 
+std::string to_lower_copy(const std::string& s);
+
 enum class UsageLanguage {
     English,
     Japanese,
 };
 
-void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::English) {
+constexpr const char* kVersion = "v0.3a";
+
+UsageLanguage detect_usage_language_from_env() {
+    const char* locale_vars[] = {"LC_ALL", "LC_MESSAGES", "LANG"};
+    for (const char* var : locale_vars) {
+        if (const char* value = std::getenv(var)) {
+            std::string locale = to_lower_copy(value);
+            if (locale.find("ja") != std::string::npos) {
+                return UsageLanguage::Japanese;
+            }
+        }
+    }
+    return UsageLanguage::English;
+}
+
+void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese) {
     if (lang == UsageLanguage::Japanese) {
         std::cout << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
+                  << "1つの画像またはフォルダ内の複数の画像を受け取り、MSX1(TMS9918)の表示ルールに則った画像に変換します。\n"
                   << "オプション:\n"
+                  << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
+                  << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-                  << "  --pre-sat <0-10> --pre-gamma <0-10> --pre-highlight <0-10> --pre-hue <-180-180>\n"
+                  << "  --pre-sat <0-10>             処理前に彩度を高く補正\n"
+                  << "  --pre-gamma <0-10>           処理前にガンマを暗く補正\n"
+                  << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正\n"
+                  << "  --pre-hue <-180-180>         処理前に色相を変更\n"
                   << "  -f, --force                  上書き時に確認しない\n"
+                  << "  -v, --version                バージョン情報を表示\n"
+                  << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
                   << "  --help-ja                    この日本語のUSAGEを表示\n"
-                  << "  -h, --help                   英語のUSAGEを表示\n";
+                  << "  --help-en                    Show this usage in English\n";
         return;
     }
 
     std::cout << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
+              << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
               << "Options:\n"
+              << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
+              << "  --output, -o <dir>           Specify the output directory\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-              << "  --pre-sat <0-10> --pre-gamma <0-10> --pre-highlight <0-10> --pre-hue <-180-180>\n"
+              << "  --pre-sat <0-10>             Increase saturation before processing\n"
+              << "  --pre-gamma <0-10>           Darken gamma before processing\n"
+              << "  --pre-highlight <0-10>       Brighten highlights before processing\n"
+              << "  --pre-hue <-180-180>         Adjust hue before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
-              << "  --help-ja                    Show this usage in Japanese\n"
-              << "  -h, --help                   Show this usage in English\n";
+              << "  -v, --version                Show version information\n"
+              << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
+              << "  --help-ja                    この日本語のUSAGEを表示\n"
+              << "  --help-en                    Show this usage in English\n";
+}
+
+void print_version(const char* prog) {
+    std::cout << prog << " version " << kVersion << "\n";
 }
 
 std::optional<int> parse_8dot_mode(const std::string& value) {
@@ -98,7 +136,7 @@ std::optional<int> parse_8dot_mode(const std::string& value) {
 
 bool parse_arguments(int argc, char** argv, CliOptions& opts) {
     if (argc < 2) {
-        print_usage(argv[0]);
+        print_usage(argv[0], detect_usage_language_from_env());
         return false;
     }
 
@@ -163,11 +201,17 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_hue = std::stof(require_value(arg));
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
+        } else if (arg == "--version" || arg == "-v") {
+            print_version(argv[0]);
+            return false;
         } else if (arg == "--help" || arg == "-h") {
-            print_usage(argv[0], UsageLanguage::English);
+            print_usage(argv[0], detect_usage_language_from_env());
             return false;
         } else if (arg == "--help-ja") {
             print_usage(argv[0], UsageLanguage::Japanese);
+            return false;
+        } else if (arg == "--help-en") {
+            print_usage(argv[0], UsageLanguage::English);
             return false;
         } else {
             throw std::runtime_error("Unknown argument: " + arg);
