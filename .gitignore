@@ -43,6 +43,8 @@
 temp/
 Release/
 Debug/
+CLI_Release/
+CLI_Debug/
 *.rc
 *.res
 *.aex

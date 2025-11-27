@@ -1,0 +1,470 @@
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <map>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "../core/MSX1PQCore.h"
+#include "../core/MSX1PQPalettes.h"
+#include "lodepng.h"
+
+namespace fs = std::filesystem;
+
+struct CliOptions {
+    fs::path input_path;
+    fs::path output_dir;
+    bool force{false};
+
+    int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
+    bool use_dither{true};
+    bool use_dark_dither{true};
+    int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
+    bool use_hsb{true};
+    float weight_h{1.0f};
+    float weight_s{0.5f};
+    float weight_b{0.75f};
+    float pre_sat{1.0f};
+    float pre_gamma{1.0f};
+    float pre_highlight{1.0f};
+    float pre_hue{0.0f};
+};
+
+struct RgbaPixel {
+    std::uint8_t red;
+    std::uint8_t green;
+    std::uint8_t blue;
+    std::uint8_t alpha;
+};
+static_assert(sizeof(RgbaPixel) == 4, "RgbaPixel must be tightly packed");
+
+namespace {
+
+std::string to_lower_copy(const std::string& s);
+
+enum class UsageLanguage {
+    English,
+    Japanese,
+};
+
+constexpr const char* kVersion = "v0.3a";
+
+std::optional<std::string> get_env_value(const char* name) {
+#ifdef _MSC_VER
+    char* buffer = nullptr;
+    size_t size = 0;
+    if (_dupenv_s(&buffer, &size, name) == 0 && buffer != nullptr) {
+        std::string value(buffer);
+        std::free(buffer);
+        return value;
+    }
+    return std::nullopt;
+#else
+    if (const char* value = std::getenv(name)) {
+        return std::string(value);
+    }
+    return std::nullopt;
+#endif
+}
+
+UsageLanguage detect_usage_language_from_env() {
+    const char* locale_vars[] = {"LC_ALL", "LC_MESSAGES", "LANG"};
+    for (const char* var : locale_vars) {
+        if (auto value = get_env_value(var)) {
+            std::string locale = to_lower_copy(*value);
+            if (locale.find("ja") != std::string::npos) {
+                return UsageLanguage::Japanese;
+            }
+        }
+    }
+    return UsageLanguage::English;
+}
+
+void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese) {
+    if (lang == UsageLanguage::Japanese) {
+        std::cout << "MMSXX - MSX1 Palette Quantizer\n"
+                  << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
+                  << "1つの画像またはフォルダ内の複数の画像を受け取り、MSX1(TMS9918)の表示ルールに則った画像に変換します。\n"
+                  << "オプション:\n"
+                  << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
+                  << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
+                  << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
+                  << "  --dither / --no-dither       (デフォルト: dither)\n"
+                  << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
+                  << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
+                  << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
+                  << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 1.0)\n"
+                  << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
+                  << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
+                  << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  -f, --force                  上書き時に確認しない\n"
+                  << "  -v, --version                バージョン情報を表示\n"
+                  << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
+                  << "  --help-ja                    この日本語のUSAGEを表示\n"
+                  << "  --help-en                    Show this usage in English\n";
+        return;
+    }
+
+    std::cout << "MMSXX - MSX1 Palette Quantizer\n"
+              << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
+              << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
+              << "Options:\n"
+              << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
+              << "  --output, -o <dir>           Specify the output directory\n"
+              << "  --color-system <msx1|msx2>   (default: msx1)\n"
+              << "  --dither / --no-dither       (default: dither)\n"
+              << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
+              << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
+              << "  --distance <rgb|hsb>         (default: hsb)\n"
+              << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+              << "  --pre-sat <0-10>             Increase saturation before processing (default: 1.0)\n"
+              << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
+              << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
+              << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  -f, --force                  Overwrite without confirmation\n"
+              << "  -v, --version                Show version information\n"
+              << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
+              << "  --help-ja                    この日本語のUSAGEを表示\n"
+              << "  --help-en                    Show this usage in English\n";
+}
+
+void print_version(const char* prog) {
+    std::cout << prog << " version " << kVersion << "\n";
+}
+
+std::optional<int> parse_8dot_mode(const std::string& value) {
+    static const std::map<std::string, int> kMap = {
+        {"none", MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE},
+        {"fast", MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1},
+        {"basic", MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1},
+        {"best", MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1},
+        {"best-attr", MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST},
+        {"best-trans", MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST},
+    };
+
+    auto it = kMap.find(value);
+    if (it != kMap.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+bool parse_arguments(int argc, char** argv, CliOptions& opts) {
+    if (argc < 2) {
+        print_usage(argv[0], detect_usage_language_from_env());
+        return false;
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        auto require_value = [&](const std::string& name) -> std::string {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for option: " + name);
+            }
+            return argv[++i];
+        };
+
+        if (arg == "--input" || arg == "-i") {
+            opts.input_path = require_value(arg);
+        } else if (arg == "--output" || arg == "-o") {
+            opts.output_dir = require_value(arg);
+        } else if (arg == "--color-system") {
+            std::string value = require_value(arg);
+            if (value == "msx1") {
+                opts.color_system = MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1;
+            } else if (value == "msx2") {
+                opts.color_system = MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2;
+            } else {
+                throw std::runtime_error("Unknown color system: " + value);
+            }
+        } else if (arg == "--dither") {
+            opts.use_dither = true;
+        } else if (arg == "--no-dither") {
+            opts.use_dither = false;
+        } else if (arg == "--dark-dither") {
+            opts.use_dark_dither = true;
+        } else if (arg == "--no-dark-dither") {
+            opts.use_dark_dither = false;
+        } else if (arg == "--8dot") {
+            auto parsed = parse_8dot_mode(require_value(arg));
+            if (!parsed) {
+                throw std::runtime_error("Unknown 8dot mode");
+            }
+            opts.use_8dot2col = *parsed;
+        } else if (arg == "--distance") {
+            std::string value = require_value(arg);
+            if (value == "rgb") {
+                opts.use_hsb = false;
+            } else if (value == "hsb") {
+                opts.use_hsb = true;
+            } else {
+                throw std::runtime_error("Unknown distance mode: " + value);
+            }
+        } else if (arg == "--weight-h") {
+            opts.weight_h = std::stof(require_value(arg));
+        } else if (arg == "--weight-s") {
+            opts.weight_s = std::stof(require_value(arg));
+        } else if (arg == "--weight-b") {
+            opts.weight_b = std::stof(require_value(arg));
+        } else if (arg == "--pre-sat") {
+            opts.pre_sat = std::stof(require_value(arg));
+        } else if (arg == "--pre-gamma") {
+            opts.pre_gamma = std::stof(require_value(arg));
+        } else if (arg == "--pre-highlight") {
+            opts.pre_highlight = std::stof(require_value(arg));
+        } else if (arg == "--pre-hue") {
+            opts.pre_hue = std::stof(require_value(arg));
+        } else if (arg == "--force" || arg == "-f") {
+            opts.force = true;
+        } else if (arg == "--version" || arg == "-v") {
+            print_version(argv[0]);
+            return false;
+        } else if (arg == "--help" || arg == "-h") {
+            print_usage(argv[0], detect_usage_language_from_env());
+            return false;
+        } else if (arg == "--help-ja") {
+            print_usage(argv[0], UsageLanguage::Japanese);
+            return false;
+        } else if (arg == "--help-en") {
+            print_usage(argv[0], UsageLanguage::English);
+            return false;
+        } else {
+            throw std::runtime_error("Unknown argument: " + arg);
+        }
+    }
+
+    if (opts.input_path.empty() || opts.output_dir.empty()) {
+        throw std::runtime_error("--input and --output are required");
+    }
+
+    return true;
+}
+
+std::string to_lower_copy(const std::string& s) {
+    std::string result = s;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return result;
+}
+
+bool has_png_extension(const fs::path& p) {
+    return to_lower_copy(p.extension().string()) == ".png";
+}
+
+bool confirm_overwrite(const fs::path& path) {
+    std::cout << "File " << path << " exists. Overwrite? [y/N]: ";
+    std::string line;
+    std::getline(std::cin, line);
+    if (line.empty()) {
+        return false;
+    }
+    char c = static_cast<char>(std::tolower(line[0]));
+    return c == 'y';
+}
+
+int select_basic_index(const MSX1PQCore::QuantInfo& qi, std::uint8_t r, std::uint8_t g, std::uint8_t b, std::int32_t x, std::int32_t y) {
+    if (qi.use_dither) {
+        int num_colors = MSX1PQ::kNumQuantColors;
+        if (!qi.use_dark_dither) {
+            num_colors = MSX1PQ::kFirstDarkDitherIndex;
+        }
+
+        int palette_idx;
+        if (qi.use_hsb) {
+            palette_idx = MSX1PQCore::nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors);
+        } else {
+            palette_idx = MSX1PQCore::nearest_palette_rgb(r, g, b, num_colors);
+        }
+        return MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
+    }
+
+    if (qi.use_hsb) {
+        return MSX1PQCore::nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
+    }
+    return MSX1PQ::nearest_basic_rgb(r, g, b);
+}
+
+void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
+    MSX1PQCore::QuantInfo qi{};
+    qi.use_dither      = opts.use_dither;
+    qi.use_8dot2col    = opts.use_8dot2col;
+    qi.use_hsb         = opts.use_hsb;
+    qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
+    qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
+    qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);
+    qi.pre_sat         = opts.pre_sat;
+    qi.pre_gamma       = opts.pre_gamma;
+    qi.pre_highlight   = opts.pre_highlight;
+    qi.pre_hue         = opts.pre_hue;
+    qi.use_dark_dither = opts.use_dark_dither;
+    qi.color_system    = opts.color_system;
+
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            RgbaPixel& px = pixels[y * width + x];
+            std::uint8_t r = px.red;
+            std::uint8_t g = px.green;
+            std::uint8_t b = px.blue;
+
+            MSX1PQCore::apply_preprocess(&qi, r, g, b);
+            const int basic_idx = select_basic_index(qi, r, g, b, static_cast<std::int32_t>(x), static_cast<std::int32_t>(y));
+
+            const MSX1PQ::QuantColor& qc = (qi.color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
+                ? MSX1PQ::kBasicColorsMsx2[basic_idx]
+                : MSX1PQ::kQuantColors[basic_idx];
+
+            px.red   = qc.r;
+            px.green = qc.g;
+            px.blue  = qc.b;
+        }
+    }
+
+    if (qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        const std::int32_t w = static_cast<std::int32_t>(width);
+        const std::int32_t h = static_cast<std::int32_t>(height);
+
+        switch (qi.use_8dot2col) {
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
+            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
+            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
+            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+bool write_png(const fs::path& output_path, const std::vector<RgbaPixel>& pixels, unsigned width, unsigned height) {
+    std::vector<unsigned char> raw;
+    raw.reserve(pixels.size() * 4);
+    for (const auto& p : pixels) {
+        raw.push_back(p.red);
+        raw.push_back(p.green);
+        raw.push_back(p.blue);
+        raw.push_back(p.alpha);
+    }
+
+    const unsigned error = lodepng::encode(output_path.string(), raw, width, height);
+    if (error) {
+        std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
+        return false;
+    }
+    return true;
+}
+
+bool process_file(const fs::path& input, const fs::path& output, const CliOptions& opts) {
+    std::vector<unsigned char> raw;
+    unsigned width = 0;
+    unsigned height = 0;
+
+    const unsigned error = lodepng::decode(raw, width, height, input.string());
+    if (error) {
+        std::cerr << "Failed to read PNG: " << input << " (" << lodepng_error_text(error) << ")\n";
+        return false;
+    }
+
+    if (raw.size() != static_cast<size_t>(width * height * 4)) {
+        std::cerr << "Unexpected image size for: " << input << "\n";
+        return false;
+    }
+
+    std::vector<RgbaPixel> pixels(width * height);
+    for (unsigned i = 0; i < width * height; ++i) {
+        pixels[i].red   = raw[i * 4 + 0];
+        pixels[i].green = raw[i * 4 + 1];
+        pixels[i].blue  = raw[i * 4 + 2];
+        pixels[i].alpha = raw[i * 4 + 3];
+    }
+
+    quantize_image(pixels, width, height, opts);
+    return write_png(output, pixels, width, height);
+}
+
+std::vector<fs::path> collect_inputs(const fs::path& input_path) {
+    if (fs::is_regular_file(input_path)) {
+        return {input_path};
+    }
+
+    std::vector<fs::path> results;
+    for (const auto& entry : fs::directory_iterator(input_path)) {
+        if (entry.is_regular_file() && has_png_extension(entry.path())) {
+            results.push_back(entry.path());
+        }
+    }
+    std::sort(results.begin(), results.end());
+    return results;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    CliOptions opts;
+    try {
+        if (!parse_arguments(argc, argv, opts)) {
+            return 1;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    if (!fs::exists(opts.input_path)) {
+        std::cerr << "Input path does not exist: " << opts.input_path << "\n";
+        return 1;
+    }
+
+    if (!fs::exists(opts.output_dir)) {
+        fs::create_directories(opts.output_dir);
+    }
+
+    const auto inputs = collect_inputs(opts.input_path);
+    if (inputs.empty()) {
+        std::cerr << "No PNG files to process in: " << opts.input_path << "\n";
+        return 1;
+    }
+
+    int success_count = 0;
+    for (const auto& input : inputs) {
+        fs::path out_path = opts.output_dir / input.filename();
+        if (fs::exists(out_path) && !opts.force) {
+            if (!confirm_overwrite(out_path)) {
+                std::cout << "Skipped: " << out_path << "\n";
+                continue;
+            }
+        }
+
+        if (!has_png_extension(input)) {
+            std::cout << "Skip (not PNG): " << input << "\n";
+            continue;
+        }
+
+        if (process_file(input, out_path, opts)) {
+            std::cout << "Processed: " << input << " -> " << out_path << "\n";
+            ++success_count;
+        }
+    }
+
+    if (success_count == 0) {
+        return 1;
+    }
+    return 0;
+}

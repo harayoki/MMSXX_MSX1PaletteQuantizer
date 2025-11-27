@@ -1,6 +1,6 @@
 # MMSXX_MSX1PaletteQuantizer (for AfterFX / Premiere PRO)
 
-MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO
+MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 
 日本語版のドキュメント：[README_ja](README_ja.md)
 
@@ -52,8 +52,11 @@ It should also work on Mac if built with Xcode.
 The same steps can be used for Premiere Pro.
 
 For detailed usage and settings of MSX1PaletteQuantizer, please refer to:
-* [How to use in After Effects](docs/MSX1_effect_guide_en.md)
+* [How to use in After Effects](docs/AE_guide_en.md)
 * https://note.com/harayoki/n/nef7d2f9b5380 note article
+
+For command line usage, see:
+* [CLI usage guide](docs/CLI_guide_en.md)
 
 ## Build Instructions for Visual Studio 2022 (Windows)
 
@@ -83,4 +86,8 @@ Code modifications to address these limitations are highly welcome. Porting to f
 
 ## License
 
-Released under the MIT License. [LICENSE](LICENSE)
+* Released under the MIT License.
+  * [LICENSE](LICENSE)
+* The CLI version uses the PNG encoder/decoder library "lodepng".
+  * https://github.com/lvandeve/lodepng/
+  * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
