@@ -53,7 +53,7 @@ MacもXcodeでビルドすれば動作すると思います。
 プレミアも同様の手順で使用できます。
 
 以降の MSX1PaletteQuantizer の詳細な使用方法や設定については、
-* [After Effectsでの使い方](docs/AE_effect_guide_ja.md)
+* [After Effectsでの使い方](docs/AE_guide_ja.md)
 * https://note.com/harayoki/n/nef7d2f9b5380 note記事
 
 コマンドライン版の使い方については、
