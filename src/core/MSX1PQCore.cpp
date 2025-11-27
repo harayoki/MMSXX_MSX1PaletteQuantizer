@@ -115,6 +115,15 @@ void apply_preprocess(const QuantInfo *qi,
 {
     if (!qi) return;
 
+    if (qi->pre_lut) {
+        auto apply_lut = [lut = qi->pre_lut](std::uint8_t v, int offset) {
+            return lut[static_cast<std::size_t>(v) * 3 + offset];
+        };
+        r8 = apply_lut(r8, 0);
+        g8 = apply_lut(g8, 1);
+        b8 = apply_lut(b8, 2);
+    }
+
     const int posterize_levels = clamp_value(qi->pre_posterize, 0, 255);
     const bool do_posterize = (posterize_levels > 1);
     const bool do_hsv_adjust =
