@@ -32,6 +32,7 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_WEIGHT_S,        // S intensity
     MSX1PQ_PARAM_WEIGHT_B,        // B intensity
 
+    MSX1PQ_PARAM_PRE_POSTERIZE,   // Posterize before preprocessing
     MSX1PQ_PARAM_PRE_SAT,         // Saturation boost
     MSX1PQ_PARAM_PRE_GAMMA,       // Gamma to enhance shadows
     MSX1PQ_PARAM_PRE_HIGHLIGHT,   // Highlight correction

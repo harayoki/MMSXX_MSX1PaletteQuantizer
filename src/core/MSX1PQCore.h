@@ -35,6 +35,7 @@ struct QuantInfo {
     float w_h{};
     float w_s{};
     float w_b{};
+    int   pre_posterize{8};
     float pre_sat{};
     float pre_gamma{};
     float pre_highlight{};
