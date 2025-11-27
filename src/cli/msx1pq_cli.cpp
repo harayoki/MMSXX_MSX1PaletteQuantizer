@@ -53,11 +53,29 @@ enum class UsageLanguage {
 
 constexpr const char* kVersion = "v0.3a";
 
+std::optional<std::string> get_env_value(const char* name) {
+#ifdef _MSC_VER
+    char* buffer = nullptr;
+    size_t size = 0;
+    if (_dupenv_s(&buffer, &size, name) == 0 && buffer != nullptr) {
+        std::string value(buffer);
+        std::free(buffer);
+        return value;
+    }
+    return std::nullopt;
+#else
+    if (const char* value = std::getenv(name)) {
+        return std::string(value);
+    }
+    return std::nullopt;
+#endif
+}
+
 UsageLanguage detect_usage_language_from_env() {
     const char* locale_vars[] = {"LC_ALL", "LC_MESSAGES", "LANG"};
     for (const char* var : locale_vars) {
-        if (const char* value = std::getenv(var)) {
-            std::string locale = to_lower_copy(value);
+        if (auto value = get_env_value(var)) {
+            std::string locale = to_lower_copy(*value);
             if (locale.find("ja") != std::string::npos) {
                 return UsageLanguage::Japanese;
             }
