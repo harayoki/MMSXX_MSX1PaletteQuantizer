@@ -1,4 +1,4 @@
-# MMSXX_MSX1PaletteQuantizer (for AfterFX / Premiere PRO)
+# MMSXX_MSX1PaletteQuantizer (for AfterFX / Premiere PRO / CLI)
 
 MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 
