@@ -18,6 +18,7 @@ namespace fs = std::filesystem;
 struct CliOptions {
     fs::path input_path;
     fs::path output_dir;
+    std::string output_prefix;
     bool force{false};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
@@ -93,6 +94,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
+                  << "  --output-prefix <文字列>        出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
@@ -118,6 +120,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "Options:\n"
               << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
               << "  --output, -o <dir>           Specify the output directory\n"
+              << "  --output-prefix <string>     Prefix to add to output file names\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
@@ -176,6 +179,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.input_path = require_value(arg);
         } else if (arg == "--output" || arg == "-o") {
             opts.output_dir = require_value(arg);
+        } else if (arg == "--output-prefix") {
+            opts.output_prefix = require_value(arg);
         } else if (arg == "--color-system") {
             std::string value = require_value(arg);
             if (value == "msx1") {
@@ -450,7 +455,12 @@ int main(int argc, char** argv) {
 
     int success_count = 0;
     for (const auto& input : inputs) {
-        fs::path out_path = opts.output_dir / input.filename();
+        fs::path output_filename = input.filename();
+        if (!opts.output_prefix.empty()) {
+            output_filename = fs::path(opts.output_prefix + output_filename.string());
+        }
+
+        fs::path out_path = opts.output_dir / output_filename;
         if (fs::exists(out_path) && !opts.force) {
             if (!confirm_overwrite(out_path)) {
                 std::cout << "Skipped: " << out_path << "\n";
