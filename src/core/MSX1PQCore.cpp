@@ -115,7 +115,7 @@ void apply_preprocess(const QuantInfo *qi,
 {
     if (!qi) return;
 
-    const int posterize_levels = clamp_value(qi->pre_posterize, 1, 255);
+    const int posterize_levels = clamp_value(qi->pre_posterize, 0, 255);
     const bool do_posterize = (posterize_levels > 1);
     const bool do_hsv_adjust =
         (qi->pre_sat > 0.0f) || (qi->pre_gamma > 0.0f) ||

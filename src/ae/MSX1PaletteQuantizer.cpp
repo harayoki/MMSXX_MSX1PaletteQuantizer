@@ -252,9 +252,9 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
         "Pre 1: Posterize",
-        1,
+        0,
         255,
-        1,
+        0,
         255,
         16,
         0,
@@ -426,7 +426,7 @@ FilterImage8 (
     A_u_char g = inP->green;
     A_u_char b = inP->blue;
 
-    // 1?4 の前処理
+    // 前処理
     apply_preprocess(qi, r, g, b);
 
     int basic_idx = 0;
@@ -578,7 +578,7 @@ Render (
 
     qi.pre_posterize = clamp_value(
         static_cast<int>(params[MSX1PQ_PARAM_PRE_POSTERIZE]->u.fs_d.value + 0.5),
-        1,
+        0,
         255);
     qi.pre_sat       = static_cast<float>(params[MSX1PQ_PARAM_PRE_SAT]->u.fs_d.value);
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
