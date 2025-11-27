@@ -28,7 +28,7 @@ struct CliOptions {
     float weight_h{1.0f};
     float weight_s{0.5f};
     float weight_b{0.75f};
-    int pre_posterize{8};
+    int pre_posterize{16};
     float pre_sat{1.0f};
     float pre_gamma{1.0f};
     float pre_highlight{1.0f};
@@ -52,7 +52,7 @@ enum class UsageLanguage {
     Japanese,
 };
 
-constexpr const char* kVersion = "v0.3a";
+constexpr const char* kVersion = "v0.4a";
 
 std::optional<std::string> get_env_value(const char* name) {
 #ifdef _MSC_VER
@@ -99,7 +99,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-                  << "  --pre-posterize <1-255>      前処理でポスタリゼーションを適用 (デフォルト: 8)\n"
+                  << "  --pre-posterize <1-255>      前処理でポスタリゼーションを適用 (デフォルト: 16)\n"
                   << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 1.0)\n"
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
@@ -124,7 +124,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-              << "  --pre-posterize <1-255>      Apply posterization before processing (default: 8)\n"
+              << "  --pre-posterize <1-255>      Apply posterization before processing (default: 16)\n"
               << "  --pre-sat <0-10>             Increase saturation before processing (default: 1.0)\n"
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
