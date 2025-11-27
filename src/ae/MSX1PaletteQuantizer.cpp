@@ -16,6 +16,8 @@
 #include "MSX1PaletteQuantizer.h"
 #include "MSX1PQPalettes.h"
 
+#include <algorithm>
+
 
 #ifdef AE_OS_WIN
 #include <Windows.h>
@@ -248,7 +250,21 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 1: Saturation boost",
+        "Pre 1: Posterize",
+        1,
+        255,
+        1,
+        255,
+        8,
+        0,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_POSTERIZE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 2: Saturation boost",
         0,
         10,
         0,
@@ -262,7 +278,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 2: Gamma (darker)",
+        "Pre 3: Gamma (darker)",
         0,
         10,
         0,
@@ -276,7 +292,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 3: Highlight adjust",
+        "Pre 4: Highlight adjust",
         0,
         10,
         0,
@@ -290,7 +306,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 4: Hue rotate",
+        "Pre 5: Hue rotate",
         -180,
         180,
         -180,
@@ -559,6 +575,10 @@ Render (
     qi.w_b = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
 
+    qi.pre_posterize = std::clamp(
+        static_cast<int>(params[MSX1PQ_PARAM_PRE_POSTERIZE]->u.fs_d.value + 0.5),
+        1,
+        255);
     qi.pre_sat       = static_cast<float>(params[MSX1PQ_PARAM_PRE_SAT]->u.fs_d.value);
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
     qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);

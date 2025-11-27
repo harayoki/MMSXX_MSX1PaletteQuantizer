@@ -115,8 +115,33 @@ void apply_preprocess(const QuantInfo *qi,
 {
     if (!qi) return;
 
-    if (qi->pre_sat <= 0.0f && qi->pre_gamma <= 0.0f &&
-        qi->pre_highlight <= 0.0f && qi->pre_hue == 0.0f) {
+    const int posterize_levels = std::clamp(qi->pre_posterize, 1, 255);
+    const bool do_posterize = (posterize_levels > 1);
+    const bool do_hsv_adjust =
+        (qi->pre_sat > 0.0f) || (qi->pre_gamma > 0.0f) ||
+        (qi->pre_highlight > 0.0f) || (qi->pre_hue != 0.0f);
+
+    if (!do_posterize && !do_hsv_adjust) {
+        return;
+    }
+
+    if (do_posterize) {
+        const float scale = static_cast<float>(posterize_levels - 1);
+        auto posterize_channel = [scale](std::uint8_t v) -> std::uint8_t {
+            float normalized = static_cast<float>(v) / 255.0f;
+            float quantized = roundf(normalized * scale) / scale;
+            int quantized8 = static_cast<int>(quantized * 255.0f + 0.5f);
+            if (quantized8 < 0) quantized8 = 0;
+            if (quantized8 > 255) quantized8 = 255;
+            return static_cast<std::uint8_t>(quantized8);
+        };
+
+        r8 = posterize_channel(r8);
+        g8 = posterize_channel(g8);
+        b8 = posterize_channel(b8);
+    }
+
+    if (!do_hsv_adjust) {
         return;
     }
 
