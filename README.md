@@ -52,11 +52,8 @@ It should also work on Mac if built with Xcode.
 The same steps can be used for Premiere Pro.
 
 For detailed usage and settings of MSX1PaletteQuantizer, please refer to:
-* [How to use in After Effects](docs/AE_guide_en.md)
+* [How to use in After Effects](docs/MSX1_effect_guide_en.md)
 * https://note.com/harayoki/n/nef7d2f9b5380 note article
-
-For command line usage, see:
-* [CLI usage guide](docs/CLI_guide_en.md)
 
 ## Build Instructions for Visual Studio 2022 (Windows)
 
