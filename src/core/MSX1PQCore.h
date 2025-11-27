@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "MSX1PQPalettes.h"
 
@@ -41,6 +43,14 @@ struct QuantInfo {
     float pre_hue{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
+    const struct PreprocessLut* pre_lut{nullptr};
+};
+
+struct PreprocessLut {
+    int size{0};
+    float domain_min[3]{0.0f, 0.0f, 0.0f};
+    float domain_max[3]{1.0f, 1.0f, 1.0f};
+    std::vector<float> values; // RGB triplets, size = size^3 * 3
 };
 
 float clamp01f(float v);
@@ -55,6 +65,8 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &r8,
                       std::uint8_t &g8,
                       std::uint8_t &b8);
+
+bool load_cube_lut(const char* path, PreprocessLut& out_lut, std::string& error_message);
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         int num_colors);

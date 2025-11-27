@@ -26,6 +26,7 @@ The compiled binary will be placed at `bin/msx1pq_cli`.
 | --- | --- |
 | `--input, -i <file|dir>` | Input PNG file or directory to process. |
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
+| `--output-prefix <string>` | Prefix added to every output file name. |
 | `--color-system <msx1|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
@@ -36,6 +37,7 @@ The compiled binary will be placed at `bin/msx1pq_cli`.
 | `--pre-gamma <0-10>` | Darken midtones before quantizing. Default: `1.0`. |
 | `--pre-highlight <0-10>` | Brighten highlights before quantizing. Default: `1.0`. |
 | `--pre-hue <-180-180>` | Rotate hue before quantizing. Default: `0.0`. |
+| `--pre-lut <.cube file>` | Apply a 3D LUT (CUBE format) before quantizing. |
 | `-f, --force` | Overwrite outputs without confirmation. |
 | `-v, --version` | Show version information. |
 | `-h, --help` | Show help in the detected locale (Japanese if available). |
@@ -59,4 +61,10 @@ Apply stronger saturation and the "best-attr" 8-dot algorithm:
 
 ```bash
 ./bin/msx1pq_cli -i shot.png -o dist --pre-sat 1.4 --8dot best-attr
+```
+
+Add a `msx_` prefix and apply a LUT before quantizing:
+
+```bash
+./bin/msx1pq_cli -i shot.png -o dist --output-prefix msx_ --pre-lut looks/film.cube
 ```

@@ -26,6 +26,7 @@ make
 | --- | --- |
 | `--input, -i <ファイル|ディレクトリ>` | 入力 PNG ファイルまたはディレクトリを指定。 |
 | `--output, -o <ディレクトリ>` | 変換結果を保存するディレクトリを指定。 |
+| `--output-prefix <文字列>` | 出力ファイル名の先頭に付ける文字列。 |
 | `--color-system <msx1|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
@@ -36,6 +37,7 @@ make
 | `--pre-gamma <0-10>` | 量子化前にガンマを暗くする。既定: `1.0`。 |
 | `--pre-highlight <0-10>` | 量子化前にハイライトを明るくする。既定: `1.0`。 |
 | `--pre-hue <-180-180>` | 量子化前に色相を回転。既定: `0.0`。 |
+| `--pre-lut <.cube ファイル>` | 量子化前に CUBE 形式の 3D LUT を適用。 |
 | `-f, --force` | 確認なしで出力を上書き。 |
 | `-v, --version` | バージョン情報を表示。 |
 | `-h, --help` | ロケールに応じたヘルプを表示（日本語優先）。 |
@@ -59,4 +61,10 @@ make
 
 ```bash
 ./bin/msx1pq_cli -i shot.png -o dist --pre-sat 1.4 --8dot best-attr
+```
+
+`msx_` という接頭語を付け、前処理で LUT を適用:
+
+```bash
+./bin/msx1pq_cli -i shot.png -o dist --output-prefix msx_ --pre-lut looks/film.cube
 ```
