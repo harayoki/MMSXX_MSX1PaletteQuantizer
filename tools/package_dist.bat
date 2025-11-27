@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 :: Resolve paths
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
-set "DIST_DIR=%REPO_ROOT%\platform\Win\dist"
+set "DIST_DIR=%REPO_ROOT%\dist"
 set "SOURCE_DIR=%REPO_ROOT%\platform\Win\x64"
 set "EXTRA_DIR=%SCRIPT_DIR%disit_items"
 
