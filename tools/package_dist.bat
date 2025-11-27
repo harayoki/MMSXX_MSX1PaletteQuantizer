@@ -13,22 +13,7 @@ if not exist "%DIST_DIR%" (
     mkdir "%DIST_DIR%"
 )
 
-echo Cleaning dist (keeping .keep and existing ZIP files)...
-for /f "delims=" %%F in ('dir /a /b "%DIST_DIR%"') do (
-    set "NAME=%%~nxF"
-    set "EXT=%%~xF"
-    if /I "!NAME!"==".keep" (
-        rem preserve .keep
-    ) else if /I "!EXT!"==".zip" (
-        rem preserve ZIP archives
-    ) else (
-        if exist "%DIST_DIR%\%%F\NUL" (
-            rd /s /q "%DIST_DIR%\%%F"
-        ) else (
-            del /f /q "%DIST_DIR%\%%F"
-        )
-    )
-)
+call :CleanDist
 
 echo Copying build outputs from %SOURCE_DIR% ...
 set "COPIED_ANY=0"
@@ -62,6 +47,28 @@ if errorlevel 1 (
     exit /b 1
 )
 
+call :CleanDist
+
 echo Completed packaging.
 
 endlocal
+
+goto :EOF
+
+:CleanDist
+echo Cleaning dist (keeping .keep and existing ZIP files)...
+for /f "delims=" %%F in ('dir /a /b "%DIST_DIR%"') do (
+    set "NAME=%%~nxF"
+    set "EXT=%%~xF"
+    if /I "!NAME!"==".keep" (
+        rem preserve .keep
+    ) else if /I "!EXT!"==".zip" (
+        rem preserve ZIP archives
+    ) else (
+        if exist "%DIST_DIR%\%%F\NUL" (
+            rd /s /q "%DIST_DIR%\%%F"
+        ) else (
+            del /f /q "%DIST_DIR%\%%F"
+        )
+    )
+)
