@@ -68,7 +68,8 @@ UsageLanguage detect_usage_language_from_env() {
 
 void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese) {
     if (lang == UsageLanguage::Japanese) {
-        std::cout << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
+        std::cout << "MMSXX - MSX1 Palette Quantizer\n"
+                  << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
                   << "1つの画像またはフォルダ内の複数の画像を受け取り、MSX1(TMS9918)の表示ルールに則った画像に変換します。\n"
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
@@ -79,10 +80,10 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-                  << "  --pre-sat <0-10>             処理前に彩度を高く補正\n"
-                  << "  --pre-gamma <0-10>           処理前にガンマを暗く補正\n"
-                  << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正\n"
-                  << "  --pre-hue <-180-180>         処理前に色相を変更\n"
+                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 1.0)\n"
+                  << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
+                  << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
+                  << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
                   << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
@@ -91,7 +92,8 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
         return;
     }
 
-    std::cout << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
+    std::cout << "MMSXX - MSX1 Palette Quantizer\n"
+              << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
               << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
               << "Options:\n"
               << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
@@ -102,10 +104,10 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-              << "  --pre-sat <0-10>             Increase saturation before processing\n"
-              << "  --pre-gamma <0-10>           Darken gamma before processing\n"
-              << "  --pre-highlight <0-10>       Brighten highlights before processing\n"
-              << "  --pre-hue <-180-180>         Adjust hue before processing\n"
+              << "  --pre-sat <0-10>             Increase saturation before processing (default: 1.0)\n"
+              << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
+              << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
+              << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
