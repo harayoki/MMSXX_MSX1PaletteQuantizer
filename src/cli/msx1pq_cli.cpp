@@ -293,28 +293,6 @@ bool confirm_overwrite(const fs::path& path) {
     return c == 'y';
 }
 
-int select_basic_index(const MSX1PQCore::QuantInfo& qi, std::uint8_t r, std::uint8_t g, std::uint8_t b, std::int32_t x, std::int32_t y) {
-    if (qi.use_dither) {
-        int num_colors = MSX1PQ::kNumQuantColors;
-        if (!qi.use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex;
-        }
-
-        int palette_idx;
-        if (qi.use_hsb) {
-            palette_idx = MSX1PQCore::nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors);
-        } else {
-            palette_idx = MSX1PQCore::nearest_palette_rgb(r, g, b, num_colors);
-        }
-        return MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
-    }
-
-    if (qi.use_hsb) {
-        return MSX1PQCore::nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
-    }
-    return MSX1PQ::nearest_basic_rgb(r, g, b);
-}
-
 void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
     MSX1PQCore::QuantInfo qi{};
     qi.use_dither      = opts.use_dither;
@@ -343,26 +321,17 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
             std::uint8_t b = px.blue;
 
             MSX1PQCore::apply_preprocess(&qi, r, g, b);
-            if (qi.use_palette_color) {
-                const int palette_idx = qi.use_hsb
-                    ? MSX1PQCore::nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors)
-                    : MSX1PQCore::nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+            const MSX1PQ::QuantColor& qc = MSX1PQCore::quantize_pixel(
+                qi,
+                r,
+                g,
+                b,
+                static_cast<std::int32_t>(x),
+                static_cast<std::int32_t>(y));
 
-                const MSX1PQ::QuantColor& qc = MSX1PQ::kQuantColors[palette_idx];
-                px.red   = qc.r;
-                px.green = qc.g;
-                px.blue  = qc.b;
-            } else {
-                const int basic_idx = select_basic_index(qi, r, g, b, static_cast<std::int32_t>(x), static_cast<std::int32_t>(y));
-
-                const MSX1PQ::QuantColor& qc = (qi.color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
-                    ? MSX1PQ::kBasicColorsMsx2[basic_idx]
-                    : MSX1PQ::kQuantColors[basic_idx];
-
-                px.red   = qc.r;
-                px.green = qc.g;
-                px.blue  = qc.b;
-            }
+            px.red   = qc.r;
+            px.green = qc.g;
+            px.blue  = qc.b;
         }
     }
 
