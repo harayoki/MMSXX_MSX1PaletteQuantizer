@@ -42,6 +42,7 @@ struct QuantInfo {
     float pre_hue{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
+    const std::uint8_t* pre_lut{nullptr};
 };
 
 float clamp01f(float v);
