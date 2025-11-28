@@ -25,6 +25,7 @@ struct CliOptions {
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
     bool use_dither{true};
+    bool use_palette_color{false};
     bool use_dark_dither{true};
     int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
     bool use_hsb{true};
@@ -103,6 +104,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --output-prefix <文字列>        出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
+                  << "  --palette-only               ディザ処理を行わず92色パレットから直接出力\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
@@ -130,6 +132,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --output-prefix <string>     Prefix to add to output file names\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
+              << "  --palette-only               Output directly from the 92-color palette without dithering\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
@@ -202,6 +205,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.use_dither = true;
         } else if (arg == "--no-dither") {
             opts.use_dither = false;
+        } else if (arg == "--palette-only") {
+            opts.use_palette_color = true;
         } else if (arg == "--dark-dither") {
             opts.use_dark_dither = true;
         } else if (arg == "--no-dark-dither") {
@@ -313,6 +318,7 @@ int select_basic_index(const MSX1PQCore::QuantInfo& qi, std::uint8_t r, std::uin
 void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
     MSX1PQCore::QuantInfo qi{};
     qi.use_dither      = opts.use_dither;
+    qi.use_palette_color = opts.use_palette_color;
     qi.use_8dot2col    = opts.use_8dot2col;
     qi.use_hsb         = opts.use_hsb;
     qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
@@ -337,19 +343,31 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
             std::uint8_t b = px.blue;
 
             MSX1PQCore::apply_preprocess(&qi, r, g, b);
-            const int basic_idx = select_basic_index(qi, r, g, b, static_cast<std::int32_t>(x), static_cast<std::int32_t>(y));
+            if (qi.use_palette_color) {
+                const int palette_idx = qi.use_hsb
+                    ? MSX1PQCore::nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors)
+                    : MSX1PQCore::nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
 
-            const MSX1PQ::QuantColor& qc = (qi.color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
-                ? MSX1PQ::kBasicColorsMsx2[basic_idx]
-                : MSX1PQ::kQuantColors[basic_idx];
+                const MSX1PQ::QuantColor& qc = MSX1PQ::kQuantColors[palette_idx];
+                px.red   = qc.r;
+                px.green = qc.g;
+                px.blue  = qc.b;
+            } else {
+                const int basic_idx = select_basic_index(qi, r, g, b, static_cast<std::int32_t>(x), static_cast<std::int32_t>(y));
 
-            px.red   = qc.r;
-            px.green = qc.g;
-            px.blue  = qc.b;
+                const MSX1PQ::QuantColor& qc = (qi.color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
+                    ? MSX1PQ::kBasicColorsMsx2[basic_idx]
+                    : MSX1PQ::kQuantColors[basic_idx];
+
+                px.red   = qc.r;
+                px.green = qc.g;
+                px.blue  = qc.b;
+            }
         }
     }
 
-    if (qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+    if (!qi.use_palette_color &&
+        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
         const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
         const std::int32_t w = static_cast<std::int32_t>(width);
         const std::int32_t h = static_cast<std::int32_t>(height);

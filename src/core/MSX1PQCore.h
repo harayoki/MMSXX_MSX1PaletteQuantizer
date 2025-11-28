@@ -32,6 +32,7 @@ enum MSX1PQ_ColorSystem {
 
 struct QuantInfo {
     bool  use_dither{};
+    bool  use_palette_color{};
     int   use_8dot2col{};
     bool  use_hsb{};
     float w_h{};
