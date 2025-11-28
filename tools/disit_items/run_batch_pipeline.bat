@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 
 :: Batch runner for chaining multiple msx1pq_cli.exe calls against a dropped file or folder.
 if "%~1"=="" (
-    echo ä½¿ç”¨æ³•: ã“ã®ãƒãƒƒãƒãƒ•ã‚¡ã‚¤ãƒ«ã«ãƒ•ã‚¡ã‚¤ãƒ«ã¾ãŸã¯ãƒ•ã‚©ãƒ«ãƒ€ãƒ¼ã‚’ãƒ‰ãƒ©ãƒƒã‚°ï¼†ãƒ‰ãƒ­ãƒƒãƒ—ã—ã¦ãã ã•ã„ã€‚
-    echo å…¥åŠ›ãƒ•ã‚¡ã‚¤ãƒ«ï¼ˆãƒ•ã‚©ãƒ«ãƒ€ï¼‰ã«å¯¾ã—ã¦ç•°ãªã‚‹ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼ã§ 10å›ã® msxã‚¨ãƒ•ã‚§ã‚¯ãƒˆã‚’é©ç”¨ã—ã¾ã™ã€‚
+    echo g—p–@: ‚±‚Ìƒoƒbƒ`ƒtƒ@ƒCƒ‹‚Éƒtƒ@ƒCƒ‹‚Ü‚½‚ÍƒtƒHƒ‹ƒ_[‚ğƒhƒ‰ƒbƒO•ƒhƒƒbƒv‚µ‚Ä‚­‚¾‚³‚¢B
+    echo “ü—Íƒtƒ@ƒCƒ‹iƒtƒHƒ‹ƒ_j‚É‘Î‚µ‚ÄˆÙ‚È‚éƒpƒ‰ƒ[ƒ^[‚Å 10‰ñ‚Ì msxƒGƒtƒFƒNƒg‚ğ“K—p‚µ‚Ü‚·B
     echo Usage: Drag and drop a file or folder onto this batch file.
     echo The script will run 10 msx1pq_cli.exe commands with varied parameters against the input.
     exit /b 1
@@ -15,7 +15,7 @@ set "INPUT_NAME=%~n1"
 set "INPUT_DIR=%~dp1"
 set "SCRIPT_DIR=%~dp0"
 set "CLI_EXE=%SCRIPT_DIR%msx1pq_cli.exe"
-set "OUTPUT_DIR=%INPUT_DIR%out"
+set "OUTPUT_DIR=%SCRIPT_DIR%out"
 set "LUT_PATH=%SCRIPT_DIR%ContrastAndSaturationBoos.cube"
 
 if not exist "%CLI_EXE%" (

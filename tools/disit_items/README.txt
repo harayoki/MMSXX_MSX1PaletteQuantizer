@@ -12,14 +12,14 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/AE_guide_j
 ## CLIについて
 
 画像変換を行うコマンドラインツールを同梱しています。 `msx1pq_cli.exe`
-インストールの仕方・使い方は
+対応画像フォーマットはpngのみです。詳しいインストールの仕方・使い方は
 https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_ja.md
 を確認して下さい。
 
 ## CLIバッチランナー
 
 ファイルまたはフォルダーを `run_batch_pipeline.bat` にドラッグ＆ドロップすると、入力ファイル（フォルダ）に対して
-ピーキーなパラメータ設定で 10回の 画像変換を適用します。
+様々なパラメータ設定で 10回の 画像変換を適用します。
 10番目の呼び出しでは、同梱した LUT ファイル（`ContrastAndSaturationBoos.cube`）だけを読み込みます。
 出力は入力の隣の `out` フォルダーに生成され、番号付きプレフィックスで結果が分けられます。
 
@@ -42,12 +42,12 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/AE_guide_e
 
 ## About the CLI
 A command-line tool for image conversion is included: `msx1pq_cli.exe`.
-See the installation and usage guide at
+Supported image format is PNG only. See the installation and usage guide at
 https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_en.md
 
 ## CLI batch runner
 Drag and drop a file or folder onto `run_batch_pipeline.bat` to apply 10 image conversions with different parameters to the
-input file (or folder) with intentionally punchy parameter sets. The 10th invocation applies only the bundled LUT file
+input file (or folder) with many parameter sets. The 10th invocation applies only the bundled LUT file
 (`ContrastAndSaturationBoos.cube`). The output is written
 to an `out` folder next to the input, with numbered prefixes to distinguish each result.
 
