@@ -71,6 +71,7 @@ using MSX1PQCore::get_basic_palette;
 using MSX1PQCore::nearest_basic_hsb;
 using MSX1PQCore::nearest_palette_hsb;
 using MSX1PQCore::nearest_palette_rgb;
+using MSX1PQCore::quantize_pixel;
 using MSX1PQCore::clamp01f;
 using MSX1PQCore::clamp_value;
 using MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1;
@@ -438,61 +439,13 @@ FilterImage8 (
     // 前処理
     apply_preprocess(qi, r, g, b);
 
-    if (qi && qi->use_palette_color) {
-        const int palette_idx = (qi->use_hsb)
-            ? nearest_palette_hsb(r, g, b, qi->w_h, qi->w_s, qi->w_b, MSX1PQ::kNumQuantColors)
-            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
-
-        const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[palette_idx];
-
-        outP->alpha = inP->alpha;
-        outP->red   = qc.r;
-        outP->green = qc.g;
-        outP->blue  = qc.b;
-        return PF_Err_NONE;
-    }
-
-    int basic_idx = 0;
-
-    if (qi && qi->use_dither) {
-        // どこまでのパレットを使うか
-        int num_colors = MSX1PQ::kNumQuantColors;
-        if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex; // 低輝度パレットを除外
-        }
-
-        int palette_idx;
-        if (qi->use_hsb) {
-            palette_idx = nearest_palette_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b,
-                num_colors);
-        } else {
-            palette_idx = nearest_palette_rgb(
-                r, g, b,
-                num_colors);
-        }
-
-        basic_idx = MSX1PQ::palette_index_to_basic_index(
-            palette_idx,
-            static_cast<std::int32_t>(xL),
-            static_cast<std::int32_t>(yL));
-    } else {
-        // ディザOFF: 直接15色へ
-        if (qi && qi->use_hsb) {
-            basic_idx = nearest_basic_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b);
-        } else {
-            basic_idx = MSX1PQ::nearest_basic_rgb(
-                r, g, b);
-        }
-    }
-
-    const MSX1PQ::QuantColor &qc =
-        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-        ? MSX1PQ::kBasicColorsMsx2[basic_idx]
-        : MSX1PQ::kQuantColors[basic_idx];
+    const MSX1PQ::QuantColor &qc = quantize_pixel(
+        *qi,
+        r,
+        g,
+        b,
+        static_cast<std::int32_t>(xL),
+        static_cast<std::int32_t>(yL));
 
     outP->alpha = inP->alpha;
     outP->red   = qc.r;
@@ -524,59 +477,13 @@ FilterImageBGRA_8u (
 
     apply_preprocess(qi, r, g, b);
 
-    if (qi && qi->use_palette_color) {
-        const int palette_idx = (qi->use_hsb)
-            ? nearest_palette_hsb(r, g, b, qi->w_h, qi->w_s, qi->w_b, MSX1PQ::kNumQuantColors)
-            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
-
-        const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[palette_idx];
-
-        outBGRA_8uP->alpha = inBGRA_8uP->alpha;
-        outBGRA_8uP->red   = qc.r;
-        outBGRA_8uP->green = qc.g;
-        outBGRA_8uP->blue  = qc.b;
-        return PF_Err_NONE;
-    }
-
-    int basic_idx = 0;
-
-    if (qi && qi->use_dither) {
-        int num_colors = MSX1PQ::kNumQuantColors;
-        if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex;
-        }
-
-        int palette_idx;
-        if (qi->use_hsb) {
-            palette_idx = nearest_palette_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b,
-                num_colors);
-        } else {
-            palette_idx = nearest_palette_rgb(
-                r, g, b,
-                num_colors);
-        }
-
-        basic_idx = MSX1PQ::palette_index_to_basic_index(
-            palette_idx,
-            static_cast<std::int32_t>(xL),
-            static_cast<std::int32_t>(yL));
-    } else {
-        if (qi && qi->use_hsb) {
-            basic_idx = nearest_basic_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b);
-        } else {
-            basic_idx = MSX1PQ::nearest_basic_rgb(
-                r, g, b);
-        }
-    }
-
-    const MSX1PQ::QuantColor &qc =
-        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-            ? MSX1PQ::kBasicColorsMsx2[basic_idx]  // ★ MSX2 の 15色
-            : MSX1PQ::kQuantColors[basic_idx];     // ★ MSX1 の 15色
+    const MSX1PQ::QuantColor &qc = quantize_pixel(
+        *qi,
+        r,
+        g,
+        b,
+        static_cast<std::int32_t>(xL),
+        static_cast<std::int32_t>(yL));
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
