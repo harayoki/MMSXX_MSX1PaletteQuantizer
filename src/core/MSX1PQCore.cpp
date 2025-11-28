@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -26,12 +25,21 @@ inline float min3f(float a, float b, float c)
 }
 
 std::string to_lower_copy(const std::string& s)
-{
+{   
     std::string result = s;
     std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
     return result;
+}
+
+std::string get_lower_extension(const std::string& path)
+{
+    const std::string::size_type dot = path.find_last_of('.');
+    if (dot == std::string::npos) {
+        return std::string();
+    }
+    return to_lower_copy(path.substr(dot));
 }
 
 bool parse_cube_lut(std::istream& file, std::vector<float>& out3d, int& lut_size)
@@ -121,7 +129,7 @@ float clamp01f(float v)
     return v;
 }
 
-bool load_pre_lut(const std::filesystem::path& path,
+bool load_pre_lut(const std::string& path,
                   std::vector<std::uint8_t>& out1d,
                   std::vector<float>& out3d,
                   int& lut3d_size)
@@ -130,13 +138,13 @@ bool load_pre_lut(const std::filesystem::path& path,
     out3d.clear();
     lut3d_size = 0;
 
-    std::ifstream file(path);
+    std::ifstream file(path.c_str());
     if (!file.is_open()) {
         std::cerr << "Failed to open LUT file: " << path << "\n";
         return false;
     }
 
-    const std::string ext = to_lower_copy(path.extension().string());
+    const std::string ext = get_lower_extension(path);
     if (ext == ".cube") {
         if (parse_cube_lut(file, out3d, lut3d_size)) {
             return true;
