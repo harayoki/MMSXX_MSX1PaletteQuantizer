@@ -19,8 +19,8 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_
 ## CLIバッチランナー
 
 ファイルまたはフォルダーを `run_batch_pipeline.bat` にドラッグ＆ドロップすると、入力ファイル（フォルダ）に対して
-異なるパラメーターで 10回の 画像変換を適用します。
-10番目の呼び出しでは、同梱した LUT ファイル（`ContrastAndSaturationBoos.cube`）を読み込みます。
+ピーキーなパラメータ設定で 10回の 画像変換を適用します。
+10番目の呼び出しでは、同梱した LUT ファイル（`ContrastAndSaturationBoos.cube`）だけを読み込みます。
 出力は入力の隣の `out` フォルダーに生成され、番号付きプレフィックスで結果が分けられます。
 
 バッチファイル内の各行は直接コマンドを実行する際の参考としても利用できます。
@@ -28,23 +28,32 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_
 
 # ドキュメント
 詳しくは以下のURLを確認してください。
-https://github.com/Matrix-Software/MMSXX_MSX1PaletteQuantizer
+https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer
 
 ---
 
 # MMSXX_MSX1PaletteQuantizer
-This tool converts images to use the MSX1 16-color palette using a median cut quantization algorithm.
+This tool converts images and videos into a 15-color MSX1 (TMS9918) palette using a custom quantization algorithm.
 
-## Batch runner (run_batch_pipeline.bat)
-Drag and drop a file or folder onto `run_batch_pipeline.bat` to invoke ten runs of `msx1pq_cli.exe` with varied parameters. The fifth call demonstrates reading the adjacent LUT file (`ContrastAndSaturationBoos.cube`). Outputs are written next to the input inside an `out` folder, using numbered prefixes to keep results separated.
-Each line in the batch file can be reused as a reference when you want to run the commands directly.
-
-## About the AE plugin
-An After Effects plugin is included so you can apply the same algorithm as an effect within AE.
+## After Effects / Premiere Pro plugin
+The package includes an `aex` plugin that works in both AE and Premiere: `MSX1PaletteQuantizer.aex`.
+See the installation and usage guide at
+https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/AE_guide_en.md
 
 ## About the CLI
-You can process a single file directly from the command line with `msx1pq_cli.exe`.
+A command-line tool for image conversion is included: `msx1pq_cli.exe`.
+See the installation and usage guide at
+https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_en.md
+
+## CLI batch runner
+Drag and drop a file or folder onto `run_batch_pipeline.bat` to apply 10 image conversions with different parameters to the
+input file (or folder) with intentionally punchy parameter sets. The 10th invocation applies only the bundled LUT file
+(`ContrastAndSaturationBoos.cube`). The output is written
+to an `out` folder next to the input, with numbered prefixes to distinguish each result.
+
+Each line in the batch file can also serve as a reference if you want to run the commands directly.
+
 
 # Documentation
 For more details, see the repository below.
-https://github.com/Matrix-Software/MMSXX_MSX1PaletteQuantizer
+https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer
