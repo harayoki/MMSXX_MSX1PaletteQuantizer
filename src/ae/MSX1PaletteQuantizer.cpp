@@ -319,6 +319,15 @@ ParamsSetup (
         MSX1PQ_PARAM_PRE_HUE
     );
 
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "Use 92-color palette directly",
+        "Ignore dithering and MSX2 colors",
+        FALSE,
+        0,
+        MSX1PQ_PARAM_USE_PALETTE_COLOR
+    );
+
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
@@ -429,6 +438,20 @@ FilterImage8 (
     // 前処理
     apply_preprocess(qi, r, g, b);
 
+    if (qi && qi->use_palette_color) {
+        const int palette_idx = (qi->use_hsb)
+            ? nearest_palette_hsb(r, g, b, qi->w_h, qi->w_s, qi->w_b, MSX1PQ::kNumQuantColors)
+            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+
+        const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[palette_idx];
+
+        outP->alpha = inP->alpha;
+        outP->red   = qc.r;
+        outP->green = qc.g;
+        outP->blue  = qc.b;
+        return PF_Err_NONE;
+    }
+
     int basic_idx = 0;
 
     if (qi && qi->use_dither) {
@@ -501,6 +524,20 @@ FilterImageBGRA_8u (
 
     apply_preprocess(qi, r, g, b);
 
+    if (qi && qi->use_palette_color) {
+        const int palette_idx = (qi->use_hsb)
+            ? nearest_palette_hsb(r, g, b, qi->w_h, qi->w_s, qi->w_b, MSX1PQ::kNumQuantColors)
+            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+
+        const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[palette_idx];
+
+        outBGRA_8uP->alpha = inBGRA_8uP->alpha;
+        outBGRA_8uP->red   = qc.r;
+        outBGRA_8uP->green = qc.g;
+        outBGRA_8uP->blue  = qc.b;
+        return PF_Err_NONE;
+    }
+
     int basic_idx = 0;
 
     if (qi && qi->use_dither) {
@@ -566,6 +603,7 @@ Render (
     QuantInfo qi;
     qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
     qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
+    qi.use_palette_color = (params[MSX1PQ_PARAM_USE_PALETTE_COLOR]->u.bd.value != 0);
     qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
     qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
 
@@ -622,7 +660,8 @@ Render (
                 output);
 
             // ---- 2パス目：8dot / 2color 後処理（基本1）----
-            if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+            if (!err && !qi.use_palette_color &&
+                qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
                 // すでに width / height は上で計算済みでもOKですが、
                 // 明示しておくならこのままでも大丈夫です。
@@ -674,7 +713,8 @@ Render (
             output);
 
         // ---- 2パス目：8dot / 2color 後処理（基本1）----
-        if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+        if (!err && !qi.use_palette_color &&
+            qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
             A_long row_bytes = output->rowbytes;
             A_long row_pitch = (row_bytes >= 0)
