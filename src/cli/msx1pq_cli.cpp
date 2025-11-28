@@ -38,6 +38,8 @@ struct CliOptions {
     float pre_hue{0.0f};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
+    std::vector<float> pre_lut3d_data;
+    int pre_lut3d_size{0};
 };
 
 struct RgbaPixel {
@@ -110,7 +112,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
-                  << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)を適用\n"
+                  << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
                   << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
@@ -137,7 +139,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
-              << "  --pre-lut <file>             Apply RGB LUT (256 rows of RGB values) before processing\n"
+              << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
@@ -164,52 +166,6 @@ std::optional<int> parse_8dot_mode(const std::string& value) {
         return it->second;
     }
     return std::nullopt;
-}
-
-bool load_pre_lut(const fs::path& path, std::vector<std::uint8_t>& out) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open LUT file: " << path << "\n";
-        return false;
-    }
-
-    std::vector<int> values;
-    values.reserve(256 * 3);
-
-    std::string line;
-    while (std::getline(file, line)) {
-        const auto comment_pos = line.find('#');
-        if (comment_pos != std::string::npos) {
-            line = line.substr(0, comment_pos);
-        }
-        for (char& c : line) {
-            if (c == ',' || c == ';') {
-                c = ' ';
-            }
-        }
-
-        std::istringstream iss(line);
-        int v;
-        while (iss >> v) {
-            if (v < 0 || v > 255) {
-                std::cerr << "LUT value out of range (0-255): " << v << "\n";
-                return false;
-            }
-            values.push_back(v);
-        }
-    }
-
-    if (values.size() != 256 * 3) {
-        std::cerr << "LUT must contain 256 RGB triplets (found " << values.size() << " values)\n";
-        return false;
-    }
-
-    out.resize(values.size());
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        out[i] = static_cast<std::uint8_t>(values[i]);
-    }
-
-    return true;
 }
 
 bool parse_arguments(int argc, char** argv, CliOptions& opts) {
@@ -370,6 +326,8 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
+    qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
+    qi.pre_lut3d_size  = opts.pre_lut3d_size;
 
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
@@ -503,7 +461,7 @@ int main(int argc, char** argv) {
             std::cerr << "LUT file does not exist: " << opts.pre_lut_path << "\n";
             return 1;
         }
-        if (!load_pre_lut(opts.pre_lut_path, opts.pre_lut_data)) {
+        if (!MSX1PQCore::load_pre_lut(opts.pre_lut_path, opts.pre_lut_data, opts.pre_lut3d_data, opts.pre_lut3d_size)) {
             return 1;
         }
     }
