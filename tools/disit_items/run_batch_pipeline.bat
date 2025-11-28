@@ -34,11 +34,11 @@ echo Processing "%INPUT_PATH%"...
 "%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "02_msx2_" --color-system msx2 --no-dither --force
 "%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "03_hsb_" --distance hsb --weight-h 0.6 --weight-s 0.8 --weight-b 1.0 --force
 "%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "04_rgb_" --distance rgb --pre-highlight 1.2 --force
-"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "05_lut_" --pre-lut "%LUT_PATH%" --pre-sat 1.2 --force
-"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "06_fast8dot_" --8dot fast --no-dark-dither --pre-gamma 0.9 --force
-"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "07_bestattr_" --8dot best-attr --pre-sat 1.4 --pre-highlight 1.1 --force
-"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "08_poster_" --pre-posterize 12 --pre-gamma 1.1 --force
-"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "09_moody_" --pre-gamma 1.2 --pre-sat 0.9 --pre-highlight 0.8 --force
-"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "10_clean_" --no-dither --distance hsb --pre-posterize 20 --force
+"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "05_fast8dot_" --8dot fast --no-dark-dither --pre-gamma 0.9 --force
+"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "06_bestattr_" --8dot best-attr --pre-sat 1.4 --pre-highlight 1.1 --force
+"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "07_poster_" --pre-posterize 12 --pre-gamma 1.1 --force
+"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "08_moody_" --pre-gamma 1.2 --pre-sat 0.9 --pre-highlight 0.8 --force
+"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "09_clean_" --no-dither --distance hsb --pre-posterize 20 --force
+"%CLI_EXE%" --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --output-prefix "10_lut_" --pre-lut "%LUT_PATH%" --pre-sat 1.2 --force
 
 echo Done. Outputs are in "%OUTPUT_DIR%".

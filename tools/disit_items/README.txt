@@ -1,17 +1,30 @@
 English version is available after the Japanese section.
 
-# MMSXX_MSX1PaletteQuantizer（日本語）
-このツールは、メディアンカット法による量子化アルゴリズムを使って、画像をMSX1の16色パレットに変換します。
+# MMSXX_MSX1PaletteQuantizer
+このツールは、独自の量子化アルゴリズムを使って、画像・動画をMSX1(TMS9918)ルールの15色パレットに変換します。
 
-## バッチランナー（run_batch_pipeline.bat）
-ファイルまたはフォルダーを `run_batch_pipeline.bat` にドラッグ＆ドロップすると、入力ファイル（フォルダ）に対して異なるパラメーターで 10回の msxエフェクトを適用します。5番目の呼び出しでは、隣にある LUT ファイル（`ContrastAndSaturationBoos.cube`）を読み込みます。出力は入力の隣にある `out` フォルダーに生成され、番号付きプレフィックスで結果が分けられます。
-バッチ内の各行は直接コマンドを実行する際の参考としても利用できます。
-
-## AEのプラグインについて
-After Effects プラグイン版も同梱されており、同じアルゴリズムでエフェクトを適用できます。
+## AfterEffects / Premiere PRO プラグイン
+AE/ Premiere 両対応の aexプラグインを同梱しています。 `MSX1PaletteQuantizer.aex`
+インストールの仕方・使い方は
+https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/AE_guide_ja.md
+を確認して下さい。
 
 ## CLIについて
-`msx1pq_cli.exe` を使って、単一ファイルに対してコマンドラインから直接処理を実行できます。
+
+画像変換を行うコマンドラインツールを同梱しています。 `msx1pq_cli.exe`
+インストールの仕方・使い方は
+https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_ja.md
+を確認して下さい。
+
+## CLIバッチランナー
+
+ファイルまたはフォルダーを `run_batch_pipeline.bat` にドラッグ＆ドロップすると、入力ファイル（フォルダ）に対して
+異なるパラメーターで 10回の 画像変換を適用します。
+10番目の呼び出しでは、同梱した LUT ファイル（`ContrastAndSaturationBoos.cube`）を読み込みます。
+出力は入力の隣の `out` フォルダーに生成され、番号付きプレフィックスで結果が分けられます。
+
+バッチファイル内の各行は直接コマンドを実行する際の参考としても利用できます。
+
 
 # ドキュメント
 詳しくは以下のURLを確認してください。
