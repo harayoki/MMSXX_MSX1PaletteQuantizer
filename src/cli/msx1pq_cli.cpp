@@ -2,11 +2,13 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <vector>
 
 #include "../core/MSX1PQCore.h"
@@ -34,6 +36,10 @@ struct CliOptions {
     float pre_gamma{1.0f};
     float pre_highlight{1.0f};
     float pre_hue{0.0f};
+    fs::path pre_lut_path;
+    std::vector<std::uint8_t> pre_lut_data;
+    std::vector<float> pre_lut3d_data;
+    int pre_lut3d_size{0};
 };
 
 struct RgbaPixel {
@@ -106,6 +112,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
                   << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
@@ -132,6 +139,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
@@ -229,6 +237,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_highlight = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
+        } else if (arg == "--pre-lut") {
+            opts.pre_lut_path = require_value(arg);
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
         } else if (arg == "--version" || arg == "-v") {
@@ -315,6 +325,9 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_hue         = opts.pre_hue;
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
+    qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
+    qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
+    qi.pre_lut3d_size  = opts.pre_lut3d_size;
 
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
@@ -441,6 +454,16 @@ int main(int argc, char** argv) {
     if (!fs::exists(opts.input_path)) {
         std::cerr << "Input path does not exist: " << opts.input_path << "\n";
         return 1;
+    }
+
+    if (!opts.pre_lut_path.empty()) {
+        if (!fs::exists(opts.pre_lut_path)) {
+            std::cerr << "LUT file does not exist: " << opts.pre_lut_path << "\n";
+            return 1;
+        }
+        if (!MSX1PQCore::load_pre_lut(opts.pre_lut_path.string(), opts.pre_lut_data, opts.pre_lut3d_data, opts.pre_lut3d_size)) {
+            return 1;
+        }
     }
 
     if (!fs::exists(opts.output_dir)) {

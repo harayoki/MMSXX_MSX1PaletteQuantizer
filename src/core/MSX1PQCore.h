@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "MSX1PQPalettes.h"
 
@@ -42,7 +44,15 @@ struct QuantInfo {
     float pre_hue{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
+    const std::uint8_t* pre_lut{nullptr};
+    const float* pre_lut3d{nullptr};
+    int pre_lut3d_size{0};
 };
+
+bool load_pre_lut(const std::string& path,
+                  std::vector<std::uint8_t>& out1d,
+                  std::vector<float>& out3d,
+                  int& lut3d_size);
 
 float clamp01f(float v);
 
