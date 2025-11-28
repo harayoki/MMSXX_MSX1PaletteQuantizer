@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
+#include <string>
 #include <vector>
 
 #include "MSX1PQPalettes.h"
@@ -49,7 +49,7 @@ struct QuantInfo {
     int pre_lut3d_size{0};
 };
 
-bool load_pre_lut(const std::filesystem::path& path,
+bool load_pre_lut(const std::string& path,
                   std::vector<std::uint8_t>& out1d,
                   std::vector<float>& out3d,
                   int& lut3d_size);

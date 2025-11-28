@@ -461,7 +461,7 @@ int main(int argc, char** argv) {
             std::cerr << "LUT file does not exist: " << opts.pre_lut_path << "\n";
             return 1;
         }
-        if (!MSX1PQCore::load_pre_lut(opts.pre_lut_path, opts.pre_lut_data, opts.pre_lut3d_data, opts.pre_lut3d_size)) {
+        if (!MSX1PQCore::load_pre_lut(opts.pre_lut_path.string(), opts.pre_lut_data, opts.pre_lut3d_data, opts.pre_lut3d_size)) {
             return 1;
         }
     }
