@@ -1,8 +1,7 @@
 /*
     MSX1PaletteQuantizer.cpp
-
     MSX1 パレット エフェクト
-    AE / Premiere 両対応。
+    AE / Premiere 両対応。8bit対応のみ。
 
 */
 
@@ -36,7 +35,6 @@ inline void MSX1PQ_DebugLog(const char* fmt, ...)
     OutputDebugStringA("\n");
 }
 #else
-// Mac の場合（AE_OS_WIN が未定義）
 inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
 #endif
 
@@ -46,15 +44,21 @@ namespace MSX1PQ {
     constexpr int  kVersionMajor        = 0;
     constexpr int  kVersionMinor        = 6;
     constexpr int  kVersionBug          = 0;
-    constexpr int  kVersionStage        = PF_Stage_ALPHA;
     /*
 	PF_Stage_DEVELOP,
 	PF_Stage_ALPHA,
 	PF_Stage_BETA,
 	PF_Stage_RELEASE
 	*/
+    constexpr int  kVersionStage        = PF_Stage_ALPHA;
     constexpr int  kVersionBuild        = 1;
 
+    /*
+        バージョン番号のパック
+        この値と同じものを rファイルの AE_Effect_Version にも設定すること。実際の値は
+        `python -c "import sys;M,S,B,ST,BL=map(int,sys.argv[1:]);print(((M>>3)&15)<<26 | (M&7)<<19 | (S&15)<<15 | (B&15)<<11 | (ST&3)<<9 | (BL&0x1FF))" 0 6 0 1 1`
+        で得られる。
+    */
     constexpr unsigned long kVersionPacked = PF_VERSION(
         kVersionMajor,
         kVersionMinor,
@@ -119,17 +123,12 @@ GlobalSetup (
 {
     PF_Err    err = PF_Err_NONE;
     out_data->my_version = MSX1PQ::kVersionPacked;
-    // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
-    // 8bit専用: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER は立てない
-    // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
-    //                         PF_OutFlag_NON_PARAM_VARY;
 
-    // out_data->out_flags2 =  PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
-
-        out_data->out_flags  = PF_OutFlag_NONE;
-        out_data->out_flags2 = PF_OutFlag2_NONE;
+    out_data->out_flags  = PF_OutFlag_NONE;
+    out_data->out_flags2 = PF_OutFlag2_NONE;
 
     if (in_dataP->appl_id == PF_AE) {
+        // After Effects 用スマートレンダリング宣言
         out_data->out_flags2 |= PF_OutFlag2_SUPPORTS_SMART_RENDER;
     }
     // Premiere 用ピクセルフォーマット宣言
@@ -146,7 +145,6 @@ GlobalSetup (
         (*pixelFormatSuite->AddSupportedPixelFormat)(
                                                         in_dataP->effect_ref,
                                                         PrPixelFormat_BGRA_4444_8u);
-        // VUYA や 32f は今回はサポートしない
     }
 
     return err;
@@ -167,8 +165,6 @@ ParamsSetup (
     PF_ParamDef def;
 
     AEFX_CLR_STRUCT(def);
-    // 入力レイヤーは暗黙に 0 番として存在するので何もしない
-    // Premiere ではデフォルト固定のため変更不可
     if (in_data->appl_id == kAppID_Premiere) {
         def.ui_flags |= PF_PUI_DISABLED;
         def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
@@ -791,10 +787,6 @@ UpdateParameterUI(
 
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
     A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
-
-    // MSX1PQ_DebugLog("=== UpdateParameterUI CALLED ===");
-    // MSX1PQ_DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
-    //          mode, enable_hsb ? 1 : 0);
 
     PF_ParamDef tmp;
 
