@@ -322,8 +322,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "Use 92-color palette directly",
-        "Ignore dithering and MSX2 colors",
+        "92-color",
+        "for developer",
         FALSE,
         0,
         MSX1PQ_PARAM_USE_PALETTE_COLOR
