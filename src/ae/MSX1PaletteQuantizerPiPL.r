@@ -34,8 +34,8 @@ resource 'PiPL' (16000) {
 			PF_PLUG_IN_VERSION,
 			PF_PLUG_IN_SUBVERS
 		},
-                AE_Effect_Version {
-                        197121
+        AE_Effect_Version {
+                197121
             /*
             You can also calculate it as follows to match the specified values in the GlobalSetup function.
             (ST =  0:dev 1:alpha 2:beta 3:release)
@@ -49,7 +49,7 @@ resource 'PiPL' (16000) {
 			PF_OutFlag_NONE
 		},
 		AE_Effect_Global_OutFlags_2 {
-		    0x00000400L
+		    0x00000400
 			/* PF_OutFlag2_SUPPORTS_SMART_RENDER */
 		},
 		AE_Effect_Match_Name {

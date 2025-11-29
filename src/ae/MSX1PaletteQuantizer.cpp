@@ -120,11 +120,6 @@ GlobalSetup (
     PF_Err    err = PF_Err_NONE;
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
-    // 8bit専用: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER は立てない
-    // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
-    //                         PF_OutFlag_NON_PARAM_VARY;
-
-    // out_data->out_flags2 =  PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
 
 	out_data->out_flags  = PF_OutFlag_NONE;
 	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
@@ -171,8 +166,8 @@ ParamsSetup (
     // Premiere ではデフォルト固定のため変更不可
     if (in_data->appl_id == kAppID_Premiere) {
         def.ui_flags |= PF_PUI_DISABLED;
-        def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     }
+    def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_POPUP(
         "ROI optimization",
         3,                    // 項目数
@@ -338,6 +333,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_CHECKBOX(
         "92-color",
         "for development use",
@@ -699,79 +695,156 @@ SmartPreRender(
     return err;
 }
 
-// ---------------------------------------------------------------------------
-// SmartRender (AE SmartFX 用, 8bit/全面処理)
-// ---------------------------------------------------------------------------
+
 static PF_Err
 SmartRender(
     PF_InData           *in_dataP,
     PF_OutData          *out_data,
-    PF_ParamDef         *params[],
+    PF_ParamDef         * /*params*/[],
     PF_SmartRenderExtra *extraP)
 {
+
     PF_Err err  = PF_Err_NONE;
     PF_Err err2 = PF_Err_NONE;
 
-    PF_EffectWorld *input_worldP  = NULL;
-    PF_EffectWorld *output_worldP = NULL;
+    PF_EffectWorld *input_worldP  = nullptr;
+    PF_EffectWorld *output_worldP = nullptr;
 
-    // 入出力バッファを SmartFX 経由で取得
-    err = extraP->cb->checkout_layer_pixels(
-              in_dataP->effect_ref,
-              MSX1PQ_PARAM_INPUT,
-              &input_worldP);
+    // 入力 / 出力 checkout
+    ERR( extraP->cb->checkout_layer_pixels(
+             in_dataP->effect_ref,
+             MSX1PQ_PARAM_INPUT,
+             &input_worldP) );
+
     if (!err) {
-        err = extraP->cb->checkout_output(
-                  in_dataP->effect_ref,
-                  &output_worldP);
+        ERR( extraP->cb->checkout_output(
+                 in_dataP->effect_ref,
+                 &output_worldP) );
     }
 
     if (!err && input_worldP && output_worldP) {
 
-        // ---- Render() と同じパラメータ読み取り ----
-        QuantInfo qi;
-        qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
-        qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
-        qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
-        qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value
-                              == MSX1PQ_DIST_MODE_HSB);
-
-        qi.w_h = clamp01f(
-            static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value));
-        qi.w_s = clamp01f(
-            static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value));
-        qi.w_b = clamp01f(
-            static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
-
-        qi.pre_sat       = (params[MSX1PQ_PARAM_PRE_SAT]->u.bd.value       != 0);
-        qi.pre_gamma     = (params[MSX1PQ_PARAM_PRE_GAMMA]->u.bd.value     != 0);
-        qi.pre_highlight = (params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.bd.value != 0);
-
-        qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
-
-        // SmartFX から渡された output_worldP の幅・高さ
         const A_long width  = output_worldP->width;
         const A_long height = output_worldP->height;
 
-        // ---- 1パス目：通常の量子化 (AE / ARGB32 8bit 前提) ----
-        AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
-            in_dataP,
-            kPFIterate8Suite,
-            kPFIterate8SuiteVersion2,
-            out_data);
+        // --------------------------------------------------------------------
+        // QuantInfo を PF_CHECKOUT_PARAM で構築
+        // --------------------------------------------------------------------
+        QuantInfo  qi{};
+        PF_ParamDef param;
 
-        err = iterate8Suite->iterate(
-                  in_dataP,
-                  0,
-                  height,
-                  input_worldP,
-                  NULL,          // area: ROI 最適化なし (全面)
-                  &qi,
-                  FilterImage8,  // 既存の AE 用 8bit フィルタ
-                  output_worldP);
+        // 便利マクロ（この関数内だけ）
+        #define SR_GET_PARAM(idx)                                                   \
+            AEFX_CLR_STRUCT(param);                                                \
+            ERR( PF_CHECKOUT_PARAM(                                                \
+                    in_dataP,                                                      \
+                    (idx),                                                         \
+                    in_dataP->current_time,                                        \
+                    in_dataP->time_step,                                           \
+                    in_dataP->time_scale,                                          \
+                    &param) )
 
-        // ---- 2パス目：8dot / 2color 後処理 ----
-        if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+        #define SR_REL_PARAM()                                                     \
+            ERR( PF_CHECKIN_PARAM(in_dataP, &param) )
+
+        // COLOR_SYSTEM (popup)
+        SR_GET_PARAM(MSX1PQ_PARAM_COLOR_SYSTEM);
+        qi.color_system = param.u.pd.value;
+        SR_REL_PARAM();
+
+        // USE_DITHER (checkbox)
+        SR_GET_PARAM(MSX1PQ_PARAM_USE_DITHER);
+        qi.use_dither = (param.u.bd.value != 0);
+        SR_REL_PARAM();
+
+        // USE_PALETTE_COLOR (checkbox)
+        SR_GET_PARAM(MSX1PQ_PARAM_USE_PALETTE_COLOR);
+        qi.use_palette_color = (param.u.bd.value != 0);
+        SR_REL_PARAM();
+
+        // USE_8DOT2COL (popup)
+        SR_GET_PARAM(MSX1PQ_PARAM_USE_8DOT2COL);
+        qi.use_8dot2col = param.u.pd.value;
+        SR_REL_PARAM();
+
+        // DISTANCE_MODE (popup)
+        SR_GET_PARAM(MSX1PQ_PARAM_DISTANCE_MODE);
+        qi.use_hsb = (param.u.pd.value == MSX1PQ_DIST_MODE_HSB);
+        SR_REL_PARAM();
+
+        // WEIGHT_H/S/B (float)
+        SR_GET_PARAM(MSX1PQ_PARAM_WEIGHT_H);
+        qi.w_h = clamp01f(static_cast<float>(param.u.fs_d.value));
+        SR_REL_PARAM();
+
+        SR_GET_PARAM(MSX1PQ_PARAM_WEIGHT_S);
+        qi.w_s = clamp01f(static_cast<float>(param.u.fs_d.value));
+        SR_REL_PARAM();
+
+        SR_GET_PARAM(MSX1PQ_PARAM_WEIGHT_B);
+        qi.w_b = clamp01f(static_cast<float>(param.u.fs_d.value));
+        SR_REL_PARAM();
+
+        // PRE_POSTERIZE
+        SR_GET_PARAM(MSX1PQ_PARAM_PRE_POSTERIZE);
+        qi.pre_posterize = clamp_value(
+            static_cast<int>(param.u.fs_d.value + 0.5f),
+            0,
+            255);
+        SR_REL_PARAM();
+
+        // PRE_SAT / GAMMA / HIGHLIGHT / HUE
+        SR_GET_PARAM(MSX1PQ_PARAM_PRE_SAT);
+        qi.pre_sat = static_cast<float>(param.u.fs_d.value);
+        SR_REL_PARAM();
+
+        SR_GET_PARAM(MSX1PQ_PARAM_PRE_GAMMA);
+        qi.pre_gamma = static_cast<float>(param.u.fs_d.value);
+        SR_REL_PARAM();
+
+        SR_GET_PARAM(MSX1PQ_PARAM_PRE_HIGHLIGHT);
+        qi.pre_highlight = static_cast<float>(param.u.fs_d.value);
+        SR_REL_PARAM();
+
+        SR_GET_PARAM(MSX1PQ_PARAM_PRE_HUE);
+        qi.pre_hue = static_cast<float>(param.u.fs_d.value);
+        SR_REL_PARAM();
+
+        // USE_DARK_DITHER
+        SR_GET_PARAM(MSX1PQ_PARAM_USE_DARK_DITHER);
+        qi.use_dark_dither = (param.u.bd.value != 0);
+        SR_REL_PARAM();
+
+        #undef SR_GET_PARAM
+        #undef SR_REL_PARAM
+
+        // --------------------------------------------------------------------
+        // 1パス目：通常量子化
+        // --------------------------------------------------------------------
+        if (!err) {
+            AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
+                in_dataP,
+                kPFIterate8Suite,
+                kPFIterate8SuiteVersion2,
+                out_data);
+
+            err = iterate8Suite->iterate(
+                      in_dataP,
+                      0,
+                      height,
+                      input_worldP,
+                      nullptr,        // ROI なし
+                      &qi,
+                      FilterImage8,   // 既存 8bit フィルタ
+                      output_worldP);
+        }
+
+        // --------------------------------------------------------------------
+        // 2パス目：8dot / 2color 後処理
+        // --------------------------------------------------------------------
+        if (!err &&
+            !qi.use_palette_color &&
+            qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
             A_long row_bytes = output_worldP->rowbytes;
             A_long row_pitch = (row_bytes >= 0)
@@ -781,7 +854,6 @@ SmartRender(
             PF_Pixel8 *start =
                 reinterpret_cast<PF_Pixel8*>(output_worldP->data);
 
-            // rowbytes < 0 対応
             if (row_bytes < 0) {
                 start = reinterpret_cast<PF_Pixel8*>(
                     reinterpret_cast<char*>(output_worldP->data)
@@ -808,6 +880,8 @@ SmartRender(
 
     return err;
 }
+
+
 
 // ---------------------------------------------------------------------------
 // エントリ登録
