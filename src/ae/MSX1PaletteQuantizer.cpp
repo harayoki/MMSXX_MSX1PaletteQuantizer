@@ -71,6 +71,7 @@ using MSX1PQCore::get_basic_palette;
 using MSX1PQCore::nearest_basic_hsb;
 using MSX1PQCore::nearest_palette_hsb;
 using MSX1PQCore::nearest_palette_rgb;
+using MSX1PQCore::quantize_pixel;
 using MSX1PQCore::clamp01f;
 using MSX1PQCore::clamp_value;
 using MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1;
@@ -319,6 +320,15 @@ ParamsSetup (
         MSX1PQ_PARAM_PRE_HUE
     );
 
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "92-color",
+        "for development use",
+        FALSE,
+        0,
+        MSX1PQ_PARAM_USE_PALETTE_COLOR
+    );
+
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
@@ -429,47 +439,13 @@ FilterImage8 (
     // 前処理
     apply_preprocess(qi, r, g, b);
 
-    int basic_idx = 0;
-
-    if (qi && qi->use_dither) {
-        // どこまでのパレットを使うか
-        int num_colors = MSX1PQ::kNumQuantColors;
-        if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex; // 低輝度パレットを除外
-        }
-
-        int palette_idx;
-        if (qi->use_hsb) {
-            palette_idx = nearest_palette_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b,
-                num_colors);
-        } else {
-            palette_idx = nearest_palette_rgb(
-                r, g, b,
-                num_colors);
-        }
-
-        basic_idx = MSX1PQ::palette_index_to_basic_index(
-            palette_idx,
-            static_cast<std::int32_t>(xL),
-            static_cast<std::int32_t>(yL));
-    } else {
-        // ディザOFF: 直接15色へ
-        if (qi && qi->use_hsb) {
-            basic_idx = nearest_basic_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b);
-        } else {
-            basic_idx = MSX1PQ::nearest_basic_rgb(
-                r, g, b);
-        }
-    }
-
-    const MSX1PQ::QuantColor &qc =
-        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-        ? MSX1PQ::kBasicColorsMsx2[basic_idx]
-        : MSX1PQ::kQuantColors[basic_idx];
+    const MSX1PQ::QuantColor &qc = quantize_pixel(
+        *qi,
+        r,
+        g,
+        b,
+        static_cast<std::int32_t>(xL),
+        static_cast<std::int32_t>(yL));
 
     outP->alpha = inP->alpha;
     outP->red   = qc.r;
@@ -501,45 +477,13 @@ FilterImageBGRA_8u (
 
     apply_preprocess(qi, r, g, b);
 
-    int basic_idx = 0;
-
-    if (qi && qi->use_dither) {
-        int num_colors = MSX1PQ::kNumQuantColors;
-        if (!qi->use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex;
-        }
-
-        int palette_idx;
-        if (qi->use_hsb) {
-            palette_idx = nearest_palette_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b,
-                num_colors);
-        } else {
-            palette_idx = nearest_palette_rgb(
-                r, g, b,
-                num_colors);
-        }
-
-        basic_idx = MSX1PQ::palette_index_to_basic_index(
-            palette_idx,
-            static_cast<std::int32_t>(xL),
-            static_cast<std::int32_t>(yL));
-    } else {
-        if (qi && qi->use_hsb) {
-            basic_idx = nearest_basic_hsb(
-                r, g, b,
-                qi->w_h, qi->w_s, qi->w_b);
-        } else {
-            basic_idx = MSX1PQ::nearest_basic_rgb(
-                r, g, b);
-        }
-    }
-
-    const MSX1PQ::QuantColor &qc =
-        (qi->color_system == MSX1PQ_COLOR_SYS_MSX2)
-            ? MSX1PQ::kBasicColorsMsx2[basic_idx]  // ★ MSX2 の 15色
-            : MSX1PQ::kQuantColors[basic_idx];     // ★ MSX1 の 15色
+    const MSX1PQ::QuantColor &qc = quantize_pixel(
+        *qi,
+        r,
+        g,
+        b,
+        static_cast<std::int32_t>(xL),
+        static_cast<std::int32_t>(yL));
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
@@ -566,6 +510,7 @@ Render (
     QuantInfo qi;
     qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
     qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
+    qi.use_palette_color = (params[MSX1PQ_PARAM_USE_PALETTE_COLOR]->u.bd.value != 0);
     qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
     qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
 
@@ -622,7 +567,8 @@ Render (
                 output);
 
             // ---- 2パス目：8dot / 2color 後処理（基本1）----
-            if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+            if (!err && !qi.use_palette_color &&
+                qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
                 // すでに width / height は上で計算済みでもOKですが、
                 // 明示しておくならこのままでも大丈夫です。
@@ -674,7 +620,8 @@ Render (
             output);
 
         // ---- 2パス目：8dot / 2color 後処理（基本1）----
-        if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+        if (!err && !qi.use_palette_color &&
+            qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
             A_long row_bytes = output->rowbytes;
             A_long row_pitch = (row_bytes >= 0)

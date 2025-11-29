@@ -41,3 +41,7 @@ It is recommended to apply the following adjustments before the MSX1 effect.
 -   **Highlight Adjust**: Boosts bright areas with a slider (0 to 10, default 1).
 -   **Hue Rotate**: Rotates hue from -180 to 180 degrees (integer values).
 
+## Others
+
+-   **92 Color**: (For development) Outputs using the 92-color palette.
+
