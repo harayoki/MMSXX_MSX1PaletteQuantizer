@@ -534,6 +534,94 @@ FilterImageBGRA_8u (
 }
 
 // ---------------------------------------------------------------------------
+// 共通ヘルパー
+// ---------------------------------------------------------------------------
+
+static PF_Err
+RunIteratePass(
+    PF_InData            *in_dataP,
+    PF_OutData           *out_data,
+    A_long               linesL,
+    PF_EffectWorld       *input_worldP,
+    QuantInfo            *qiP,
+    PF_IteratePixel8Func filter_func,
+    PF_EffectWorld       *output_worldP)
+{
+    AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
+        in_dataP,
+        kPFIterate8Suite,
+        kPFIterate8SuiteVersion2,
+        out_data);
+
+    return iterate8Suite->iterate(
+        in_dataP,
+        0,
+        linesL,
+        input_worldP,
+        nullptr,
+        qiP,
+        filter_func,
+        output_worldP);
+}
+
+static void
+Apply8dot2colARGB(
+    PF_EffectWorld            *output_worldP,
+    A_long                    width,
+    A_long                    height,
+    const QuantInfo           &qi)
+{
+    A_long row_bytes = output_worldP->rowbytes;
+    A_long row_pitch = (row_bytes >= 0)
+        ? (row_bytes / (A_long)sizeof(PF_Pixel8))
+        : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
+
+    PF_Pixel8* start =
+        reinterpret_cast<PF_Pixel8*>(output_worldP->data);
+
+    // rowbytes < 0（上から下ではなく下から上）に備えた補正
+    if (row_bytes < 0) {
+        start = reinterpret_cast<PF_Pixel8*>(
+            reinterpret_cast<char*>(output_worldP->data)
+            + (height - 1) * (-row_bytes));
+    }
+
+    apply_8dot2col_dispatch_ARGB(
+        start,
+        row_pitch,
+        width,
+        height,
+        qi.color_system,
+        qi.use_8dot2col);
+}
+
+static void
+Apply8dot2colBGRA(
+    PF_EffectWorld            *output_worldP,
+    A_long                    width,
+    A_long                    height,
+    const QuantInfo           &qi)
+{
+    A_long row_pitch = output_worldP->rowbytes
+        / sizeof(MSX1PQ_Pixel_BGRA_8u);
+
+    MSX1PQ_Pixel_BGRA_8u* base =
+        reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(output_worldP->data);
+
+    MSX1PQ_Pixel_BGRA_8u* data =
+        base + output_worldP->extent_hint.top * row_pitch
+             + output_worldP->extent_hint.left;
+
+    apply_8dot2col_dispatch_BGRA(
+        data,
+        row_pitch,
+        width,
+        height,
+        qi.color_system,
+        qi.use_8dot2col);
+}
+
+// ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
 static PF_Err
@@ -590,48 +678,25 @@ Render (
         if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
 
             // ---- 1パス目：通常の量子化（ディザなど）----
-            AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
-                in_dataP,
-                kPFIterate8Suite,
-                kPFIterate8SuiteVersion2,
-                out_data);
-
-            iterate8Suite->iterate(
-                in_dataP,
-                0,
-                linesL,
-                &params[MSX1PQ_PARAM_INPUT]->u.ld,
-                NULL,
-                &qi,
-                FilterImageBGRA_8u,
-                output);
+            err = RunIteratePass(
+                      in_dataP,
+                      out_data,
+                      linesL,
+                      reinterpret_cast<PF_EffectWorld*>(
+                          &params[MSX1PQ_PARAM_INPUT]->u.ld),
+                      &qi,
+                      FilterImageBGRA_8u,
+                      reinterpret_cast<PF_EffectWorld*>(output));
 
             // ---- 2パス目：8dot / 2color 後処理（基本1）----
             if (!err && !qi.use_palette_color &&
                 qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
-                // すでに width / height は上で計算済みでもOKですが、
-                // 明示しておくならこのままでも大丈夫です。
-                A_long width  = output->extent_hint.right  - output->extent_hint.left;
-                A_long height = output->extent_hint.bottom - output->extent_hint.top;
-
-                // BGRA_4444_8u 用のピッチ
-                A_long row_pitch = output->rowbytes / sizeof(MSX1PQ_Pixel_BGRA_8u);
-
-                MSX1PQ_Pixel_BGRA_8u* base =
-                    reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(output->data);
-
-                MSX1PQ_Pixel_BGRA_8u* data =
-                    base + output->extent_hint.top * row_pitch
-                         + output->extent_hint.left;
-
-                apply_8dot2col_dispatch_BGRA(
-                    data,
-                    row_pitch,
+                Apply8dot2colBGRA(
+                    reinterpret_cast<PF_EffectWorld*>(output),
                     width,
                     height,
-                    qi.color_system,
-                    qi.use_8dot2col);
+                    qi);
             }
 
 
@@ -643,48 +708,24 @@ Render (
         // AE: ARGB32 8bit
 
         // ---- 1パス目：通常の量子化 ----
-        AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
-            in_dataP,
-            kPFIterate8Suite,
-            kPFIterate8SuiteVersion2,
-            out_data);
-
-        iterate8Suite->iterate(
-            in_dataP,
-            0,
-            linesL,
-            &params[MSX1PQ_PARAM_INPUT]->u.ld,
-            NULL,
-            &qi,
-            FilterImage8,
-            output);
+        err = RunIteratePass(
+                  in_dataP,
+                  out_data,
+                  linesL,
+                  reinterpret_cast<PF_EffectWorld*>(
+                      &params[MSX1PQ_PARAM_INPUT]->u.ld),
+                  &qi,
+                  FilterImage8,
+                  reinterpret_cast<PF_EffectWorld*>(output));
 
         // ---- 2パス目：8dot / 2color 後処理（基本1）----
         if (!err && !qi.use_palette_color &&
             qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
-
-            A_long row_bytes = output->rowbytes;
-            A_long row_pitch = (row_bytes >= 0)
-                ? (row_bytes / (A_long)sizeof(PF_Pixel8))
-                : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
-
-            PF_Pixel8* start =
-                reinterpret_cast<PF_Pixel8*>(output->data);
-
-            // rowbytes < 0（上から下ではなく下から上）に備えた補正
-            if (row_bytes < 0) {
-                start = reinterpret_cast<PF_Pixel8*>(
-                    reinterpret_cast<char*>(output->data)
-                    + (height - 1) * (-row_bytes));
-            }
-
-            apply_8dot2col_dispatch_ARGB(
-                start,
-                row_pitch,
+            Apply8dot2colARGB(
+                reinterpret_cast<PF_EffectWorld*>(output),
                 width,
                 height,
-                qi.color_system,
-                qi.use_8dot2col);
+                qi);
         }
     }
 
@@ -874,18 +915,11 @@ SmartRender(
         // 1パス目：通常量子化
         // --------------------------------------------------------------------
         if (!err) {
-            AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
-                in_dataP,
-                kPFIterate8Suite,
-                kPFIterate8SuiteVersion2,
-                out_data);
-
-            err = iterate8Suite->iterate(
+            err = RunIteratePass(
                       in_dataP,
-                      0,
+                      out_data,
                       height,
                       input_worldP,
-                      nullptr,        // ROI なし
                       &qi,
                       FilterImage8,   // 既存 8bit フィルタ
                       output_worldP);
@@ -897,28 +931,7 @@ SmartRender(
         if (!err &&
             !qi.use_palette_color &&
             qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
-
-            A_long row_bytes = output_worldP->rowbytes;
-            A_long row_pitch = (row_bytes >= 0)
-                ? (row_bytes / (A_long)sizeof(PF_Pixel8))
-                : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
-
-            PF_Pixel8 *start =
-                reinterpret_cast<PF_Pixel8*>(output_worldP->data);
-
-            if (row_bytes < 0) {
-                start = reinterpret_cast<PF_Pixel8*>(
-                    reinterpret_cast<char*>(output_worldP->data)
-                    + (height - 1) * (-row_bytes));
-            }
-
-            apply_8dot2col_dispatch_ARGB(
-                start,
-                row_pitch,
-                width,
-                height,
-                qi.color_system,
-                qi.use_8dot2col);
+            Apply8dot2colARGB(output_worldP, width, height, qi);
         }
     }
 
