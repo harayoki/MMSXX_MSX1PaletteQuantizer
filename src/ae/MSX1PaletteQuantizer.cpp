@@ -162,7 +162,20 @@ ParamsSetup (
     PF_Err err = PF_Err_NONE;
     PF_ParamDef def;
 
+    AEFX_CLR_STRUCT(def);
     // 入力レイヤーは暗黙に 0 番として存在するので何もしない
+    // Premiere ではデフォルト固定のため変更不可
+    if (in_data->appl_id == kAppID_Premiere) {
+        def.ui_flags |= PF_PUI_DISABLED;
+        def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
+    }
+    PF_ADD_POPUP(
+        "ROI optimization",
+        3,                    // 項目数
+        MSX1PQ_ROI_OPTIMIZATION_AUTO, // デフォルト 3: Auto
+        "Disabled|Enabled|Auto",
+        MSX1PQ_PARAM_ROI_OPTIMIZATION);
+
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP(
         "Color system",
