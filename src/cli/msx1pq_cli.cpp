@@ -104,7 +104,6 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --output-prefix <文字列>        出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
-                  << "  --palette-only               ディザ処理を行わず92色パレットから直接出力\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
@@ -115,6 +114,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
+                  << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
                   << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
@@ -132,7 +132,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --output-prefix <string>     Prefix to add to output file names\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
-              << "  --palette-only               Output directly from the 92-color palette without dithering\n"
+              << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
@@ -205,7 +205,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.use_dither = true;
         } else if (arg == "--no-dither") {
             opts.use_dither = false;
-        } else if (arg == "--palette-only") {
+        } else if (arg == "--palette92") {
             opts.use_palette_color = true;
         } else if (arg == "--dark-dither") {
             opts.use_dark_dither = true;

@@ -323,7 +323,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "92-color",
-        "for developer",
+        "for development use",
         FALSE,
         0,
         MSX1PQ_PARAM_USE_PALETTE_COLOR
