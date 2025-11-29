@@ -32,6 +32,7 @@ enum MSX1PQ_ColorSystem {
 
 struct QuantInfo {
     bool  use_dither{};
+    bool  use_palette_color{};
     int   use_8dot2col{};
     bool  use_hsb{};
     float w_h{};
@@ -87,6 +88,13 @@ const MSX1PQ::QuantColor* get_basic_palette(int color_system);
 
 int find_basic_index_from_rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                               int color_system);
+
+MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
+                                  std::uint8_t r,
+                                  std::uint8_t g,
+                                  std::uint8_t b,
+                                  std::int32_t x,
+                                  std::int32_t y);
 
 // ------------------------------------------------------------
 // 横8ドット内2色制限

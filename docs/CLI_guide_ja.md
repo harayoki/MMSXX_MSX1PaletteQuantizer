@@ -41,6 +41,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | `--pre-highlight <0-10>` | 量子化前にハイライトを明るくする。既定: `1.0`。 |
 | `--pre-hue <-180-180>` | 量子化前に色相を回転。既定: `0.0`。 |
 | `--pre-lut <ファイル>` | 256行の RGB LUT または `.cube` 形式の 3D LUT を前処理として適用。 |
+| `--palette92` | (開発用) ディザ処理を行わず92色パレットで出力。 |
 | `-f, --force` | 確認なしで出力を上書き。 |
 | `-v, --version` | バージョン情報を表示。 |
 | `-h, --help` | ロケールに応じたヘルプを表示（日本語優先）。 |

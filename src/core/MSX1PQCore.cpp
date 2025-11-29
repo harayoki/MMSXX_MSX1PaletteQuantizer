@@ -565,6 +565,48 @@ int find_basic_index_from_rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b,
     return best_idx;
 }
 
+MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
+                                  std::uint8_t r,
+                                  std::uint8_t g,
+                                  std::uint8_t b,
+                                  std::int32_t x,
+                                  std::int32_t y)
+{
+    if (qi.use_palette_color) {
+        const int palette_idx = qi.use_hsb
+            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors)
+            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+
+        return MSX1PQ::kQuantColors[palette_idx];
+    }
+
+    int basic_idx = 0;
+
+    if (qi.use_dither) {
+        int num_colors = MSX1PQ::kNumQuantColors;
+        if (!qi.use_dark_dither) {
+            num_colors = MSX1PQ::kFirstDarkDitherIndex;
+        }
+
+        const int palette_idx = qi.use_hsb
+            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors)
+            : nearest_palette_rgb(r, g, b, num_colors);
+
+        basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
+    } else if (qi.use_hsb) {
+        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
+    } else {
+        basic_idx = MSX1PQ::nearest_basic_rgb(r, g, b);
+    }
+
+    const MSX1PQ::QuantColor* palette =
+        (qi.color_system == MSX1PQ_COLOR_SYS_MSX2)
+            ? MSX1PQ::kBasicColorsMsx2
+            : MSX1PQ::kQuantColors;
+
+    return palette[basic_idx];
+}
+
 int transition_cost_pair(int prevA, int prevB, int a, int b)
 {
     const int COST_SAME          = 0;
