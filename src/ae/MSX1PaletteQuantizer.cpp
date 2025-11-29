@@ -85,6 +85,33 @@ using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST;
 using MSX1PQCore::MSX1PQ_DIST_MODE_HSB;
 using MSX1PQCore::MSX1PQ_DIST_MODE_RGB;
 
+namespace {
+
+static inline PF_Err CheckoutParam(
+    PF_InData     *in_data,
+    PF_ParamIndex  param_index,
+    PF_ParamDef   &param)
+{
+    AEFX_CLR_STRUCT(param);
+
+    return PF_CHECKOUT_PARAM(
+        in_data,
+        param_index,
+        in_data->current_time,
+        in_data->time_step,
+        in_data->time_scale,
+        &param);
+}
+
+static inline PF_Err CheckinParam(
+    PF_InData   *in_data,
+    PF_ParamDef &param)
+{
+    return PF_CHECKIN_PARAM(in_data, &param);
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // About
 // ---------------------------------------------------------------------------
@@ -733,90 +760,115 @@ SmartRender(
         QuantInfo  qi{};
         PF_ParamDef param;
 
-        // 便利マクロ（この関数内だけ）
-        #define SR_GET_PARAM(idx)                                                   \
-            AEFX_CLR_STRUCT(param);                                                \
-            ERR( PF_CHECKOUT_PARAM(                                                \
-                    in_dataP,                                                      \
-                    (idx),                                                         \
-                    in_dataP->current_time,                                        \
-                    in_dataP->time_step,                                           \
-                    in_dataP->time_scale,                                          \
-                    &param) )
-
-        #define SR_REL_PARAM()                                                     \
-            ERR( PF_CHECKIN_PARAM(in_dataP, &param) )
-
         // COLOR_SYSTEM (popup)
-        SR_GET_PARAM(MSX1PQ_PARAM_COLOR_SYSTEM);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_COLOR_SYSTEM,
+                param) );
         qi.color_system = param.u.pd.value;
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // USE_DITHER (checkbox)
-        SR_GET_PARAM(MSX1PQ_PARAM_USE_DITHER);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_DITHER,
+                param) );
         qi.use_dither = (param.u.bd.value != 0);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // USE_PALETTE_COLOR (checkbox)
-        SR_GET_PARAM(MSX1PQ_PARAM_USE_PALETTE_COLOR);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_PALETTE_COLOR,
+                param) );
         qi.use_palette_color = (param.u.bd.value != 0);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // USE_8DOT2COL (popup)
-        SR_GET_PARAM(MSX1PQ_PARAM_USE_8DOT2COL);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_8DOT2COL,
+                param) );
         qi.use_8dot2col = param.u.pd.value;
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // DISTANCE_MODE (popup)
-        SR_GET_PARAM(MSX1PQ_PARAM_DISTANCE_MODE);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_DISTANCE_MODE,
+                param) );
         qi.use_hsb = (param.u.pd.value == MSX1PQ_DIST_MODE_HSB);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // WEIGHT_H/S/B (float)
-        SR_GET_PARAM(MSX1PQ_PARAM_WEIGHT_H);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_H,
+                param) );
         qi.w_h = clamp01f(static_cast<float>(param.u.fs_d.value));
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
-        SR_GET_PARAM(MSX1PQ_PARAM_WEIGHT_S);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_S,
+                param) );
         qi.w_s = clamp01f(static_cast<float>(param.u.fs_d.value));
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
-        SR_GET_PARAM(MSX1PQ_PARAM_WEIGHT_B);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_B,
+                param) );
         qi.w_b = clamp01f(static_cast<float>(param.u.fs_d.value));
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // PRE_POSTERIZE
-        SR_GET_PARAM(MSX1PQ_PARAM_PRE_POSTERIZE);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_POSTERIZE,
+                param) );
         qi.pre_posterize = clamp_value(
             static_cast<int>(param.u.fs_d.value + 0.5f),
             0,
             255);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // PRE_SAT / GAMMA / HIGHLIGHT / HUE
-        SR_GET_PARAM(MSX1PQ_PARAM_PRE_SAT);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_SAT,
+                param) );
         qi.pre_sat = static_cast<float>(param.u.fs_d.value);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
-        SR_GET_PARAM(MSX1PQ_PARAM_PRE_GAMMA);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_GAMMA,
+                param) );
         qi.pre_gamma = static_cast<float>(param.u.fs_d.value);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
-        SR_GET_PARAM(MSX1PQ_PARAM_PRE_HIGHLIGHT);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_HIGHLIGHT,
+                param) );
         qi.pre_highlight = static_cast<float>(param.u.fs_d.value);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
-        SR_GET_PARAM(MSX1PQ_PARAM_PRE_HUE);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_HUE,
+                param) );
         qi.pre_hue = static_cast<float>(param.u.fs_d.value);
-        SR_REL_PARAM();
+        ERR( CheckinParam(in_dataP, param) );
 
         // USE_DARK_DITHER
-        SR_GET_PARAM(MSX1PQ_PARAM_USE_DARK_DITHER);
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_DARK_DITHER,
+                param) );
         qi.use_dark_dither = (param.u.bd.value != 0);
-        SR_REL_PARAM();
-
-        #undef SR_GET_PARAM
-        #undef SR_REL_PARAM
+        ERR( CheckinParam(in_dataP, param) );
 
         // --------------------------------------------------------------------
         // 1パス目：通常量子化
