@@ -35,11 +35,11 @@ resource 'PiPL' (16000) {
 			PF_PLUG_IN_SUBVERS
 		},
                 AE_Effect_Version {
-                        164353
+                        197121
             /*
             You can also calculate it as follows to match the specified values in the GlobalSetup function.
             (ST =  0:dev 1:alpha 2:beta 3:release)
-            python -c "import sys;M,S,B,ST,BL=map(int,sys.argv[1:]);print(((M>>3)&15)<<26 | (M&7)<<19 | (S&15)<<15 | (B&15)<<11 | (ST&3)<<9 | (BL&0x1FF))" 0 5 0 1 1
+            python -c "import sys;M,S,B,ST,BL=map(int,sys.argv[1:]);print(((M>>3)&15)<<26 | (M&7)<<19 | (S&15)<<15 | (B&15)<<11 | (ST&3)<<9 | (BL&0x1FF))" 0 6 0 1 1
             */
 		},
 		AE_Effect_Info_Flags {
