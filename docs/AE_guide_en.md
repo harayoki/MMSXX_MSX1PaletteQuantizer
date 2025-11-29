@@ -36,7 +36,7 @@ It is recommended to apply the following adjustments before the MSX1 effect.
 -   **HSB Weight**: Adjusts the weighting (Hue, Saturation, Brightness) for color distance calculation in the HSB space.
 
 ## Pre-processing
--   **Posterization**: Reduces colors before MSX conversion by limiting them to the specified steps (0 to 255, default 16; disabled when 0 or 1). Useful for suppressing noise and increasing flat color areas.
+-   **Posterization**: Reduces the total number of colors to suppress fluctuations (0–255, default 16; disabled when <=1). Useful for reducing noise or inducing different dithering patterns.-   **Posterization**: Reduces colors before MSX conversion by limiting them to the specified steps (0 to 255, default 16; disabled when 0 or 1). Useful for suppressing noise and increasing flat color areas.
 -   **Saturation Boost**: Adjusts saturation with a slider (0 to 10, default 1).
 -   **Gamma (Darker)**: Darkens midtones with a slider (0 to 10, default 1).
 -   **Highlight Adjust**: Boosts bright areas with a slider (0 to 10, default 1).
