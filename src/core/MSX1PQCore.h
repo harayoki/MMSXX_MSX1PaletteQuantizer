@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "MSX1PQPalettes.h"
 
@@ -30,6 +32,7 @@ enum MSX1PQ_ColorSystem {
 
 struct QuantInfo {
     bool  use_dither{};
+    bool  use_palette_color{};
     int   use_8dot2col{};
     bool  use_hsb{};
     float w_h{};
@@ -42,7 +45,15 @@ struct QuantInfo {
     float pre_hue{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
+    const std::uint8_t* pre_lut{nullptr};
+    const float* pre_lut3d{nullptr};
+    int pre_lut3d_size{0};
 };
+
+bool load_pre_lut(const std::string& path,
+                  std::vector<std::uint8_t>& out1d,
+                  std::vector<float>& out3d,
+                  int& lut3d_size);
 
 float clamp01f(float v);
 
@@ -77,6 +88,13 @@ const MSX1PQ::QuantColor* get_basic_palette(int color_system);
 
 int find_basic_index_from_rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                               int color_system);
+
+MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
+                                  std::uint8_t r,
+                                  std::uint8_t g,
+                                  std::uint8_t b,
+                                  std::int32_t x,
+                                  std::int32_t y);
 
 // ------------------------------------------------------------
 // 横8ドット内2色制限

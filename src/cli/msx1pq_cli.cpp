@@ -2,11 +2,13 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <vector>
 
 #include "../core/MSX1PQCore.h"
@@ -18,10 +20,12 @@ namespace fs = std::filesystem;
 struct CliOptions {
     fs::path input_path;
     fs::path output_dir;
+    std::string output_prefix;
     bool force{false};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
     bool use_dither{true};
+    bool use_palette_color{false};
     bool use_dark_dither{true};
     int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
     bool use_hsb{true};
@@ -33,6 +37,10 @@ struct CliOptions {
     float pre_gamma{1.0f};
     float pre_highlight{1.0f};
     float pre_hue{0.0f};
+    fs::path pre_lut_path;
+    std::vector<std::uint8_t> pre_lut_data;
+    std::vector<float> pre_lut3d_data;
+    int pre_lut3d_size{0};
 };
 
 struct RgbaPixel {
@@ -93,6 +101,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
+                  << "  --output-prefix <文字列>        出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
@@ -104,6 +113,8 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
+                  << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
                   << "  -h, --help                   ロケールに応じてUSAGEを表示\n"
@@ -118,8 +129,10 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "Options:\n"
               << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
               << "  --output, -o <dir>           Specify the output directory\n"
+              << "  --output-prefix <string>     Prefix to add to output file names\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
+              << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
@@ -129,6 +142,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
@@ -176,6 +190,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.input_path = require_value(arg);
         } else if (arg == "--output" || arg == "-o") {
             opts.output_dir = require_value(arg);
+        } else if (arg == "--output-prefix") {
+            opts.output_prefix = require_value(arg);
         } else if (arg == "--color-system") {
             std::string value = require_value(arg);
             if (value == "msx1") {
@@ -189,6 +205,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.use_dither = true;
         } else if (arg == "--no-dither") {
             opts.use_dither = false;
+        } else if (arg == "--palette92") {
+            opts.use_palette_color = true;
         } else if (arg == "--dark-dither") {
             opts.use_dark_dither = true;
         } else if (arg == "--no-dark-dither") {
@@ -224,6 +242,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_highlight = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
+        } else if (arg == "--pre-lut") {
+            opts.pre_lut_path = require_value(arg);
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
         } else if (arg == "--version" || arg == "-v") {
@@ -273,31 +293,10 @@ bool confirm_overwrite(const fs::path& path) {
     return c == 'y';
 }
 
-int select_basic_index(const MSX1PQCore::QuantInfo& qi, std::uint8_t r, std::uint8_t g, std::uint8_t b, std::int32_t x, std::int32_t y) {
-    if (qi.use_dither) {
-        int num_colors = MSX1PQ::kNumQuantColors;
-        if (!qi.use_dark_dither) {
-            num_colors = MSX1PQ::kFirstDarkDitherIndex;
-        }
-
-        int palette_idx;
-        if (qi.use_hsb) {
-            palette_idx = MSX1PQCore::nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors);
-        } else {
-            palette_idx = MSX1PQCore::nearest_palette_rgb(r, g, b, num_colors);
-        }
-        return MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
-    }
-
-    if (qi.use_hsb) {
-        return MSX1PQCore::nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
-    }
-    return MSX1PQ::nearest_basic_rgb(r, g, b);
-}
-
 void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
     MSX1PQCore::QuantInfo qi{};
     qi.use_dither      = opts.use_dither;
+    qi.use_palette_color = opts.use_palette_color;
     qi.use_8dot2col    = opts.use_8dot2col;
     qi.use_hsb         = opts.use_hsb;
     qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
@@ -310,6 +309,9 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_hue         = opts.pre_hue;
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
+    qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
+    qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
+    qi.pre_lut3d_size  = opts.pre_lut3d_size;
 
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
@@ -319,11 +321,13 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
             std::uint8_t b = px.blue;
 
             MSX1PQCore::apply_preprocess(&qi, r, g, b);
-            const int basic_idx = select_basic_index(qi, r, g, b, static_cast<std::int32_t>(x), static_cast<std::int32_t>(y));
-
-            const MSX1PQ::QuantColor& qc = (qi.color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
-                ? MSX1PQ::kBasicColorsMsx2[basic_idx]
-                : MSX1PQ::kQuantColors[basic_idx];
+            const MSX1PQ::QuantColor& qc = MSX1PQCore::quantize_pixel(
+                qi,
+                r,
+                g,
+                b,
+                static_cast<std::int32_t>(x),
+                static_cast<std::int32_t>(y));
 
             px.red   = qc.r;
             px.green = qc.g;
@@ -331,7 +335,8 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         }
     }
 
-    if (qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+    if (!qi.use_palette_color &&
+        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
         const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
         const std::int32_t w = static_cast<std::int32_t>(width);
         const std::int32_t h = static_cast<std::int32_t>(height);
@@ -438,6 +443,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (!opts.pre_lut_path.empty()) {
+        if (!fs::exists(opts.pre_lut_path)) {
+            std::cerr << "LUT file does not exist: " << opts.pre_lut_path << "\n";
+            return 1;
+        }
+        if (!MSX1PQCore::load_pre_lut(opts.pre_lut_path.string(), opts.pre_lut_data, opts.pre_lut3d_data, opts.pre_lut3d_size)) {
+            return 1;
+        }
+    }
+
     if (!fs::exists(opts.output_dir)) {
         fs::create_directories(opts.output_dir);
     }
@@ -450,7 +465,12 @@ int main(int argc, char** argv) {
 
     int success_count = 0;
     for (const auto& input : inputs) {
-        fs::path out_path = opts.output_dir / input.filename();
+        fs::path output_filename = input.filename();
+        if (!opts.output_prefix.empty()) {
+            output_filename = fs::path(opts.output_prefix + output_filename.string());
+        }
+
+        fs::path out_path = opts.output_dir / output_filename;
         if (fs::exists(out_path) && !opts.force) {
             if (!confirm_overwrite(out_path)) {
                 std::cout << "Skipped: " << out_path << "\n";

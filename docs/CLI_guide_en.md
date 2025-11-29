@@ -28,16 +28,20 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | --- | --- |
 | `--input, -i <file|dir>` | Input PNG file or directory to process. |
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
+| `--output-prefix <string>` | Prefix added to every output file name. |
 | `--color-system <msx1|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
 | `--8dot <none|fast|basic|best|best-attr|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
 | `--distance <rgb|hsb>` | Color distance mode for palette selection. Default: `hsb`. |
 | `--weight-h`, `--weight-s`, `--weight-b` | Weights (0–1) for hue, saturation, and brightness when `hsb` distance is selected. |
+| `--pre-posterize <0-255>` | Posterize before processing (default: `16`; skipped if `<=1`). |
 | `--pre-sat <0-10>` | Boost saturation before quantizing. Default: `1.0`. |
 | `--pre-gamma <0-10>` | Darken midtones before quantizing. Default: `1.0`. |
 | `--pre-highlight <0-10>` | Brighten highlights before quantizing. Default: `1.0`. |
 | `--pre-hue <-180-180>` | Rotate hue before quantizing. Default: `0.0`. |
+| `--pre-lut <file>` | Apply an RGB LUT (256-row table) or a `.cube` 3D LUT before processing. |
+| `--palette92` | Replace colors with the nearest from the 92-color palette (dithering disabled). |
 | `-f, --force` | Overwrite outputs without confirmation. |
 | `-v, --version` | Show version information. |
 | `-h, --help` | Show help in the detected locale (Japanese if available). |
