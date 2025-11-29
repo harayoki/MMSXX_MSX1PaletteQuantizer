@@ -23,6 +23,7 @@ It is recommended to apply the following adjustments before the MSX1 effect.
 
 ## Main Settings
 -   **MSX1/MSX2 Color**: Switches between MSX1 (15 colors) and MSX2 (15 colors) palettes.
+-   **Palette Only**: Skips dithering and outputs directly from the 92-color palette using the nearest color.
 -   **Dither**: Toggles dithering ON/OFF.
 -   **Dark Area Dither**: Selects whether to use a dedicated dither pattern for dark areas.
 -   **Convert Algorithm**: Select one of five algorithms for 2-color conversion within an 8x1 dot area.

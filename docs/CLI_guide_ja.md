@@ -31,6 +31,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | `--output-prefix <文字列>` | 出力ファイル名の先頭に付与する接頭辞。 |
 | `--color-system <msx1|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
+| `--palette-only` | 92色パレットから最も近い色に直接置き換えて出力（ディザ無効）。 |
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
 | `--8dot <none|fast|basic|best|best-attr|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
 | `--distance <rgb|hsb>` | パレット選択時の色距離計算方法。既定: `hsb`。 |
