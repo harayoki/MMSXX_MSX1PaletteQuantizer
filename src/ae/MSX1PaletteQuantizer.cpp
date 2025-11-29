@@ -127,7 +127,7 @@ GlobalSetup (
     // out_data->out_flags2 =  PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
 
 	out_data->out_flags  = PF_OutFlag_NONE;
-	out_data->out_flags2 = PF_OutFlag2_NONE;
+	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
     // Premiere 用ピクセルフォーマット宣言
     if (in_dataP->appl_id == kAppID_Premiere){
 
@@ -664,6 +664,147 @@ Render (
     return err;
 }
 
+static PF_Err
+SmartPreRender(
+    PF_InData         *in_dataP,
+    PF_OutData        *out_dataP,
+    PF_ParamDef       *params[],      // 使わないけど将来用に受けておく
+    PF_PreRenderExtra *extraP)
+{
+    PF_Err err = PF_Err_NONE;
+
+    // AE が要求している範囲
+    PF_RenderRequest req = extraP->input->output_request;
+    PF_CheckoutResult in_result;
+
+    err = extraP->cb->checkout_layer(
+              in_dataP->effect_ref,
+              MSX1PQ_PARAM_INPUT,
+              MSX1PQ_PARAM_INPUT,
+              &req,
+              in_dataP->current_time,
+              in_dataP->time_step,
+              in_dataP->time_scale,
+              &in_result);
+    if (!err) {
+        // 結果矩形の更新（自前ROI最適化はしないので、そのまま）
+        UnionLRect(&in_result.result_rect,      &extraP->output->result_rect);
+        UnionLRect(&in_result.max_result_rect,  &extraP->output->max_result_rect);
+    }
+
+    return err;
+}
+
+// ---------------------------------------------------------------------------
+// SmartRender (AE SmartFX 用, 8bit/全面処理)
+// ---------------------------------------------------------------------------
+static PF_Err
+SmartRender(
+    PF_InData           *in_dataP,
+    PF_OutData          *out_data,
+    PF_ParamDef         *params[],
+    PF_SmartRenderExtra *extraP)
+{
+    PF_Err err  = PF_Err_NONE;
+    PF_Err err2 = PF_Err_NONE;
+
+    PF_EffectWorld *input_worldP  = NULL;
+    PF_EffectWorld *output_worldP = NULL;
+
+    // 入出力バッファを SmartFX 経由で取得
+    err = extraP->cb->checkout_layer_pixels(
+              in_dataP->effect_ref,
+              MSX1PQ_PARAM_INPUT,
+              &input_worldP);
+    if (!err) {
+        err = extraP->cb->checkout_output(
+                  in_dataP->effect_ref,
+                  &output_worldP);
+    }
+
+    if (!err && input_worldP && output_worldP) {
+
+        // ---- Render() と同じパラメータ読み取り ----
+        QuantInfo qi;
+        qi.color_system    = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
+        qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
+        qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
+        qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value
+                              == MSX1PQ_DIST_MODE_HSB);
+
+        qi.w_h = clamp01f(
+            static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value));
+        qi.w_s = clamp01f(
+            static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value));
+        qi.w_b = clamp01f(
+            static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
+
+        qi.pre_sat       = (params[MSX1PQ_PARAM_PRE_SAT]->u.bd.value       != 0);
+        qi.pre_gamma     = (params[MSX1PQ_PARAM_PRE_GAMMA]->u.bd.value     != 0);
+        qi.pre_highlight = (params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.bd.value != 0);
+
+        qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
+
+        // SmartFX から渡された output_worldP の幅・高さ
+        const A_long width  = output_worldP->width;
+        const A_long height = output_worldP->height;
+
+        // ---- 1パス目：通常の量子化 (AE / ARGB32 8bit 前提) ----
+        AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
+            in_dataP,
+            kPFIterate8Suite,
+            kPFIterate8SuiteVersion2,
+            out_data);
+
+        err = iterate8Suite->iterate(
+                  in_dataP,
+                  0,
+                  height,
+                  input_worldP,
+                  NULL,          // area: ROI 最適化なし (全面)
+                  &qi,
+                  FilterImage8,  // 既存の AE 用 8bit フィルタ
+                  output_worldP);
+
+        // ---- 2パス目：8dot / 2color 後処理 ----
+        if (!err && qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+
+            A_long row_bytes = output_worldP->rowbytes;
+            A_long row_pitch = (row_bytes >= 0)
+                ? (row_bytes / (A_long)sizeof(PF_Pixel8))
+                : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
+
+            PF_Pixel8 *start =
+                reinterpret_cast<PF_Pixel8*>(output_worldP->data);
+
+            // rowbytes < 0 対応
+            if (row_bytes < 0) {
+                start = reinterpret_cast<PF_Pixel8*>(
+                    reinterpret_cast<char*>(output_worldP->data)
+                    + (height - 1) * (-row_bytes));
+            }
+
+            apply_8dot2col_dispatch_ARGB(
+                start,
+                row_pitch,
+                width,
+                height,
+                qi.color_system,
+                qi.use_8dot2col);
+        }
+    }
+
+    // input の checkin
+    err2 = extraP->cb->checkin_layer_pixels(
+               in_dataP->effect_ref,
+               MSX1PQ_PARAM_INPUT);
+    if (!err && err2) {
+        err = err2;
+    }
+
+    return err;
+}
+
 // ---------------------------------------------------------------------------
 // エントリ登録
 // ---------------------------------------------------------------------------
@@ -794,7 +935,24 @@ EffectMain(
             case PF_Cmd_RENDER:
                 err = Render(in_dataP, out_data, params, output);
                 break;
-            // SMART_RENDER / SMART_PRE_RENDER は 8bit専用につき未対応
+
+            case PF_Cmd_SMART_PRE_RENDER:
+                // AE SmartFX 用 / ROI 最適化なし
+                err = SmartPreRender(
+                          in_dataP,
+                          out_data,
+                          params,
+                          reinterpret_cast<PF_PreRenderExtra*>(extra));
+                break;
+
+            case PF_Cmd_SMART_RENDER:
+                // AE SmartFX 用 / ROI 最適化なし
+                err = SmartRender(
+                          in_dataP,
+                          out_data,
+                          params,
+                          reinterpret_cast<PF_SmartRenderExtra*>(extra));
+                break;
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない
