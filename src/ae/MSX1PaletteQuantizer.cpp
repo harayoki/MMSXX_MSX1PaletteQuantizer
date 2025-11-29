@@ -128,6 +128,10 @@ GlobalSetup (
 
 	out_data->out_flags  = PF_OutFlag_NONE;
 	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
+    //	MSX1PQ_DebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
+    //                    (unsigned int)out_data->out_flags,
+    //                    (unsigned int)out_data->out_flags2); この値を rファイルに書く
+
     // Premiere 用ピクセルフォーマット宣言
     if (in_dataP->appl_id == kAppID_Premiere){
 

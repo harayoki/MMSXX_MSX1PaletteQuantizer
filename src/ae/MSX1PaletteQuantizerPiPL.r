@@ -49,7 +49,8 @@ resource 'PiPL' (16000) {
 			PF_OutFlag_NONE
 		},
 		AE_Effect_Global_OutFlags_2 {
-			PF_OutFlag2_NONE
+		    0x00000400L
+			/* PF_OutFlag2_SUPPORTS_SMART_RENDER */
 		},
 		AE_Effect_Match_Name {
 			"MMSXX_MSX1PaletteQuantizer"
