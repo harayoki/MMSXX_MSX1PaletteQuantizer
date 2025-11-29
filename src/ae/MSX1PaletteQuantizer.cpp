@@ -110,6 +110,43 @@ static inline PF_Err CheckinParam(
     return PF_CHECKIN_PARAM(in_data, &param);
 }
 
+// ROI 有効/無効判定
+static A_Boolean
+IsRoiEnabled(const PF_InData *in_data, PF_ParamDef *params[])
+{
+    // Premiere は常に無効
+    if (in_data->appl_id == kAppID_Premiere) {
+        return FALSE;
+    }
+
+    const A_long roi_mode =
+        params[MSX1PQ_PARAM_ROI_OPTIMIZATION]->u.pd.value;
+    const A_long mode_8dot =
+        params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
+
+    // 手動 OFF
+    if (roi_mode == MSX1PQ_ROI_OPTIMIZATION_OFF) {
+        return FALSE;
+    }
+
+    // 手動 ON
+    if (roi_mode == MSX1PQ_ROI_OPTIMIZATION_ON) {
+        return TRUE;
+    }
+
+    // AUTO
+    if (mode_8dot == MSX1PQ_EIGHTDOT_MODE_ATTR_BEST ||
+        mode_8dot == MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST) {
+        // Best-Attr / Best-Trans は ROI 無効
+        return FALSE;
+    }
+
+    // それ以外のモードは ROI 有効
+    return TRUE;
+}
+
+
+
 } // namespace
 
 // ---------------------------------------------------------------------------
