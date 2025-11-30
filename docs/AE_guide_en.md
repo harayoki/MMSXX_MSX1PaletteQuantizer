@@ -2,6 +2,8 @@
 
 ## 1. Recommended Initial Settings
 
+**Multi-Frame Rendering**: The effect is compatible with After Effects Multi-Frame Rendering, so enable it for faster renders when available.
+
 -   **Composition Settings**: Place your footage in a composition with a size of `256x192`.
 -   **Layer Settings**: Change the layer's quality setting from "Bilinear" to "Nearest Neighbor" to disable anti-aliasing.
 
