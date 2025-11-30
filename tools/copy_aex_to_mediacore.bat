@@ -10,7 +10,7 @@ set "TARGET_DIR=C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore"
 >nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
 if '%errorlevel%' NEQ '0' (
     echo 管理者権限が必要です。管理者として再実行します。
-    PAUSE
+    :: PAUSE
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& {Start-Process -FilePath '%~f0' -Verb RunAs}"
     goto :eof
 )
