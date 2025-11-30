@@ -755,74 +755,99 @@ SmartPreRender(
 {
     PF_Err err = PF_Err_NONE;
 
-    // AE が要求している範囲（ホストの ROI）を元に、横はコンポ全幅に揃える
-    PF_RenderRequest req = extraP->input->output_request;
-    MyDebugLog("SmartPreRender: original requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
-        req.rect.left,
-        req.rect.top,
-        req.rect.right,
-        req.rect.bottom);
-    PF_Rect roi = req.rect;
+    // ホストから来た元の要求
+    PF_RenderRequest host_req = extraP->input->output_request;
+    PF_Rect host_rect = host_req.rect;
+    /*
+    MyDebugLog("SmartPreRender: host request L=%ld, T=%ld, R=%ld, B=%ld",
+        host_rect.left,
+        host_rect.top,
+        host_rect.right,
+        host_rect.bottom);
+    */
 
     const A_long comp_w = in_dataP->width;
     const A_long comp_h = in_dataP->height;
 
-    // コンポサイズ内にクランプ
-    roi.left   = (std::max)(roi.left, static_cast<A_long>(0));
-    roi.top    = (std::max)(roi.top, static_cast<A_long>(0));
-    roi.right  = (std::min)(roi.right, comp_w);
-    roi.bottom = (std::min)(roi.bottom, comp_h);
+    // 出力用: ホストの request をコンポ内にクランプ
+    PF_Rect out_rect = host_rect;
+    out_rect.left   = (std::max)(out_rect.left,  (A_long)0);
+    out_rect.top    = (std::max)(out_rect.top,   (A_long)0);
+    out_rect.right  = (std::min)(out_rect.right, comp_w);
+    out_rect.bottom = (std::min)(out_rect.bottom,comp_h);
 
-    // 左右は常にコンポ全幅
-    roi.left  = 0;
-    roi.right = comp_w;
+    /*
+    MyDebugLog("SmartPreRender: output rect L=%ld, T=%ld, R=%ld, B=%ld",
+        out_rect.left,
+        out_rect.top,
+        out_rect.right,
+        out_rect.bottom);
+    */
 
-    MyDebugLog("SmartPreRender: adjusted requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
-        roi.left,
-        roi.top,
-        roi.right,
-        roi.bottom);
+    // 入力用: 横だけ全幅に広げる（上下は out_rect に合わせる）
+    PF_RenderRequest input_req = host_req;
+    PF_Rect in_roi = out_rect;
+    in_roi.left  = 0;
+    in_roi.right = comp_w;
+    input_req.rect = in_roi;
 
-    // 何らかの理由で矩形が空になってしまった場合はコンポ全域にフォールバック
-    if (roi.top >= roi.bottom || roi.left >= roi.right) {
-        MyDebugLog("SmartPreRender: requested rect is empty, fallback to full comp size");
-        roi.left   = 0;
-        roi.top    = 0;
-        roi.right  = comp_w;
-        roi.bottom = comp_h;
-    }
-
-    req.rect = roi;
+    /*
+    MyDebugLog("SmartPreRender: input rect L=%ld, T=%ld, R=%ld, B=%ld",
+        input_req.rect.left,
+        input_req.rect.top,
+        input_req.rect.right,
+        input_req.rect.bottom);
+    */
 
     PF_CheckoutResult in_result{};
     err = extraP->cb->checkout_layer(
               in_dataP->effect_ref,
               MSX1PQ_PARAM_INPUT,
               MSX1PQ_PARAM_INPUT,
-              &req,
+              &input_req,
               in_dataP->current_time,
               in_dataP->time_step,
               in_dataP->time_scale,
               &in_result);
 
-    MyDebugLog("SmartPreRender: checkout_layer err=%d", static_cast<int>(err));
-
     if (!err) {
-        // 上流が返してきた rect をそのまま SmartRender 側に渡す
-        extraP->output->result_rect     = in_result.result_rect;
-        extraP->output->max_result_rect = in_result.max_result_rect;
 
-        MyDebugLog("SmartPreRender: result_rect: L=%ld, T=%ld, R=%ld, B=%ld",
+        /*
+        MyDebugLog("SmartPreRender: input result rect L=%ld, T=%ld, R=%ld, B=%ld",
             in_result.result_rect.left,
             in_result.result_rect.top,
             in_result.result_rect.right,
             in_result.result_rect.bottom);
 
-        MyDebugLog("SmartPreRender: max_result_rect: L=%ld, T=%ld, R=%ld, B=%ld",
+        MyDebugLog("SmartPreRender: input result max_result rect L=%ld, T=%ld, R=%ld, B=%ld",
             in_result.max_result_rect.left,
             in_result.max_result_rect.top,
             in_result.max_result_rect.right,
             in_result.max_result_rect.bottom);
+        */
+
+        // in_result.result_rect との共通部分に
+        auto intersect = [](const PF_Rect& a, const PF_Rect& b) {
+            PF_Rect r;
+            r.left   = (std::max)(a.left,   b.left);
+            r.top    = (std::max)(a.top,    b.top);
+            r.right  = (std::min)(a.right,  b.right);
+            r.bottom = (std::min)(a.bottom, b.bottom);
+            return r;
+        };
+
+        PF_Rect final_rect = intersect(out_rect, in_result.result_rect);
+
+        /*
+        MyDebugLog("SmartPreRender: final result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            final_rect.left,
+            final_rect.top,
+            final_rect.right,
+            final_rect.bottom);
+        */
+
+        extraP->output->result_rect     = final_rect;
+        extraP->output->max_result_rect = final_rect;
     }
 
     return err;
