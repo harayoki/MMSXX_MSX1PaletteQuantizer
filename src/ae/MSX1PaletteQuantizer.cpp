@@ -773,13 +773,19 @@ static PF_Err
 SmartPreRender(
     PF_InData         *in_dataP,
     PF_OutData        *out_dataP,
-    PF_ParamDef       *params[],      // 使わないけど将来用に受けておく
+    PF_ParamDef       *params[],
     PF_PreRenderExtra *extraP)
 {
     PF_Err err = PF_Err_NONE;
 
-    // AE が要求している範囲
+    // ROI 最適化の有無を判定
+    const A_Boolean use_roi = IsRoiEnabled(in_dataP, params);
+
+    // AE が要求している範囲（ROI 無効の場合は最大範囲を要求）
     PF_RenderRequest req = extraP->input->output_request;
+    if (!use_roi) {
+        req.rect = extraP->input->output->max_result_rect;
+    }
     PF_CheckoutResult in_result;
 
     err = extraP->cb->checkout_layer(
@@ -792,9 +798,15 @@ SmartPreRender(
               in_dataP->time_scale,
               &in_result);
     if (!err) {
-        // 結果矩形の更新（自前ROI最適化はしないので、そのまま）
-        UnionLRect(&in_result.result_rect,      &extraP->output->result_rect);
-        UnionLRect(&in_result.max_result_rect,  &extraP->output->max_result_rect);
+        if (use_roi) {
+            // ROI 有効時はホスト要求に従う
+            UnionLRect(&in_result.result_rect,     &extraP->output->result_rect);
+            UnionLRect(&in_result.max_result_rect, &extraP->output->max_result_rect);
+        } else {
+            // ROI 無効時は常に全体を処理
+            extraP->output->result_rect     = in_result.max_result_rect;
+            extraP->output->max_result_rect = in_result.max_result_rect;
+        }
     }
 
     return err;
