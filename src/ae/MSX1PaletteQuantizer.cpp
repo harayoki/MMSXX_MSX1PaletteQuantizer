@@ -461,6 +461,12 @@ apply_8dot2col_dispatch_BGRA(
 // 8bit ARGB (AE用) 量子化
 // ---------------------------------------------------------------------------
 
+struct FilterRefcon {
+    QuantInfo *qi{};
+    A_long     global_x0{};
+    A_long     global_y0{};
+};
+
 static PF_Err
 FilterImage8 (
     void        *refcon,
@@ -469,7 +475,8 @@ FilterImage8 (
     PF_Pixel8   *inP,
     PF_Pixel8   *outP)
 {
-    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+    auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
+    QuantInfo *qi = ref->qi;
 
     // TODO: 並列レンダリング時に複数スレッドから同じ refcon を参照すると、
     //       非 const ポインタ経由で共有状態を書き換えた場合にデータ競合が起きる。
@@ -489,8 +496,8 @@ FilterImage8 (
         r,
         g,
         b,
-        static_cast<std::int32_t>(xL),
-        static_cast<std::int32_t>(yL));
+        static_cast<std::int32_t>(ref->global_x0 + xL),
+        static_cast<std::int32_t>(ref->global_y0 + yL));
 
     outP->alpha = inP->alpha;
     outP->red   = qc.r;
@@ -511,7 +518,8 @@ FilterImageBGRA_8u (
     PF_Pixel8   *inP,
     PF_Pixel8   *outP)
 {
-    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+    auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
+    QuantInfo *qi = ref->qi;
 
     // TODO: AE 側のスレッド並列実行では上と同様に refcon の共有で競合する。
     //       BGRA パスもスレッドローカルな QuantInfo コピーに置き換えるなど、
@@ -531,8 +539,8 @@ FilterImageBGRA_8u (
         r,
         g,
         b,
-        static_cast<std::int32_t>(xL),
-        static_cast<std::int32_t>(yL));
+        static_cast<std::int32_t>(ref->global_x0 + xL),
+        static_cast<std::int32_t>(ref->global_y0 + yL));
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
@@ -552,7 +560,7 @@ RunIteratePass(
     PF_OutData           *out_data,
     A_long               linesL,
     PF_EffectWorld       *input_worldP,
-    QuantInfo            *qiP,
+    FilterRefcon         *refconP,
     PF_IteratePixel8Func filter_func,
     PF_EffectWorld       *output_worldP)
 {
@@ -568,7 +576,7 @@ RunIteratePass(
         linesL,
         input_worldP,
         nullptr,
-        qiP,
+        refconP,
         filter_func,
         output_worldP);
 }
@@ -690,13 +698,18 @@ Render (
         if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
 
             // ---- 1パス目：通常の量子化（ディザなど）----
+            FilterRefcon refcon{};
+            refcon.qi = &qi;
+            refcon.global_x0 = output->extent_hint.left;
+            refcon.global_y0 = output->extent_hint.top;
+
             err = RunIteratePass(
                       in_dataP,
                       out_data,
                       linesL,
                       reinterpret_cast<PF_EffectWorld*>(
                           &params[MSX1PQ_PARAM_INPUT]->u.ld),
-                      &qi,
+                      &refcon,
                       FilterImageBGRA_8u,
                       reinterpret_cast<PF_EffectWorld*>(output));
 
@@ -722,13 +735,18 @@ Render (
         // (reinterpret_cast<PF_EffectWorld*>(output));
 
         // ---- 1パス目：通常の量子化 ----
+        FilterRefcon refcon{};
+        refcon.qi = &qi;
+        refcon.global_x0 = output->extent_hint.left;
+        refcon.global_y0 = output->extent_hint.top;
+
         err = RunIteratePass(
                   in_dataP,
                   out_data,
                   linesL,
                   reinterpret_cast<PF_EffectWorld*>(
                       &params[MSX1PQ_PARAM_INPUT]->u.ld),
-                  &qi,
+                  &refcon,
                   FilterImage8,
                   reinterpret_cast<PF_EffectWorld*>(output));
 
@@ -882,18 +900,41 @@ SmartRender(
 
     if (!err && input_worldP && output_worldP) {
 
-        // SmartRenderExtra に result_rect が無い環境では extent_hint を参照
-        PF_Rect render_rect = output_worldP->extent_hint;
-        if (render_rect.left == render_rect.right ||
-            render_rect.top  == render_rect.bottom) {
-            render_rect.left   = 0;
-            render_rect.top    = 0;
-            render_rect.right  = output_worldP->width;
-            render_rect.bottom = output_worldP->height;
+        PF_Rect current_rect = output_worldP->extent_hint;
+        if (current_rect.left == current_rect.right ||
+            current_rect.top  == current_rect.bottom) {
+            current_rect.left   = 0;
+            current_rect.top    = 0;
+            current_rect.right  = output_worldP->width;
+            current_rect.bottom = output_worldP->height;
         }
 
-        const A_long width  = render_rect.right  - render_rect.left;
-        const A_long height = render_rect.bottom - render_rect.top;
+        const auto align_down8 = [](A_long v) {
+            if (v >= 0) {
+                return (v / 8) * 8;
+            }
+            return -(((-v + 7) / 8) * 8);
+        };
+        const auto align_up8 = [](A_long v) {
+            if (v >= 0) {
+                return ((v + 7) / 8) * 8;
+            }
+            return -(((-v) / 8) * 8);
+        };
+
+        PF_Rect aligned_rect = current_rect;
+        aligned_rect.left   = align_down8(current_rect.left);
+        aligned_rect.right  = align_up8(current_rect.right);
+        aligned_rect.top    = current_rect.top;
+        aligned_rect.bottom = current_rect.bottom;
+
+        aligned_rect.left = clamp_value(aligned_rect.left, static_cast<A_long>(0), output_worldP->width);
+        aligned_rect.right = clamp_value(aligned_rect.right, aligned_rect.left, output_worldP->width);
+        aligned_rect.top = clamp_value(aligned_rect.top, static_cast<A_long>(0), output_worldP->height);
+        aligned_rect.bottom = clamp_value(aligned_rect.bottom, aligned_rect.top, output_worldP->height);
+
+        const A_long width  = aligned_rect.right  - aligned_rect.left;
+        const A_long height = aligned_rect.bottom - aligned_rect.top;
 
         // 矩形が空の場合は何もしない
         if (width > 0 && height > 0) {
@@ -916,8 +957,8 @@ SmartRender(
             PF_EffectWorld input_roi  = *input_worldP;
             PF_EffectWorld output_roi = *output_worldP;
 
-            input_roi.data  = calc_start(input_worldP, render_rect);
-            output_roi.data = calc_start(output_worldP, render_rect);
+            input_roi.data  = calc_start(input_worldP, aligned_rect);
+            output_roi.data = calc_start(output_worldP, aligned_rect);
 
             input_roi.width  = width;
             input_roi.height = height;
@@ -934,10 +975,15 @@ SmartRender(
             output_roi.extent_hint.bottom = height;
 
             MyDebugLog("### SmartRender: rect by hint L=%ld, T=%ld, R=%ld, B=%ld",
-                render_rect.left,
-                render_rect.top,
-                render_rect.right,
-                render_rect.bottom);
+                current_rect.left,
+                current_rect.top,
+                current_rect.right,
+                current_rect.bottom);
+            MyDebugLog("### SmartRender: aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
+                aligned_rect.left,
+                aligned_rect.top,
+                aligned_rect.right,
+                aligned_rect.bottom);
 
         // --------------------------------------------------------------------
         // QuantInfo を PF_CHECKOUT_PARAM で構築
@@ -1055,6 +1101,11 @@ SmartRender(
         qi.use_dark_dither = (param.u.bd.value != 0);
         ERR( CheckinParam(in_dataP, param) );
 
+        FilterRefcon refcon{};
+        refcon.qi = &qi;
+        refcon.global_x0 = aligned_rect.left;
+        refcon.global_y0 = aligned_rect.top;
+
         // --------------------------------------------------------------------
         // 1パス目：通常量子化
         // --------------------------------------------------------------------
@@ -1064,7 +1115,7 @@ SmartRender(
                       out_data,
                       height,
                       &input_roi,
-                      &qi,
+                      &refcon,
                       FilterImage8,   // 既存 8bit フィルタ
                       &output_roi);
         }
@@ -1075,7 +1126,7 @@ SmartRender(
             if (!err &&
                 !qi.use_palette_color &&
                 qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
-                Apply8dot2colARGB(output_worldP, render_rect, qi);
+                Apply8dot2colARGB(output_worldP, aligned_rect, qi);
             }
         }
     }
