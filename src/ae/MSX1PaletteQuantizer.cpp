@@ -909,82 +909,6 @@ SmartRender(
             current_rect.bottom = output_worldP->height;
         }
 
-        const auto align_down8 = [](A_long v) {
-            if (v >= 0) {
-                return (v / 8) * 8;
-            }
-            return -(((-v + 7) / 8) * 8);
-        };
-        const auto align_up8 = [](A_long v) {
-            if (v >= 0) {
-                return ((v + 7) / 8) * 8;
-            }
-            return -(((-v) / 8) * 8);
-        };
-
-        PF_Rect aligned_rect = current_rect;
-        aligned_rect.left   = align_down8(current_rect.left);
-        aligned_rect.right  = align_up8(current_rect.right);
-        aligned_rect.top    = current_rect.top;
-        aligned_rect.bottom = current_rect.bottom;
-
-        aligned_rect.left = clamp_value(aligned_rect.left, static_cast<A_long>(0), output_worldP->width);
-        aligned_rect.right = clamp_value(aligned_rect.right, aligned_rect.left, output_worldP->width);
-        aligned_rect.top = clamp_value(aligned_rect.top, static_cast<A_long>(0), output_worldP->height);
-        aligned_rect.bottom = clamp_value(aligned_rect.bottom, aligned_rect.top, output_worldP->height);
-
-        const A_long width  = aligned_rect.right  - aligned_rect.left;
-        const A_long height = aligned_rect.bottom - aligned_rect.top;
-
-        // 矩形が空の場合は何もしない
-        if (width > 0 && height > 0) {
-            auto calc_start = [](const PF_EffectWorld *worldP,
-                                 const PF_Rect &rect) -> PF_Pixel8* {
-                const A_long row_bytes = worldP->rowbytes;
-                char *base = reinterpret_cast<char*>(worldP->data);
-
-                if (row_bytes < 0) {
-                    base += (worldP->height - 1 - rect.top) * (-row_bytes);
-                } else {
-                    base += rect.top * row_bytes;
-                }
-
-                base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
-
-                return reinterpret_cast<PF_Pixel8*>(base);
-            };
-
-            PF_EffectWorld input_roi  = *input_worldP;
-            PF_EffectWorld output_roi = *output_worldP;
-
-            input_roi.data  = calc_start(input_worldP, aligned_rect);
-            output_roi.data = calc_start(output_worldP, aligned_rect);
-
-            input_roi.width  = width;
-            input_roi.height = height;
-            output_roi.width  = width;
-            output_roi.height = height;
-
-            input_roi.extent_hint.left = 0;
-            input_roi.extent_hint.top  = 0;
-            input_roi.extent_hint.right  = width;
-            input_roi.extent_hint.bottom = height;
-            output_roi.extent_hint.left = 0;
-            output_roi.extent_hint.top  = 0;
-            output_roi.extent_hint.right  = width;
-            output_roi.extent_hint.bottom = height;
-
-            MyDebugLog("### SmartRender: rect by hint L=%ld, T=%ld, R=%ld, B=%ld",
-                current_rect.left,
-                current_rect.top,
-                current_rect.right,
-                current_rect.bottom);
-            MyDebugLog("### SmartRender: aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
-                aligned_rect.left,
-                aligned_rect.top,
-                aligned_rect.right,
-                aligned_rect.bottom);
-
         // --------------------------------------------------------------------
         // QuantInfo を PF_CHECKOUT_PARAM で構築
         // --------------------------------------------------------------------
@@ -1101,28 +1025,108 @@ SmartRender(
         qi.use_dark_dither = (param.u.bd.value != 0);
         ERR( CheckinParam(in_dataP, param) );
 
-        FilterRefcon refcon{};
-        refcon.qi = &qi;
-        refcon.global_x0 = aligned_rect.left;
-        refcon.global_y0 = aligned_rect.top;
+        // --------------------------------------------------------------------
+        // スマートレンダー用 ROI 揃え（ディザ使用時のみ 8ドット境界にスナップ）
+        // --------------------------------------------------------------------
+        const auto align_down8 = [](A_long v) {
+            if (v >= 0) {
+                return (v / 8) * 8;
+            }
+            return -(((-v + 7) / 8) * 8);
+        };
+        const auto align_up8 = [](A_long v) {
+            if (v >= 0) {
+                return ((v + 7) / 8) * 8;
+            }
+            return -(((-v) / 8) * 8);
+        };
 
-        // --------------------------------------------------------------------
-        // 1パス目：通常量子化
-        // --------------------------------------------------------------------
-        if (!err) {
-            err = RunIteratePass(
-                      in_dataP,
-                      out_data,
-                      height,
-                      &input_roi,
-                      &refcon,
-                      FilterImage8,   // 既存 8bit フィルタ
-                      &output_roi);
+        PF_Rect aligned_rect = current_rect;
+        if (qi.use_dither) {
+            aligned_rect.left   = align_down8(current_rect.left);
+            aligned_rect.right  = align_up8(current_rect.right);
         }
+        aligned_rect.top    = current_rect.top;
+        aligned_rect.bottom = current_rect.bottom;
 
-        // --------------------------------------------------------------------
-        // 2パス目：8dot / 2color 後処理
-        // --------------------------------------------------------------------
+        aligned_rect.left = clamp_value(aligned_rect.left, static_cast<A_long>(0), output_worldP->width);
+        aligned_rect.right = clamp_value(aligned_rect.right, aligned_rect.left, output_worldP->width);
+        aligned_rect.top = clamp_value(aligned_rect.top, static_cast<A_long>(0), output_worldP->height);
+        aligned_rect.bottom = clamp_value(aligned_rect.bottom, aligned_rect.top, output_worldP->height);
+
+        const A_long width  = aligned_rect.right  - aligned_rect.left;
+        const A_long height = aligned_rect.bottom - aligned_rect.top;
+
+        // 矩形が空の場合は何もしない
+        if (width > 0 && height > 0) {
+            auto calc_start = [](const PF_EffectWorld *worldP,
+                                 const PF_Rect &rect) -> PF_Pixel8* {
+                const A_long row_bytes = worldP->rowbytes;
+                char *base = reinterpret_cast<char*>(worldP->data);
+
+                if (row_bytes < 0) {
+                    base += (worldP->height - 1 - rect.top) * (-row_bytes);
+                } else {
+                    base += rect.top * row_bytes;
+                }
+
+                base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
+                return reinterpret_cast<PF_Pixel8*>(base);
+            };
+
+            PF_EffectWorld input_roi  = *input_worldP;
+            PF_EffectWorld output_roi = *output_worldP;
+
+            input_roi.data  = calc_start(input_worldP, aligned_rect);
+            output_roi.data = calc_start(output_worldP, aligned_rect);
+
+            input_roi.width  = width;
+            input_roi.height = height;
+            output_roi.width  = width;
+            output_roi.height = height;
+
+            input_roi.extent_hint.left = 0;
+            input_roi.extent_hint.top  = 0;
+            input_roi.extent_hint.right  = width;
+            input_roi.extent_hint.bottom = height;
+            output_roi.extent_hint.left = 0;
+            output_roi.extent_hint.top  = 0;
+            output_roi.extent_hint.right  = width;
+            output_roi.extent_hint.bottom = height;
+
+            MyDebugLog("### SmartRender: rect by hint L=%ld, T=%ld, R=%ld, B=%ld",
+                current_rect.left,
+                current_rect.top,
+                current_rect.right,
+                current_rect.bottom);
+            MyDebugLog("### SmartRender: aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
+                aligned_rect.left,
+                aligned_rect.top,
+                aligned_rect.right,
+                aligned_rect.bottom);
+            FilterRefcon refcon{};
+            refcon.qi = &qi;
+            refcon.global_x0 = aligned_rect.left;
+            refcon.global_y0 = aligned_rect.top;
+
+            // ----------------------------------------------------------------
+            // 1パス目：通常量子化
+            // ----------------------------------------------------------------
+            if (!err) {
+                err = RunIteratePass(
+                          in_dataP,
+                          out_data,
+                          height,
+                          &input_roi,
+                          &refcon,
+                          FilterImage8,   // 既存 8bit フィルタ
+                          &output_roi);
+            }
+
+            // ----------------------------------------------------------------
+            // 2パス目：8dot / 2color 後処理
+            // ----------------------------------------------------------------
             if (!err &&
                 !qi.use_palette_color &&
                 qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
