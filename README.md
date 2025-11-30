@@ -61,8 +61,7 @@ For command line usage, see:
 
 ## Build Instructions for Visual Studio 2022 (Windows)
 
-Build the project using Visual Studio (Windows) or Xcode (Mac).
-Upon successful build, a plugin file (.aex or .plugin) will be generated.
+Build the project using Visual Studio (Windows).
 
 *   In "x64 Native Tools Command Prompt for VS2022", set `AESDK_ROOT` to the After Effects SDK path.
     *   `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
@@ -82,8 +81,8 @@ Upon successful build, a plugin file (.aex or .plugin) will be generated.
 
 ## Implementation Details
 
-The plugin is written in legacy C++. It does not support GPU utilization or smart rendering and only supports 8-bit mode, but it is compatible with After Effects Multi-Frame Rendering.
-Code modifications to address these limitations are highly welcome. Porting to free or low-cost video editing software (e.g., OpenFX format) is also encouraged.
+The plugin supports 8-bit effects and does not support GPU rendering. It is compatible with After Effects Multi-Frame Rendering.  
+Porting to free or low-cost video editing software (e.g., OpenFX format) is also encouraged.
 
 ## License
 

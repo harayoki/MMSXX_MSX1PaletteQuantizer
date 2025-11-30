@@ -62,8 +62,7 @@ MacもXcodeでビルドすれば動作すると思います。
 
 ## Visual Studio 2022でのビルド手順 (Windows)
 
-Visual Studio (Windows) または Xcode (Mac) を使用してプロジェクトをビルドします。
-ビルドが成功すると、プラグインファイル（.aexまたは.plugin）が生成されます。
+Visual Studio (Windows) を使用してプロジェクトをビルドします。
 
 * x64 Native Tools Command Prompt for VS2022 にて AESDK_ROOT に After Effects SDK のパスを設定。
   * `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
@@ -83,8 +82,8 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 
 ## 実装について
 
-プラグインはレガシーなC++で記載されています。GPU利用やスマートレンダリングには対応していません。8ビットモードのみ対応していますが、After Effects のマルチフレームレンダリングには対応しています。
-以上を修正するコードの改変は大歓迎です。また無料・安価な動画編集ソフトへの移植（OpenFX形式など）も歓迎します。
+プラグインは8ビットエフェクトでGPUレンダリングには対応していません。After Effects のマルチフレームレンダリングに対応しています。
+また無料・安価な動画編集ソフトへの移植（OpenFX形式など）など歓迎します。
 
 ## ライセンス
 
