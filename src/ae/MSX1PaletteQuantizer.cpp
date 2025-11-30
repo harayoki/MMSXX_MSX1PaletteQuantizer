@@ -823,10 +823,14 @@ SmartRender(
 
     if (!err && input_worldP && output_worldP) {
 
-        PF_Rect render_rect = extraP->output->result_rect;
+        // SmartRenderExtra に result_rect が無い環境では extent_hint を参照
+        PF_Rect render_rect = output_worldP->extent_hint;
         if (render_rect.left == render_rect.right ||
             render_rect.top  == render_rect.bottom) {
-            render_rect = extraP->output->max_result_rect;
+            render_rect.left   = 0;
+            render_rect.top    = 0;
+            render_rect.right  = output_worldP->width;
+            render_rect.bottom = output_worldP->height;
         }
 
         const A_long width  = render_rect.right  - render_rect.left;
