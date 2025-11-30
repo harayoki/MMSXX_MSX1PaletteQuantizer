@@ -576,27 +576,29 @@ RunIteratePass(
 static void
 Apply8dot2colARGB(
     PF_EffectWorld            *output_worldP,
+    const PF_Rect             &rect,
     A_long                    width,
     A_long                    height,
     const QuantInfo           &qi)
 {
-    A_long row_bytes = output_worldP->rowbytes;
-    A_long row_pitch = (row_bytes >= 0)
+    const A_long row_bytes = output_worldP->rowbytes;
+    const A_long row_pitch = (row_bytes >= 0)
         ? (row_bytes / (A_long)sizeof(PF_Pixel8))
         : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
 
-    PF_Pixel8* start =
-        reinterpret_cast<PF_Pixel8*>(output_worldP->data);
+    char *base = reinterpret_cast<char*>(output_worldP->data);
 
-    // rowbytes < 0（上から下ではなく下から上）に備えた補正
+    // ROI の左上を指す開始ポインタを計算（上下反転にも対応）
     if (row_bytes < 0) {
-        start = reinterpret_cast<PF_Pixel8*>(
-            reinterpret_cast<char*>(output_worldP->data)
-            + (height - 1) * (-row_bytes));
+        base += (output_worldP->height - 1 - rect.top) * (-row_bytes);
+    } else {
+        base += rect.top * row_bytes;
     }
 
+    base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
     apply_8dot2col_dispatch_ARGB(
-        start,
+        reinterpret_cast<PF_Pixel8*>(base),
         row_pitch,
         width,
         height,
@@ -732,6 +734,7 @@ Render (
             qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
             Apply8dot2colARGB(
                 reinterpret_cast<PF_EffectWorld*>(output),
+                output->extent_hint,
                 width,
                 height,
                 qi);
@@ -821,8 +824,50 @@ SmartRender(
 
     if (!err && input_worldP && output_worldP) {
 
-        const A_long width  = output_worldP->width;
-        const A_long height = output_worldP->height;
+        PF_Rect render_rect = extraP->output->result_rect;
+        if (render_rect.left == render_rect.right ||
+            render_rect.top  == render_rect.bottom) {
+            render_rect = extraP->output->max_result_rect;
+        }
+
+        const A_long width  = render_rect.right  - render_rect.left;
+        const A_long height = render_rect.bottom - render_rect.top;
+
+        auto calc_start = [](const PF_EffectWorld *worldP,
+                             const PF_Rect &rect) -> PF_Pixel8* {
+            const A_long row_bytes = worldP->rowbytes;
+            char *base = reinterpret_cast<char*>(worldP->data);
+
+            if (row_bytes < 0) {
+                base += (worldP->height - 1 - rect.top) * (-row_bytes);
+            } else {
+                base += rect.top * row_bytes;
+            }
+
+            base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
+            return reinterpret_cast<PF_Pixel8*>(base);
+        };
+
+        PF_EffectWorld input_roi  = *input_worldP;
+        PF_EffectWorld output_roi = *output_worldP;
+
+        input_roi.data  = calc_start(input_worldP, render_rect);
+        output_roi.data = calc_start(output_worldP, render_rect);
+
+        input_roi.width  = width;
+        input_roi.height = height;
+        output_roi.width  = width;
+        output_roi.height = height;
+
+        input_roi.extent_hint.left = 0;
+        input_roi.extent_hint.top  = 0;
+        input_roi.extent_hint.right  = width;
+        input_roi.extent_hint.bottom = height;
+        output_roi.extent_hint.left = 0;
+        output_roi.extent_hint.top  = 0;
+        output_roi.extent_hint.right  = width;
+        output_roi.extent_hint.bottom = height;
 
         // --------------------------------------------------------------------
         // QuantInfo を PF_CHECKOUT_PARAM で構築
@@ -948,10 +993,10 @@ SmartRender(
                       in_dataP,
                       out_data,
                       height,
-                      input_worldP,
+                      &input_roi,
                       &qi,
                       FilterImage8,   // 既存 8bit フィルタ
-                      output_worldP);
+                      &output_roi);
         }
 
         // --------------------------------------------------------------------
@@ -960,7 +1005,7 @@ SmartRender(
         if (!err &&
             !qi.use_palette_color &&
             qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
-            Apply8dot2colARGB(output_worldP, width, height, qi);
+            Apply8dot2colARGB(output_worldP, render_rect, width, height, qi);
         }
     }
 
