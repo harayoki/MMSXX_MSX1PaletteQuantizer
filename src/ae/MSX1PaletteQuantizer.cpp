@@ -784,7 +784,7 @@ SmartPreRender(
     // AE が要求している範囲（ROI 無効の場合は最大範囲を要求）
     PF_RenderRequest req = extraP->input->output_request;
     if (!use_roi) {
-        req.rect = extraP->input->output->max_result_rect;
+        req.rect = extraP->output->max_result_rect;
     }
     PF_CheckoutResult in_result;
 
