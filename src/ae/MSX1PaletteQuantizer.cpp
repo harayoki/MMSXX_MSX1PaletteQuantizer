@@ -787,12 +787,13 @@ SmartPreRender(
     const A_long comp_w = in_dataP->width;
     const A_long comp_h = in_dataP->height;
 
-    // 出力用: ホストの request をコンポ内にクランプ
+    // 出力用: ホストの request をコンポ内にクランプ（→やめる）
     PF_Rect out_rect = host_rect;
-    out_rect.left   = (std::max)(out_rect.left,  (A_long)0);
-    out_rect.top    = (std::max)(out_rect.top,   (A_long)0);
-    out_rect.right  = (std::min)(out_rect.right, comp_w);
-    out_rect.bottom = (std::min)(out_rect.bottom,comp_h);
+    // 変更すると上位のエフェクトによって表示位置がずれてクリッピングされることがある
+    //out_rect.left   = (std::max)(out_rect.left,  (A_long)0);
+    //out_rect.top    = (std::max)(out_rect.top,   (A_long)0);
+    //out_rect.right  = (std::min)(out_rect.right, comp_w);
+    //out_rect.bottom = (std::min)(out_rect.bottom,comp_h);
 
     /*
     MyDebugLog("SmartPreRender: output rect L=%ld, T=%ld, R=%ld, B=%ld",
@@ -802,7 +803,7 @@ SmartPreRender(
         out_rect.bottom);
     */
 
-    // 入力用: 横だけ全幅に広げる？（上下は out_rect に合わせる）
+    // 入力用: 横だけ全幅に広げる（→やめる）上下は out_rect に合わせる
     PF_RenderRequest input_req = host_req;
     PF_Rect in_roi = out_rect;
 
@@ -857,7 +858,8 @@ SmartPreRender(
             return r;
         };
 
-        PF_Rect final_rect = intersect(out_rect, in_result.result_rect);
+        //PF_Rect final_rect = intersect(out_rect, in_result.result_rect);
+        PF_Rect final_rect = in_result.result_rect;
 
         /*
         MyDebugLog("SmartPreRender: final result rect L=%ld, T=%ld, R=%ld, B=%ld",
@@ -1098,16 +1100,16 @@ SmartRender(
             output_roi.extent_hint.right  = width;
             output_roi.extent_hint.bottom = height;
 
-            MyDebugLog("### SmartRender: rect by hint L=%ld, T=%ld, R=%ld, B=%ld",
+            MyDebugLog("### SR: rect by hint L=%ld, T=%ld, R=%ld, B=%ld, aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
                 current_rect.left,
                 current_rect.top,
                 current_rect.right,
-                current_rect.bottom);
-            MyDebugLog("### SmartRender: aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
+                current_rect.bottom,
                 aligned_rect.left,
                 aligned_rect.top,
                 aligned_rect.right,
                 aligned_rect.bottom);
+
             FilterRefcon refcon{};
             refcon.qi = &qi;
             refcon.global_x0 = aligned_rect.left;
