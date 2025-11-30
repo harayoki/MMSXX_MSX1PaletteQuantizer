@@ -753,8 +753,32 @@ SmartPreRender(
 {
     PF_Err err = PF_Err_NONE;
 
-    // AE が要求している範囲（ホストの ROI）をそのまま使う
+    // AE が要求している範囲（ホストの ROI）を元に、横はコンポ全幅に揃える
     PF_RenderRequest req = extraP->input->output_request;
+    PF_Rect roi = req.rect;
+
+    const A_long comp_w = in_dataP->width;
+    const A_long comp_h = in_dataP->height;
+
+    // コンポサイズ内にクランプ
+    roi.left   = (std::max)(roi.left, static_cast<A_long>(0));
+    roi.top    = (std::max)(roi.top, static_cast<A_long>(0));
+    roi.right  = (std::min)(roi.right, comp_w);
+    roi.bottom = (std::min)(roi.bottom, comp_h);
+
+    // 左右は常にコンポ全幅
+    roi.left  = 0;
+    roi.right = comp_w;
+
+    // 何らかの理由で矩形が空になってしまった場合はコンポ全域にフォールバック
+    if (roi.top >= roi.bottom || roi.left >= roi.right) {
+        roi.left   = 0;
+        roi.top    = 0;
+        roi.right  = comp_w;
+        roi.bottom = comp_h;
+    }
+
+    req.rect = roi;
 
     MyDebugLog("SmartPreRender: requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
         req.rect.left,
