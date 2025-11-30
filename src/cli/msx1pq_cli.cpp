@@ -60,7 +60,7 @@ enum class UsageLanguage {
     Japanese,
 };
 
-constexpr const char* kVersion = "v0.4a";
+constexpr const char* kVersion = "v0.6b";
 
 std::optional<std::string> get_env_value(const char* name) {
 #ifdef _MSC_VER

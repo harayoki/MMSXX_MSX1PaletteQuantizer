@@ -23,6 +23,7 @@ MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 
 "MSX1PaletteQuantizer" is an effect plugin that recreates the MSX1 (TMS9918) look in compositions.
 It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area).
+Supports After Effects Smart Rendering and Multi-Frame Rendering, speeding up exports.
 
 ## Disclaimer
 
@@ -60,8 +61,7 @@ For command line usage, see:
 
 ## Build Instructions for Visual Studio 2022 (Windows)
 
-Build the project using Visual Studio (Windows) or Xcode (Mac).
-Upon successful build, a plugin file (.aex or .plugin) will be generated.
+Build the project using Visual Studio (Windows).
 
 *   In "x64 Native Tools Command Prompt for VS2022", set `AESDK_ROOT` to the After Effects SDK path.
     *   `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
@@ -81,8 +81,8 @@ Upon successful build, a plugin file (.aex or .plugin) will be generated.
 
 ## Implementation Details
 
-The plugin is written in legacy C++. It does not support GPU utilization, parallel processing, or smart rendering. Additionally, it only supports 8-bit mode.  
-Code modifications to address these limitations are highly welcome. Porting to free or low-cost video editing software (e.g., OpenFX format) is also encouraged.
+The plugin supports 8-bit effects and does not support GPU rendering. It is compatible with After Effects Multi-Frame Rendering.  
+Porting to free or low-cost video editing software (e.g., OpenFX format) is also encouraged.
 
 ## License
 

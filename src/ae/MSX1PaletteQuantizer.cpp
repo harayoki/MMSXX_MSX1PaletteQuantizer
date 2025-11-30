@@ -1,9 +1,6 @@
 /*
-    MSX1PaletteQuantizer.cpp
-
     MSX1 パレット エフェクト
     AE / Premiere 両対応。
-
 */
 
 #include "AEConfig.h"
@@ -17,13 +14,13 @@
 #include "MSX1PQPalettes.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 
 
 #ifdef AE_OS_WIN
 #include <Windows.h>
-#include <cstdarg>
-#include <cstdio>
-inline void MSX1PQ_DebugLog(const char* fmt, ...)
+static inline void MyDebugLog(const char* fmt, ...)
 {
     char buf[512];
 
@@ -33,20 +30,27 @@ inline void MSX1PQ_DebugLog(const char* fmt, ...)
     va_end(args);
 
     OutputDebugStringA(buf);
-    OutputDebugStringA("\n");
+    // OutputDebugStringA("\n");
 }
 #else
 // Mac の場合（AE_OS_WIN が未定義）
-inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
+static inline void MyDebugLog(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    std::fprintf(stderr, "\n");
+    va_end(args);
+}
 #endif
 
 namespace MSX1PQ {
     constexpr char kPluginName[]        = "MSX1 Palette Quantizer";
     constexpr char kPluginDescription[] = "\nMSX1-style palette quantization and dithering.";
     constexpr int  kVersionMajor        = 0;
-    constexpr int  kVersionMinor        = 3;
+    constexpr int  kVersionMinor        = 6;
     constexpr int  kVersionBug          = 0;
-    constexpr int  kVersionStage        = PF_Stage_ALPHA;
+    constexpr int  kVersionStage        = PF_Stage_BETA;
     /*
 	PF_Stage_DEVELOP,
 	PF_Stage_ALPHA,
@@ -85,6 +89,34 @@ using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST;
 using MSX1PQCore::MSX1PQ_DIST_MODE_HSB;
 using MSX1PQCore::MSX1PQ_DIST_MODE_RGB;
 
+namespace {
+
+static inline PF_Err CheckoutParam(
+    PF_InData     *in_data,
+    PF_ParamIndex  param_index,
+    PF_ParamDef   &param)
+{
+    AEFX_CLR_STRUCT(param);
+
+    return PF_CHECKOUT_PARAM(
+        in_data,
+        param_index,
+        in_data->current_time,
+        in_data->time_step,
+        in_data->time_scale,
+        &param);
+}
+
+static inline PF_Err CheckinParam(
+    PF_InData   *in_data,
+    PF_ParamDef &param)
+{
+    return PF_CHECKIN_PARAM(in_data, &param);
+}
+
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // About
 // ---------------------------------------------------------------------------
@@ -119,15 +151,17 @@ GlobalSetup (
 {
     PF_Err    err = PF_Err_NONE;
     out_data->my_version = MSX1PQ::kVersionPacked;
-    // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
-    // 8bit専用: DEEP_COLOR_AWARE / FLOAT_COLOR_AWARE / SMART_RENDER は立てない
-    // out_data->out_flags  =  PF_OutFlag_PIX_INDEPENDENT |
-    //                         PF_OutFlag_NON_PARAM_VARY;
+    // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-    // out_data->out_flags2 =  PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
+                               PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
+    //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
+    MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
+                    (unsigned int)out_data->out_flags,
+                    (unsigned int)out_data->out_flags2); //この値を rファイルに書く 0x08000400
 
-	out_data->out_flags  = PF_OutFlag_NONE;
-	out_data->out_flags2 = PF_OutFlag2_NONE;
     // Premiere 用ピクセルフォーマット宣言
     if (in_dataP->appl_id == kAppID_Premiere){
 
@@ -162,8 +196,13 @@ ParamsSetup (
     PF_Err err = PF_Err_NONE;
     PF_ParamDef def;
 
-    // 入力レイヤーは暗黙に 0 番として存在するので何もしない
     AEFX_CLR_STRUCT(def);
+    // 入力レイヤーは暗黙に 0 番として存在するので何もしない
+    // Premiere ではデフォルト固定のため変更不可
+    if (in_data->appl_id == kAppID_Premiere) {
+        def.ui_flags |= PF_PUI_DISABLED;
+    }
+    def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_POPUP(
         "Color system",
         2,                    // 項目数
@@ -321,6 +360,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_CHECKBOX(
         "92-color",
         "for development use",
@@ -421,6 +461,14 @@ apply_8dot2col_dispatch_BGRA(
 // 8bit ARGB (AE用) 量子化
 // ---------------------------------------------------------------------------
 
+struct FilterRefcon {
+    // QuantInfo は各レンダー呼び出しごとに値コピーを保持し、
+    // iterate() の並列実行でも他スレッドと状態を共有しない。
+    QuantInfo qi{};
+    A_long     global_x0{};
+    A_long     global_y0{};
+};
+
 static PF_Err
 FilterImage8 (
     void        *refcon,
@@ -429,7 +477,8 @@ FilterImage8 (
     PF_Pixel8   *inP,
     PF_Pixel8   *outP)
 {
-    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+    auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
+    const QuantInfo *qi = &ref->qi;
 
     // 入力色をローカルコピー
     A_u_char r = inP->red;
@@ -444,8 +493,8 @@ FilterImage8 (
         r,
         g,
         b,
-        static_cast<std::int32_t>(xL),
-        static_cast<std::int32_t>(yL));
+        static_cast<std::int32_t>(ref->global_x0 + xL),
+        static_cast<std::int32_t>(ref->global_y0 + yL));
 
     outP->alpha = inP->alpha;
     outP->red   = qc.r;
@@ -466,7 +515,8 @@ FilterImageBGRA_8u (
     PF_Pixel8   *inP,
     PF_Pixel8   *outP)
 {
-    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+    auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
+    const QuantInfo *qi = &ref->qi;
 
     MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
     MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
@@ -482,8 +532,8 @@ FilterImageBGRA_8u (
         r,
         g,
         b,
-        static_cast<std::int32_t>(xL),
-        static_cast<std::int32_t>(yL));
+        static_cast<std::int32_t>(ref->global_x0 + xL),
+        static_cast<std::int32_t>(ref->global_y0 + yL));
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
@@ -494,7 +544,98 @@ FilterImageBGRA_8u (
 }
 
 // ---------------------------------------------------------------------------
-// Render
+// 共通ヘルパー
+// ---------------------------------------------------------------------------
+
+static PF_Err
+RunIteratePass(
+    PF_InData            *in_dataP,
+    PF_OutData           *out_data,
+    A_long               linesL,
+    PF_EffectWorld       *input_worldP,
+    FilterRefcon         *refconP,
+    PF_IteratePixel8Func filter_func,
+    PF_EffectWorld       *output_worldP)
+{
+    AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
+        in_dataP,
+        kPFIterate8Suite,
+        kPFIterate8SuiteVersion2,
+        out_data);
+
+    return iterate8Suite->iterate(
+        in_dataP,
+        0,
+        linesL,
+        input_worldP,
+        nullptr,
+        refconP,
+        filter_func,
+        output_worldP);
+}
+
+static void
+Apply8dot2colARGB(
+    PF_EffectWorld            *output_worldP,
+    const PF_Rect             &rect,
+    const QuantInfo           &qi)
+{
+    const A_long row_bytes = output_worldP->rowbytes;
+    const A_long row_pitch = (row_bytes >= 0)
+        ? (row_bytes / (A_long)sizeof(PF_Pixel8))
+        : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
+
+    const A_long width  = rect.right  - rect.left;
+    const A_long height = rect.bottom - rect.top;
+
+    char *base = reinterpret_cast<char*>(output_worldP->data);
+
+    // ROI の左上を指す開始ポインタを計算（上下反転にも対応）
+    if (row_bytes < 0) {
+        base += (output_worldP->height - 1 - rect.top) * (-row_bytes);
+    } else {
+        base += rect.top * row_bytes;
+    }
+
+    base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
+    apply_8dot2col_dispatch_ARGB(
+        reinterpret_cast<PF_Pixel8*>(base),
+        row_pitch,
+        width,
+        height,
+        qi.color_system,
+        qi.use_8dot2col);
+}
+
+static void
+Apply8dot2colBGRA(
+    PF_EffectWorld            *output_worldP,
+    A_long                    width,
+    A_long                    height,
+    const QuantInfo           &qi)
+{
+    A_long row_pitch = output_worldP->rowbytes
+        / sizeof(MSX1PQ_Pixel_BGRA_8u);
+
+    MSX1PQ_Pixel_BGRA_8u* base =
+        reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(output_worldP->data);
+
+    MSX1PQ_Pixel_BGRA_8u* data =
+        base + output_worldP->extent_hint.top * row_pitch
+             + output_worldP->extent_hint.left;
+
+    apply_8dot2col_dispatch_BGRA(
+        data,
+        row_pitch,
+        width,
+        height,
+        qi.color_system,
+        qi.use_8dot2col);
+}
+
+// ---------------------------------------------------------------------------
+// Render (スマートレンダリング設定時は呼ばれない)
 // ---------------------------------------------------------------------------
 static PF_Err
 Render (
@@ -550,48 +691,30 @@ Render (
         if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
 
             // ---- 1パス目：通常の量子化（ディザなど）----
-            AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
-                in_dataP,
-                kPFIterate8Suite,
-                kPFIterate8SuiteVersion2,
-                out_data);
+            FilterRefcon refcon{};
+            refcon.qi = qi;
+            refcon.global_x0 = output->extent_hint.left;
+            refcon.global_y0 = output->extent_hint.top;
 
-            iterate8Suite->iterate(
-                in_dataP,
-                0,
-                linesL,
-                &params[MSX1PQ_PARAM_INPUT]->u.ld,
-                NULL,
-                &qi,
-                FilterImageBGRA_8u,
-                output);
+            err = RunIteratePass(
+                      in_dataP,
+                      out_data,
+                      linesL,
+                      reinterpret_cast<PF_EffectWorld*>(
+                          &params[MSX1PQ_PARAM_INPUT]->u.ld),
+                      &refcon,
+                      FilterImageBGRA_8u,
+                      reinterpret_cast<PF_EffectWorld*>(output));
 
             // ---- 2パス目：8dot / 2color 後処理（基本1）----
             if (!err && !qi.use_palette_color &&
                 qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
 
-                // すでに width / height は上で計算済みでもOKですが、
-                // 明示しておくならこのままでも大丈夫です。
-                A_long width  = output->extent_hint.right  - output->extent_hint.left;
-                A_long height = output->extent_hint.bottom - output->extent_hint.top;
-
-                // BGRA_4444_8u 用のピッチ
-                A_long row_pitch = output->rowbytes / sizeof(MSX1PQ_Pixel_BGRA_8u);
-
-                MSX1PQ_Pixel_BGRA_8u* base =
-                    reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(output->data);
-
-                MSX1PQ_Pixel_BGRA_8u* data =
-                    base + output->extent_hint.top * row_pitch
-                         + output->extent_hint.left;
-
-                apply_8dot2col_dispatch_BGRA(
-                    data,
-                    row_pitch,
+                Apply8dot2colBGRA(
+                    reinterpret_cast<PF_EffectWorld*>(output),
                     width,
                     height,
-                    qi.color_system,
-                    qi.use_8dot2col);
+                    qi);
             }
 
 
@@ -602,54 +725,423 @@ Render (
     } else {
         // AE: ARGB32 8bit
 
-        // ---- 1パス目：通常の量子化 ----
-        AEFX_SuiteScoper<PF_Iterate8Suite2> iterate8Suite(
-            in_dataP,
-            kPFIterate8Suite,
-            kPFIterate8SuiteVersion2,
-            out_data);
+        // (reinterpret_cast<PF_EffectWorld*>(output));
 
-        iterate8Suite->iterate(
-            in_dataP,
-            0,
-            linesL,
-            &params[MSX1PQ_PARAM_INPUT]->u.ld,
-            NULL,
-            &qi,
-            FilterImage8,
-            output);
+        // ---- 1パス目：通常の量子化 ----
+        FilterRefcon refcon{};
+        refcon.qi = qi;
+        refcon.global_x0 = output->extent_hint.left;
+        refcon.global_y0 = output->extent_hint.top;
+
+        err = RunIteratePass(
+                  in_dataP,
+                  out_data,
+                  linesL,
+                  reinterpret_cast<PF_EffectWorld*>(
+                      &params[MSX1PQ_PARAM_INPUT]->u.ld),
+                  &refcon,
+                  FilterImage8,
+                  reinterpret_cast<PF_EffectWorld*>(output));
 
         // ---- 2パス目：8dot / 2color 後処理（基本1）----
         if (!err && !qi.use_palette_color &&
             qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
-
-            A_long row_bytes = output->rowbytes;
-            A_long row_pitch = (row_bytes >= 0)
-                ? (row_bytes / (A_long)sizeof(PF_Pixel8))
-                : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
-
-            PF_Pixel8* start =
-                reinterpret_cast<PF_Pixel8*>(output->data);
-
-            // rowbytes < 0（上から下ではなく下から上）に備えた補正
-            if (row_bytes < 0) {
-                start = reinterpret_cast<PF_Pixel8*>(
-                    reinterpret_cast<char*>(output->data)
-                    + (height - 1) * (-row_bytes));
-            }
-
-            apply_8dot2col_dispatch_ARGB(
-                start,
-                row_pitch,
-                width,
-                height,
-                qi.color_system,
-                qi.use_8dot2col);
+            Apply8dot2colARGB(
+                reinterpret_cast<PF_EffectWorld*>(output),
+                output->extent_hint,
+                qi);
         }
     }
 
     return err;
 }
+
+
+static PF_Err
+SmartPreRender(
+    PF_InData         *in_dataP,
+    PF_OutData        *out_dataP,
+    PF_ParamDef       * /*params*/[],
+    PF_PreRenderExtra *extraP)
+{
+    PF_Err err = PF_Err_NONE;
+
+    // ホストから来た元の要求
+    PF_RenderRequest host_req = extraP->input->output_request;
+    PF_Rect host_rect = host_req.rect;
+    /*
+    MyDebugLog("SmartPreRender: host request L=%ld, T=%ld, R=%ld, B=%ld",
+        host_rect.left,
+        host_rect.top,
+        host_rect.right,
+        host_rect.bottom);
+    */
+
+    const A_long comp_w = in_dataP->width;
+    const A_long comp_h = in_dataP->height;
+
+    // 出力用: ホストの request をコンポ内にクランプ（→やめる）
+    PF_Rect out_rect = host_rect;
+    // 変更すると上位のエフェクトによって表示位置がずれてクリッピングされることがある
+    //out_rect.left   = (std::max)(out_rect.left,  (A_long)0);
+    //out_rect.top    = (std::max)(out_rect.top,   (A_long)0);
+    //out_rect.right  = (std::min)(out_rect.right, comp_w);
+    //out_rect.bottom = (std::min)(out_rect.bottom,comp_h);
+    /*
+    MyDebugLog("SmartPreRender: output rect L=%ld, T=%ld, R=%ld, B=%ld",
+        out_rect.left,
+        out_rect.top,
+        out_rect.right,
+        out_rect.bottom);
+    */
+
+    // 入力用: 横だけ全幅に広げる（→やめる）上下は out_rect に合わせる
+    PF_RenderRequest input_req = host_req;
+    PF_Rect in_roi = out_rect;
+    // ここを広げると前に挟むエフェクトによって位置がずれる不具合が出ることがある
+    //in_roi.left  = 0;
+    //in_roi.right = comp_w;
+    input_req.rect = in_roi;
+
+    /*
+    MyDebugLog("SmartPreRender: input rect L=%ld, T=%ld, R=%ld, B=%ld",
+        input_req.rect.left,
+        input_req.rect.top,
+        input_req.rect.right,
+        input_req.rect.bottom);
+    */
+
+    PF_CheckoutResult in_result{};
+    err = extraP->cb->checkout_layer(
+              in_dataP->effect_ref,
+              MSX1PQ_PARAM_INPUT,
+              MSX1PQ_PARAM_INPUT,
+              &input_req,
+              in_dataP->current_time,
+              in_dataP->time_step,
+              in_dataP->time_scale,
+              &in_result);
+
+    if (!err) {
+
+        /*
+        MyDebugLog("SmartPreRender: input result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            in_result.result_rect.left,
+            in_result.result_rect.top,
+            in_result.result_rect.right,
+            in_result.result_rect.bottom);
+
+        MyDebugLog("SmartPreRender: input result max_result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            in_result.max_result_rect.left,
+            in_result.max_result_rect.top,
+            in_result.max_result_rect.right,
+            in_result.max_result_rect.bottom);
+        */
+
+        // in_result.result_rect との共通部分に
+        auto intersect = [](const PF_Rect& a, const PF_Rect& b) {
+            PF_Rect r;
+            r.left   = (std::max)(a.left,   b.left);
+            r.top    = (std::max)(a.top,    b.top);
+            r.right  = (std::min)(a.right,  b.right);
+            r.bottom = (std::min)(a.bottom, b.bottom);
+            return r;
+        };
+
+        //PF_Rect final_rect = intersect(out_rect, in_result.result_rect);
+        PF_Rect final_rect = in_result.result_rect; // out_rectを変更しなくなったのでintersectもやめる
+
+        /*
+        MyDebugLog("SmartPreRender: final result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            final_rect.left,
+            final_rect.top,
+            final_rect.right,
+            final_rect.bottom);
+        */
+
+        extraP->output->result_rect     = final_rect;
+        extraP->output->max_result_rect = final_rect;
+    }
+
+    return err;
+}
+
+
+static PF_Err
+SmartRender(
+    PF_InData           *in_dataP,
+    PF_OutData          *out_data,
+    PF_ParamDef         * /*params*/[],
+    PF_SmartRenderExtra *extraP)
+{
+
+    PF_Err err  = PF_Err_NONE;
+    PF_Err err2 = PF_Err_NONE;
+
+    PF_EffectWorld *input_worldP  = nullptr;
+    PF_EffectWorld *output_worldP = nullptr;
+
+    // 入力 / 出力 checkout
+    ERR( extraP->cb->checkout_layer_pixels(
+             in_dataP->effect_ref,
+             MSX1PQ_PARAM_INPUT,
+             &input_worldP) );
+
+    if (!err) {
+        ERR( extraP->cb->checkout_output(
+                 in_dataP->effect_ref,
+                 &output_worldP) );
+    }
+
+    if (!err && input_worldP && output_worldP) {
+
+        PF_Rect current_rect = output_worldP->extent_hint;
+        if (current_rect.left == current_rect.right ||
+            current_rect.top  == current_rect.bottom) {
+            current_rect.left   = 0;
+            current_rect.top    = 0;
+            current_rect.right  = output_worldP->width;
+            current_rect.bottom = output_worldP->height;
+        }
+
+        // --------------------------------------------------------------------
+        // QuantInfo を PF_CHECKOUT_PARAM で構築
+        // --------------------------------------------------------------------
+        QuantInfo  qi{};
+        PF_ParamDef param;
+
+        // COLOR_SYSTEM (popup)
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_COLOR_SYSTEM,
+                param) );
+        qi.color_system = param.u.pd.value;
+        ERR( CheckinParam(in_dataP, param) );
+
+        // USE_DITHER (checkbox)
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_DITHER,
+                param) );
+        qi.use_dither = (param.u.bd.value != 0);
+        ERR( CheckinParam(in_dataP, param) );
+
+        // USE_PALETTE_COLOR (checkbox)
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_PALETTE_COLOR,
+                param) );
+        qi.use_palette_color = (param.u.bd.value != 0);
+        ERR( CheckinParam(in_dataP, param) );
+
+        // USE_8DOT2COL (popup)
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_8DOT2COL,
+                param) );
+        qi.use_8dot2col = param.u.pd.value;
+        ERR( CheckinParam(in_dataP, param) );
+
+        // DISTANCE_MODE (popup)
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_DISTANCE_MODE,
+                param) );
+        qi.use_hsb = (param.u.pd.value == MSX1PQ_DIST_MODE_HSB);
+        ERR( CheckinParam(in_dataP, param) );
+
+        // WEIGHT_H/S/B (float)
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_H,
+                param) );
+        qi.w_h = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_S,
+                param) );
+        qi.w_s = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_B,
+                param) );
+        qi.w_b = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        // PRE_POSTERIZE
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_POSTERIZE,
+                param) );
+        qi.pre_posterize = clamp_value(
+            static_cast<int>(param.u.fs_d.value + 0.5f),
+            0,
+            255);
+        ERR( CheckinParam(in_dataP, param) );
+
+        // PRE_SAT / GAMMA / HIGHLIGHT / HUE
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_SAT,
+                param) );
+        qi.pre_sat = static_cast<float>(param.u.fs_d.value);
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_GAMMA,
+                param) );
+        qi.pre_gamma = static_cast<float>(param.u.fs_d.value);
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_HIGHLIGHT,
+                param) );
+        qi.pre_highlight = static_cast<float>(param.u.fs_d.value);
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_HUE,
+                param) );
+        qi.pre_hue = static_cast<float>(param.u.fs_d.value);
+        ERR( CheckinParam(in_dataP, param) );
+
+        // USE_DARK_DITHER
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_USE_DARK_DITHER,
+                param) );
+        qi.use_dark_dither = (param.u.bd.value != 0);
+        ERR( CheckinParam(in_dataP, param) );
+
+        // --------------------------------------------------------------------
+        // スマートレンダー用 ROI 揃え（ディザ使用時のみ 8ドット境界にスナップ）
+        // --------------------------------------------------------------------
+        const auto align_down8 = [](A_long v) {
+            if (v >= 0) {
+                return (v / 8) * 8;
+            }
+            return -(((-v + 7) / 8) * 8);
+        };
+        const auto align_up8 = [](A_long v) {
+            if (v >= 0) {
+                return ((v + 7) / 8) * 8;
+            }
+            return -(((-v) / 8) * 8);
+        };
+
+        PF_Rect aligned_rect = current_rect;
+        if (qi.use_dither) {
+            aligned_rect.left   = align_down8(current_rect.left);
+            aligned_rect.right  = align_up8(current_rect.right);
+        }
+        aligned_rect.top    = current_rect.top;
+        aligned_rect.bottom = current_rect.bottom;
+
+        aligned_rect.left = clamp_value(aligned_rect.left, static_cast<A_long>(0), output_worldP->width);
+        aligned_rect.right = clamp_value(aligned_rect.right, aligned_rect.left, output_worldP->width);
+        aligned_rect.top = clamp_value(aligned_rect.top, static_cast<A_long>(0), output_worldP->height);
+        aligned_rect.bottom = clamp_value(aligned_rect.bottom, aligned_rect.top, output_worldP->height);
+
+        const A_long width  = aligned_rect.right  - aligned_rect.left;
+        const A_long height = aligned_rect.bottom - aligned_rect.top;
+
+        // 矩形が空の場合は何もしない
+        if (width > 0 && height > 0) {
+            auto calc_start = [](const PF_EffectWorld *worldP,
+                                 const PF_Rect &rect) -> PF_Pixel8* {
+                const A_long row_bytes = worldP->rowbytes;
+                char *base = reinterpret_cast<char*>(worldP->data);
+
+                if (row_bytes < 0) {
+                    base += (worldP->height - 1 - rect.top) * (-row_bytes);
+                } else {
+                    base += rect.top * row_bytes;
+                }
+
+                base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
+                return reinterpret_cast<PF_Pixel8*>(base);
+            };
+
+            PF_EffectWorld input_roi  = *input_worldP;
+            PF_EffectWorld output_roi = *output_worldP;
+
+            input_roi.data  = calc_start(input_worldP, aligned_rect);
+            output_roi.data = calc_start(output_worldP, aligned_rect);
+
+            input_roi.width  = width;
+            input_roi.height = height;
+            output_roi.width  = width;
+            output_roi.height = height;
+
+            input_roi.extent_hint.left = 0;
+            input_roi.extent_hint.top  = 0;
+            input_roi.extent_hint.right  = width;
+            input_roi.extent_hint.bottom = height;
+            output_roi.extent_hint.left = 0;
+            output_roi.extent_hint.top  = 0;
+            output_roi.extent_hint.right  = width;
+            output_roi.extent_hint.bottom = height;
+
+            MyDebugLog("### SR: rect by hint L=%ld, T=%ld, R=%ld, B=%ld, aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
+                current_rect.left,
+                current_rect.top,
+                current_rect.right,
+                current_rect.bottom,
+                aligned_rect.left,
+                aligned_rect.top,
+                aligned_rect.right,
+                aligned_rect.bottom);
+
+            FilterRefcon refcon{};
+            refcon.qi = qi;
+            refcon.global_x0 = aligned_rect.left;
+            refcon.global_y0 = aligned_rect.top;
+
+            // ----------------------------------------------------------------
+            // 1パス目：通常量子化
+            // ----------------------------------------------------------------
+            if (!err) {
+                err = RunIteratePass(
+                          in_dataP,
+                          out_data,
+                          height,
+                          &input_roi,
+                          &refcon,
+                          FilterImage8,   // 既存 8bit フィルタ
+                          &output_roi);
+            }
+
+            // ----------------------------------------------------------------
+            // 2パス目：8dot / 2color 後処理
+            // ----------------------------------------------------------------
+            if (!err &&
+                !qi.use_palette_color &&
+                qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+                Apply8dot2colARGB(output_worldP, aligned_rect, qi);
+            }
+        }
+    }
+
+    // input の checkin
+    err2 = extraP->cb->checkin_layer_pixels(
+               in_dataP->effect_ref,
+               MSX1PQ_PARAM_INPUT);
+    if (!err && err2) {
+        err = err2;
+    }
+
+    return err;
+}
+
+
 
 // ---------------------------------------------------------------------------
 // エントリ登録
@@ -697,8 +1189,8 @@ UpdateParameterUI(
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
     A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
 
-    // MSX1PQ_DebugLog("=== UpdateParameterUI CALLED ===");
-    // MSX1PQ_DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
+    // MyDebugLog("=== UpdateParameterUI CALLED ===");
+    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
     //          mode, enable_hsb ? 1 : 0);
 
     PF_ParamDef tmp;
@@ -709,7 +1201,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_H,
                                  &tmp);
@@ -720,7 +1212,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
@@ -731,12 +1223,10 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_B,
                                  &tmp);
-
-    // MSX1PQ_DebugLog("-> UpdateParameterUI done");
 
     return err;
 }
@@ -781,7 +1271,24 @@ EffectMain(
             case PF_Cmd_RENDER:
                 err = Render(in_dataP, out_data, params, output);
                 break;
-            // SMART_RENDER / SMART_PRE_RENDER は 8bit専用につき未対応
+
+            case PF_Cmd_SMART_PRE_RENDER:
+                // AE SmartFX 用 / ROI 最適化なし
+                err = SmartPreRender(
+                          in_dataP,
+                          out_data,
+                          params,
+                          reinterpret_cast<PF_PreRenderExtra*>(extra));
+                break;
+
+            case PF_Cmd_SMART_RENDER:
+                // AE SmartFX 用 / ROI 最適化なし
+                err = SmartRender(
+                          in_dataP,
+                          out_data,
+                          params,
+                          reinterpret_cast<PF_SmartRenderExtra*>(extra));
+                break;
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない

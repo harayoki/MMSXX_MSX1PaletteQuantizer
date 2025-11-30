@@ -52,4 +52,5 @@ dist/
 *.pluginY
 *.lnk
 *.zip
+venv
 
