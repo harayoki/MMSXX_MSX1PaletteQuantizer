@@ -17,13 +17,13 @@
 #include "MSX1PQPalettes.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 
 
 #ifdef AE_OS_WIN
 #include <Windows.h>
-#include <cstdarg>
-#include <cstdio>
-inline void MSX1PQ_DebugLog(const char* fmt, ...)
+static inline void MyDebugLog(const char* fmt, ...)
 {
     char buf[512];
 
@@ -37,7 +37,14 @@ inline void MSX1PQ_DebugLog(const char* fmt, ...)
 }
 #else
 // Mac の場合（AE_OS_WIN が未定義）
-inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
+static inline void MyDebugLog(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    std::fprintf(stderr, "\n");
+    va_end(args);
+}
 #endif
 
 namespace MSX1PQ {
@@ -146,11 +153,11 @@ GlobalSetup (
 {
     PF_Err    err = PF_Err_NONE;
     out_data->my_version = MSX1PQ::kVersionPacked;
-    // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
+    // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
 	out_data->out_flags  = PF_OutFlag_NONE;
 	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
-    //	MSX1PQ_DebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
+    //	MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
     //                    (unsigned int)out_data->out_flags,
     //                    (unsigned int)out_data->out_flags2); この値を rファイルに書く
 
@@ -994,8 +1001,8 @@ UpdateParameterUI(
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
     A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
 
-    // MSX1PQ_DebugLog("=== UpdateParameterUI CALLED ===");
-    // MSX1PQ_DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
+    // MyDebugLog("=== UpdateParameterUI CALLED ===");
+    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
     //          mode, enable_hsb ? 1 : 0);
 
     PF_ParamDef tmp;
@@ -1006,7 +1013,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_H,
                                  &tmp);
@@ -1017,7 +1024,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
@@ -1028,12 +1035,12 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_B,
                                  &tmp);
 
-    // MSX1PQ_DebugLog("-> UpdateParameterUI done");
+    // MyDebugLog("-> UpdateParameterUI done");
 
     return err;
 }
