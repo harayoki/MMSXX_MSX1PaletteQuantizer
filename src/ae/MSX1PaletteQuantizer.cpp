@@ -573,13 +573,11 @@ RunIteratePass(
         output_worldP);
 }
 
-template <typename PixelT>
 static void
-FillWorldSolid(
-    PF_EffectWorld *worldP,
-    const PixelT   &color)
+FillWorldSolid(PF_EffectWorld *worldP)
 {
     const A_long row_bytes = worldP->rowbytes;
+    const PF_Pixel8 color = { 255, 255, 0, 0 };
 
     char *base = reinterpret_cast<char*>(worldP->data);
 
@@ -588,7 +586,7 @@ FillWorldSolid(
     }
 
     for (A_long y = 0; y < worldP->height; ++y) {
-        PixelT *rowP = reinterpret_cast<PixelT*>(base + y * row_bytes);
+        PF_Pixel8 *rowP = reinterpret_cast<PF_Pixel8*>(base + y * row_bytes);
         for (A_long x = 0; x < worldP->width; ++x) {
             rowP[x] = color;
         }
@@ -711,8 +709,7 @@ Render (
 
         if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
 
-            const MSX1PQ_Pixel_BGRA_8u red = { 0, 0, 255, 255 };
-            FillWorldSolid(reinterpret_cast<PF_EffectWorld*>(output), red);
+            FillWorldSolid(reinterpret_cast<PF_EffectWorld*>(output));
 
             // ---- 1パス目：通常の量子化（ディザなど）----
             err = RunIteratePass(
@@ -744,8 +741,7 @@ Render (
     } else {
         // AE: ARGB32 8bit
 
-        const PF_Pixel8 red = { 255, 255, 0, 0 };
-        FillWorldSolid(reinterpret_cast<PF_EffectWorld*>(output), red);
+        FillWorldSolid(reinterpret_cast<PF_EffectWorld*>(output));
 
         // ---- 1パス目：通常の量子化 ----
         err = RunIteratePass(
@@ -850,8 +846,7 @@ SmartRender(
     }
 
     if (!err && output_worldP) {
-        const PF_Pixel8 red = { 255, 255, 0, 0 };
-        FillWorldSolid(output_worldP, red);
+        FillWorldSolid(output_worldP);
     }
 
     if (!err && input_worldP && output_worldP) {
