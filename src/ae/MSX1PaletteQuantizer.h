@@ -19,17 +19,10 @@
 
 #include "../core/MSX1PQCore.h"
 
-enum MSX1PQ_RoiOptimization {
-    MSX1PQ_ROI_OPTIMIZATION_OFF = 1,
-    MSX1PQ_ROI_OPTIMIZATION_ON,
-    MSX1PQ_ROI_OPTIMIZATION_AUTO,
-};
-
 // ParamsSetup() の追加順と必ず一致させること
 enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_INPUT = 0,       // Input layer
 
-    MSX1PQ_PARAM_ROI_OPTIMIZATION, // ROI optimization
     MSX1PQ_PARAM_COLOR_SYSTEM,    // MSX1 / MSX2
     MSX1PQ_PARAM_USE_DITHER,      // Dither ON/OFF
     MSX1PQ_PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette

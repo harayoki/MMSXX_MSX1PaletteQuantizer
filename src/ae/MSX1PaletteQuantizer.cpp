@@ -1,9 +1,6 @@
 /*
-    MSX1PaletteQuantizer.cpp
-
     MSX1 パレット エフェクト
     AE / Premiere 両対応。
-
 */
 
 #include "AEConfig.h"
@@ -33,7 +30,7 @@ static inline void MyDebugLog(const char* fmt, ...)
     va_end(args);
 
     OutputDebugStringA(buf);
-    OutputDebugStringA("\n");
+    // OutputDebugStringA("\n");
 }
 #else
 // Mac の場合（AE_OS_WIN が未定義）
@@ -116,6 +113,7 @@ static inline PF_Err CheckinParam(
 {
     return PF_CHECKIN_PARAM(in_data, &param);
 }
+
 
 } // namespace
 
@@ -202,14 +200,6 @@ ParamsSetup (
         def.ui_flags |= PF_PUI_DISABLED;
     }
     def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
-    PF_ADD_POPUP(
-        "ROI optimization",
-        3,                    // 項目数
-        MSX1PQ_ROI_OPTIMIZATION_AUTO, // デフォルト 3: Auto
-        "Disabled|Enabled|Auto",
-        MSX1PQ_PARAM_ROI_OPTIMIZATION);
-
-    AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP(
         "Color system",
         2,                    // 項目数
@@ -468,6 +458,12 @@ apply_8dot2col_dispatch_BGRA(
 // 8bit ARGB (AE用) 量子化
 // ---------------------------------------------------------------------------
 
+struct FilterRefcon {
+    QuantInfo *qi{};
+    A_long     global_x0{};
+    A_long     global_y0{};
+};
+
 static PF_Err
 FilterImage8 (
     void        *refcon,
@@ -476,7 +472,13 @@ FilterImage8 (
     PF_Pixel8   *inP,
     PF_Pixel8   *outP)
 {
-    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+    auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
+    QuantInfo *qi = ref->qi;
+
+    // TODO: 並列レンダリング時に複数スレッドから同じ refcon を参照すると、
+    //       非 const ポインタ経由で共有状態を書き換えた場合にデータ競合が起きる。
+    //       apply_preprocess / quantize_pixel で状態を持たせるなら、スレッドごとに
+    //       コピーを渡すか読み取り専用の構造体にしてスレッドセーフ化する。
 
     // 入力色をローカルコピー
     A_u_char r = inP->red;
@@ -491,8 +493,8 @@ FilterImage8 (
         r,
         g,
         b,
-        static_cast<std::int32_t>(xL),
-        static_cast<std::int32_t>(yL));
+        static_cast<std::int32_t>(ref->global_x0 + xL),
+        static_cast<std::int32_t>(ref->global_y0 + yL));
 
     outP->alpha = inP->alpha;
     outP->red   = qc.r;
@@ -513,7 +515,12 @@ FilterImageBGRA_8u (
     PF_Pixel8   *inP,
     PF_Pixel8   *outP)
 {
-    QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+    auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
+    QuantInfo *qi = ref->qi;
+
+    // TODO: AE 側のスレッド並列実行では上と同様に refcon の共有で競合する。
+    //       BGRA パスもスレッドローカルな QuantInfo コピーに置き換えるなど、
+    //       参照専用にして安全にする必要がある。
 
     MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
     MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
@@ -529,8 +536,8 @@ FilterImageBGRA_8u (
         r,
         g,
         b,
-        static_cast<std::int32_t>(xL),
-        static_cast<std::int32_t>(yL));
+        static_cast<std::int32_t>(ref->global_x0 + xL),
+        static_cast<std::int32_t>(ref->global_y0 + yL));
 
     outBGRA_8uP->alpha = inBGRA_8uP->alpha;
     outBGRA_8uP->red   = qc.r;
@@ -550,7 +557,7 @@ RunIteratePass(
     PF_OutData           *out_data,
     A_long               linesL,
     PF_EffectWorld       *input_worldP,
-    QuantInfo            *qiP,
+    FilterRefcon         *refconP,
     PF_IteratePixel8Func filter_func,
     PF_EffectWorld       *output_worldP)
 {
@@ -566,7 +573,7 @@ RunIteratePass(
         linesL,
         input_worldP,
         nullptr,
-        qiP,
+        refconP,
         filter_func,
         output_worldP);
 }
@@ -574,27 +581,30 @@ RunIteratePass(
 static void
 Apply8dot2colARGB(
     PF_EffectWorld            *output_worldP,
-    A_long                    width,
-    A_long                    height,
+    const PF_Rect             &rect,
     const QuantInfo           &qi)
 {
-    A_long row_bytes = output_worldP->rowbytes;
-    A_long row_pitch = (row_bytes >= 0)
+    const A_long row_bytes = output_worldP->rowbytes;
+    const A_long row_pitch = (row_bytes >= 0)
         ? (row_bytes / (A_long)sizeof(PF_Pixel8))
         : ((-row_bytes) / (A_long)sizeof(PF_Pixel8));
 
-    PF_Pixel8* start =
-        reinterpret_cast<PF_Pixel8*>(output_worldP->data);
+    const A_long width  = rect.right  - rect.left;
+    const A_long height = rect.bottom - rect.top;
 
-    // rowbytes < 0（上から下ではなく下から上）に備えた補正
+    char *base = reinterpret_cast<char*>(output_worldP->data);
+
+    // ROI の左上を指す開始ポインタを計算（上下反転にも対応）
     if (row_bytes < 0) {
-        start = reinterpret_cast<PF_Pixel8*>(
-            reinterpret_cast<char*>(output_worldP->data)
-            + (height - 1) * (-row_bytes));
+        base += (output_worldP->height - 1 - rect.top) * (-row_bytes);
+    } else {
+        base += rect.top * row_bytes;
     }
 
+    base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
     apply_8dot2col_dispatch_ARGB(
-        start,
+        reinterpret_cast<PF_Pixel8*>(base),
         row_pitch,
         width,
         height,
@@ -629,7 +639,7 @@ Apply8dot2colBGRA(
 }
 
 // ---------------------------------------------------------------------------
-// Render
+// Render (スマートレンダリング設定時は呼ばれない)
 // ---------------------------------------------------------------------------
 static PF_Err
 Render (
@@ -685,13 +695,18 @@ Render (
         if (destinationPixelFormat == PrPixelFormat_BGRA_4444_8u) {
 
             // ---- 1パス目：通常の量子化（ディザなど）----
+            FilterRefcon refcon{};
+            refcon.qi = &qi;
+            refcon.global_x0 = output->extent_hint.left;
+            refcon.global_y0 = output->extent_hint.top;
+
             err = RunIteratePass(
                       in_dataP,
                       out_data,
                       linesL,
                       reinterpret_cast<PF_EffectWorld*>(
                           &params[MSX1PQ_PARAM_INPUT]->u.ld),
-                      &qi,
+                      &refcon,
                       FilterImageBGRA_8u,
                       reinterpret_cast<PF_EffectWorld*>(output));
 
@@ -714,14 +729,21 @@ Render (
     } else {
         // AE: ARGB32 8bit
 
+        // (reinterpret_cast<PF_EffectWorld*>(output));
+
         // ---- 1パス目：通常の量子化 ----
+        FilterRefcon refcon{};
+        refcon.qi = &qi;
+        refcon.global_x0 = output->extent_hint.left;
+        refcon.global_y0 = output->extent_hint.top;
+
         err = RunIteratePass(
                   in_dataP,
                   out_data,
                   linesL,
                   reinterpret_cast<PF_EffectWorld*>(
                       &params[MSX1PQ_PARAM_INPUT]->u.ld),
-                  &qi,
+                  &refcon,
                   FilterImage8,
                   reinterpret_cast<PF_EffectWorld*>(output));
 
@@ -730,8 +752,7 @@ Render (
             qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
             Apply8dot2colARGB(
                 reinterpret_cast<PF_EffectWorld*>(output),
-                width,
-                height,
+                output->extent_hint,
                 qi);
         }
     }
@@ -739,32 +760,111 @@ Render (
     return err;
 }
 
+
 static PF_Err
 SmartPreRender(
     PF_InData         *in_dataP,
     PF_OutData        *out_dataP,
-    PF_ParamDef       *params[],      // 使わないけど将来用に受けておく
+    PF_ParamDef       * /*params*/[],
     PF_PreRenderExtra *extraP)
 {
     PF_Err err = PF_Err_NONE;
 
-    // AE が要求している範囲
-    PF_RenderRequest req = extraP->input->output_request;
-    PF_CheckoutResult in_result;
+    // ホストから来た元の要求
+    PF_RenderRequest host_req = extraP->input->output_request;
+    PF_Rect host_rect = host_req.rect;
+    /*
+    MyDebugLog("SmartPreRender: host request L=%ld, T=%ld, R=%ld, B=%ld",
+        host_rect.left,
+        host_rect.top,
+        host_rect.right,
+        host_rect.bottom);
+    */
 
+    const A_long comp_w = in_dataP->width;
+    const A_long comp_h = in_dataP->height;
+
+    // 出力用: ホストの request をコンポ内にクランプ（→やめる）
+    PF_Rect out_rect = host_rect;
+    // 変更すると上位のエフェクトによって表示位置がずれてクリッピングされることがある
+    //out_rect.left   = (std::max)(out_rect.left,  (A_long)0);
+    //out_rect.top    = (std::max)(out_rect.top,   (A_long)0);
+    //out_rect.right  = (std::min)(out_rect.right, comp_w);
+    //out_rect.bottom = (std::min)(out_rect.bottom,comp_h);
+    /*
+    MyDebugLog("SmartPreRender: output rect L=%ld, T=%ld, R=%ld, B=%ld",
+        out_rect.left,
+        out_rect.top,
+        out_rect.right,
+        out_rect.bottom);
+    */
+
+    // 入力用: 横だけ全幅に広げる（→やめる）上下は out_rect に合わせる
+    PF_RenderRequest input_req = host_req;
+    PF_Rect in_roi = out_rect;
+    // ここを広げると前に挟むエフェクトによって位置がずれる不具合が出ることがある
+    //in_roi.left  = 0;
+    //in_roi.right = comp_w;
+    input_req.rect = in_roi;
+
+    /*
+    MyDebugLog("SmartPreRender: input rect L=%ld, T=%ld, R=%ld, B=%ld",
+        input_req.rect.left,
+        input_req.rect.top,
+        input_req.rect.right,
+        input_req.rect.bottom);
+    */
+
+    PF_CheckoutResult in_result{};
     err = extraP->cb->checkout_layer(
               in_dataP->effect_ref,
               MSX1PQ_PARAM_INPUT,
               MSX1PQ_PARAM_INPUT,
-              &req,
+              &input_req,
               in_dataP->current_time,
               in_dataP->time_step,
               in_dataP->time_scale,
               &in_result);
+
     if (!err) {
-        // 結果矩形の更新（自前ROI最適化はしないので、そのまま）
-        UnionLRect(&in_result.result_rect,      &extraP->output->result_rect);
-        UnionLRect(&in_result.max_result_rect,  &extraP->output->max_result_rect);
+
+        /*
+        MyDebugLog("SmartPreRender: input result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            in_result.result_rect.left,
+            in_result.result_rect.top,
+            in_result.result_rect.right,
+            in_result.result_rect.bottom);
+
+        MyDebugLog("SmartPreRender: input result max_result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            in_result.max_result_rect.left,
+            in_result.max_result_rect.top,
+            in_result.max_result_rect.right,
+            in_result.max_result_rect.bottom);
+        */
+
+        // in_result.result_rect との共通部分に
+        auto intersect = [](const PF_Rect& a, const PF_Rect& b) {
+            PF_Rect r;
+            r.left   = (std::max)(a.left,   b.left);
+            r.top    = (std::max)(a.top,    b.top);
+            r.right  = (std::min)(a.right,  b.right);
+            r.bottom = (std::min)(a.bottom, b.bottom);
+            return r;
+        };
+
+        //PF_Rect final_rect = intersect(out_rect, in_result.result_rect);
+        PF_Rect final_rect = in_result.result_rect; // out_rectを変更しなくなったのでintersectもやめる
+
+        /*
+        MyDebugLog("SmartPreRender: final result rect L=%ld, T=%ld, R=%ld, B=%ld",
+            final_rect.left,
+            final_rect.top,
+            final_rect.right,
+            final_rect.bottom);
+        */
+
+        extraP->output->result_rect     = final_rect;
+        extraP->output->max_result_rect = final_rect;
     }
 
     return err;
@@ -799,8 +899,14 @@ SmartRender(
 
     if (!err && input_worldP && output_worldP) {
 
-        const A_long width  = output_worldP->width;
-        const A_long height = output_worldP->height;
+        PF_Rect current_rect = output_worldP->extent_hint;
+        if (current_rect.left == current_rect.right ||
+            current_rect.top  == current_rect.bottom) {
+            current_rect.left   = 0;
+            current_rect.top    = 0;
+            current_rect.right  = output_worldP->width;
+            current_rect.bottom = output_worldP->height;
+        }
 
         // --------------------------------------------------------------------
         // QuantInfo を PF_CHECKOUT_PARAM で構築
@@ -919,26 +1025,112 @@ SmartRender(
         ERR( CheckinParam(in_dataP, param) );
 
         // --------------------------------------------------------------------
-        // 1パス目：通常量子化
+        // スマートレンダー用 ROI 揃え（ディザ使用時のみ 8ドット境界にスナップ）
         // --------------------------------------------------------------------
-        if (!err) {
-            err = RunIteratePass(
-                      in_dataP,
-                      out_data,
-                      height,
-                      input_worldP,
-                      &qi,
-                      FilterImage8,   // 既存 8bit フィルタ
-                      output_worldP);
-        }
+        const auto align_down8 = [](A_long v) {
+            if (v >= 0) {
+                return (v / 8) * 8;
+            }
+            return -(((-v + 7) / 8) * 8);
+        };
+        const auto align_up8 = [](A_long v) {
+            if (v >= 0) {
+                return ((v + 7) / 8) * 8;
+            }
+            return -(((-v) / 8) * 8);
+        };
 
-        // --------------------------------------------------------------------
-        // 2パス目：8dot / 2color 後処理
-        // --------------------------------------------------------------------
-        if (!err &&
-            !qi.use_palette_color &&
-            qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
-            Apply8dot2colARGB(output_worldP, width, height, qi);
+        PF_Rect aligned_rect = current_rect;
+        if (qi.use_dither) {
+            aligned_rect.left   = align_down8(current_rect.left);
+            aligned_rect.right  = align_up8(current_rect.right);
+        }
+        aligned_rect.top    = current_rect.top;
+        aligned_rect.bottom = current_rect.bottom;
+
+        aligned_rect.left = clamp_value(aligned_rect.left, static_cast<A_long>(0), output_worldP->width);
+        aligned_rect.right = clamp_value(aligned_rect.right, aligned_rect.left, output_worldP->width);
+        aligned_rect.top = clamp_value(aligned_rect.top, static_cast<A_long>(0), output_worldP->height);
+        aligned_rect.bottom = clamp_value(aligned_rect.bottom, aligned_rect.top, output_worldP->height);
+
+        const A_long width  = aligned_rect.right  - aligned_rect.left;
+        const A_long height = aligned_rect.bottom - aligned_rect.top;
+
+        // 矩形が空の場合は何もしない
+        if (width > 0 && height > 0) {
+            auto calc_start = [](const PF_EffectWorld *worldP,
+                                 const PF_Rect &rect) -> PF_Pixel8* {
+                const A_long row_bytes = worldP->rowbytes;
+                char *base = reinterpret_cast<char*>(worldP->data);
+
+                if (row_bytes < 0) {
+                    base += (worldP->height - 1 - rect.top) * (-row_bytes);
+                } else {
+                    base += rect.top * row_bytes;
+                }
+
+                base += rect.left * static_cast<A_long>(sizeof(PF_Pixel8));
+
+                return reinterpret_cast<PF_Pixel8*>(base);
+            };
+
+            PF_EffectWorld input_roi  = *input_worldP;
+            PF_EffectWorld output_roi = *output_worldP;
+
+            input_roi.data  = calc_start(input_worldP, aligned_rect);
+            output_roi.data = calc_start(output_worldP, aligned_rect);
+
+            input_roi.width  = width;
+            input_roi.height = height;
+            output_roi.width  = width;
+            output_roi.height = height;
+
+            input_roi.extent_hint.left = 0;
+            input_roi.extent_hint.top  = 0;
+            input_roi.extent_hint.right  = width;
+            input_roi.extent_hint.bottom = height;
+            output_roi.extent_hint.left = 0;
+            output_roi.extent_hint.top  = 0;
+            output_roi.extent_hint.right  = width;
+            output_roi.extent_hint.bottom = height;
+
+            MyDebugLog("### SR: rect by hint L=%ld, T=%ld, R=%ld, B=%ld, aligned rect L=%ld, T=%ld, R=%ld, B=%ld",
+                current_rect.left,
+                current_rect.top,
+                current_rect.right,
+                current_rect.bottom,
+                aligned_rect.left,
+                aligned_rect.top,
+                aligned_rect.right,
+                aligned_rect.bottom);
+
+            FilterRefcon refcon{};
+            refcon.qi = &qi;
+            refcon.global_x0 = aligned_rect.left;
+            refcon.global_y0 = aligned_rect.top;
+
+            // ----------------------------------------------------------------
+            // 1パス目：通常量子化
+            // ----------------------------------------------------------------
+            if (!err) {
+                err = RunIteratePass(
+                          in_dataP,
+                          out_data,
+                          height,
+                          &input_roi,
+                          &refcon,
+                          FilterImage8,   // 既存 8bit フィルタ
+                          &output_roi);
+            }
+
+            // ----------------------------------------------------------------
+            // 2パス目：8dot / 2color 後処理
+            // ----------------------------------------------------------------
+            if (!err &&
+                !qi.use_palette_color &&
+                qi.use_8dot2col != MSX1PQ_EIGHTDOT_MODE_NONE) {
+                Apply8dot2colARGB(output_worldP, aligned_rect, qi);
+            }
         }
     }
 
@@ -1039,8 +1231,6 @@ UpdateParameterUI(
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_B,
                                  &tmp);
-
-    // MyDebugLog("-> UpdateParameterUI done");
 
     return err;
 }

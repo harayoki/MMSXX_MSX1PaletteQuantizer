@@ -50,7 +50,7 @@ resource 'PiPL' (16000) {
 		},
 		AE_Effect_Global_OutFlags_2 {
 		    0x00000400
-			/* PF_OutFlag2_SUPPORTS_SMART_RENDER */
+			/* PF_OutFlag2_SUPPORTS_SMART_RENDER: 0x00000400 */
 		},
 		AE_Effect_Match_Name {
 			"MMSXX_MSX1PaletteQuantizer"
