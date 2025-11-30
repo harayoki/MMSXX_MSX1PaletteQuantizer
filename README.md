@@ -23,7 +23,7 @@ MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 
 "MSX1PaletteQuantizer" is an effect plugin that recreates the MSX1 (TMS9918) look in compositions.
 It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area).
-The plugin is compatible with After Effects Multi-Frame Rendering to speed up exports.
+Supports After Effects Smart Rendering and Multi-Frame Rendering, speeding up exports.
 
 ## Disclaimer
 
