@@ -153,8 +153,9 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-	out_data->out_flags  = PF_OutFlag_NONE;
-	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
+        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
+                               PF_OutFlag2_SUPPORTS_MF_RENDER;
     //	MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
     //                    (unsigned int)out_data->out_flags,
     //                    (unsigned int)out_data->out_flags2); この値を rファイルに書く
