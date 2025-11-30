@@ -900,14 +900,7 @@ SmartRender(
 
     if (!err && input_worldP && output_worldP) {
 
-        PF_Rect current_rect{};
-
-        // SmartRenderExtra に result_rect が無い環境では extent_hint を参照
-        current_rect = extraP->output->result_rect;
-        if (current_rect.left == current_rect.right ||
-            current_rect.top  == current_rect.bottom) {
-            current_rect = output_worldP->extent_hint;
-        }
+        PF_Rect current_rect = output_worldP->extent_hint;
         if (current_rect.left == current_rect.right ||
             current_rect.top  == current_rect.bottom) {
             current_rect.left   = 0;
