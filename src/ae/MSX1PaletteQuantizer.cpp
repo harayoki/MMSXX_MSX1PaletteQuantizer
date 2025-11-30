@@ -802,11 +802,14 @@ SmartPreRender(
         out_rect.bottom);
     */
 
-    // 入力用: 横だけ全幅に広げる（上下は out_rect に合わせる）
+    // 入力用: 横だけ全幅に広げる？（上下は out_rect に合わせる）
     PF_RenderRequest input_req = host_req;
     PF_Rect in_roi = out_rect;
-    in_roi.left  = 0;
-    in_roi.right = comp_w;
+
+    // ここを広げると前に挟むエフェクトによって位置がずれる不具合が出ることがある
+    //in_roi.left  = 0;
+    //in_roi.right = comp_w;
+
     input_req.rect = in_roi;
 
     /*
