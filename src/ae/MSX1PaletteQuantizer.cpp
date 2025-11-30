@@ -540,6 +540,11 @@ FilterImage8 (
 {
     QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
 
+    // TODO: 並列レンダリング時に複数スレッドから同じ refcon を参照すると、
+    //       非 const ポインタ経由で共有状態を書き換えた場合にデータ競合が起きる。
+    //       apply_preprocess / quantize_pixel で状態を持たせるなら、スレッドごとに
+    //       コピーを渡すか読み取り専用の構造体にしてスレッドセーフ化する。
+
     // 入力色をローカルコピー
     A_u_char r = inP->red;
     A_u_char g = inP->green;
@@ -576,6 +581,10 @@ FilterImageBGRA_8u (
     PF_Pixel8   *outP)
 {
     QuantInfo *qi = reinterpret_cast<QuantInfo*>(refcon);
+
+    // TODO: AE 側のスレッド並列実行では上と同様に refcon の共有で競合する。
+    //       BGRA パスもスレッドローカルな QuantInfo コピーに置き換えるなど、
+    //       参照専用にして安全にする必要がある。
 
     MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
     MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
