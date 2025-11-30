@@ -153,11 +153,14 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-	out_data->out_flags  = PF_OutFlag_NONE;
-	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
-    //	MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
-    //                    (unsigned int)out_data->out_flags,
-    //                    (unsigned int)out_data->out_flags2); この値を rファイルに書く
+        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
+                               PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
+    //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
+    MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
+                    (unsigned int)out_data->out_flags,
+                    (unsigned int)out_data->out_flags2); //この値を rファイルに書く 0x08000400
 
     // Premiere 用ピクセルフォーマット宣言
     if (in_dataP->appl_id == kAppID_Premiere){
