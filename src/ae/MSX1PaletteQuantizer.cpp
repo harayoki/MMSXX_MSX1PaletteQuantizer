@@ -204,14 +204,6 @@ ParamsSetup (
     }
     def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_POPUP(
-        "ROI optimization",
-        3,                    // 項目数
-        MSX1PQ_ROI_OPTIMIZATION_AUTO, // デフォルト 3: Auto
-        "Disabled|Enabled|Auto",
-        MSX1PQ_PARAM_ROI_OPTIMIZATION);
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP(
         "Color system",
         2,                    // 項目数
         MSX1PQ_COLOR_SYS_MSX1,       // デフォルト 1: MSX1
