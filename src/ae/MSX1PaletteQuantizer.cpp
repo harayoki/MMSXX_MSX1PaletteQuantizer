@@ -1,9 +1,6 @@
 /*
-    MSX1PaletteQuantizer.cpp
-
     MSX1 パレット エフェクト
     AE / Premiere 両対応。
-
 */
 
 #include "AEConfig.h"
@@ -794,7 +791,6 @@ SmartPreRender(
     //out_rect.top    = (std::max)(out_rect.top,   (A_long)0);
     //out_rect.right  = (std::min)(out_rect.right, comp_w);
     //out_rect.bottom = (std::min)(out_rect.bottom,comp_h);
-
     /*
     MyDebugLog("SmartPreRender: output rect L=%ld, T=%ld, R=%ld, B=%ld",
         out_rect.left,
@@ -806,11 +802,9 @@ SmartPreRender(
     // 入力用: 横だけ全幅に広げる（→やめる）上下は out_rect に合わせる
     PF_RenderRequest input_req = host_req;
     PF_Rect in_roi = out_rect;
-
     // ここを広げると前に挟むエフェクトによって位置がずれる不具合が出ることがある
     //in_roi.left  = 0;
     //in_roi.right = comp_w;
-
     input_req.rect = in_roi;
 
     /*
@@ -859,7 +853,7 @@ SmartPreRender(
         };
 
         //PF_Rect final_rect = intersect(out_rect, in_result.result_rect);
-        PF_Rect final_rect = in_result.result_rect;
+        PF_Rect final_rect = in_result.result_rect; // out_rectを変更しなくなったのでintersectもやめる
 
         /*
         MyDebugLog("SmartPreRender: final result rect L=%ld, T=%ld, R=%ld, B=%ld",
