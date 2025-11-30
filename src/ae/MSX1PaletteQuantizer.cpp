@@ -761,10 +761,10 @@ SmartPreRender(
     const A_long comp_h = in_dataP->height;
 
     // コンポサイズ内にクランプ
-    roi.left   = std::max(roi.left, static_cast<A_long>(0));
-    roi.top    = std::max(roi.top, static_cast<A_long>(0));
-    roi.right  = std::min(roi.right, comp_w);
-    roi.bottom = std::min(roi.bottom, comp_h);
+    roi.left   = (std::max)(roi.left, static_cast<A_long>(0));
+    roi.top    = (std::max)(roi.top, static_cast<A_long>(0));
+    roi.right  = (std::min)(roi.right, comp_w);
+    roi.bottom = (std::min)(roi.bottom, comp_h);
 
     // 左右は常にコンポ全幅
     roi.left  = 0;
