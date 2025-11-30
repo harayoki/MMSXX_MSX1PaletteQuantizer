@@ -117,67 +117,6 @@ static inline PF_Err CheckinParam(
     return PF_CHECKIN_PARAM(in_data, &param);
 }
 
-// ROI 有効/無効判定
-static A_Boolean
-IsRoiEnabled(const PF_InData *in_data,  PF_OutData *out_data)
-{
-
-    // Premiere は常に無効
-    if (in_data->appl_id == kAppID_Premiere) {
-        return FALSE;
-    }
-
-    PF_Err err = PF_Err_NONE;
-    PF_ParamDef roi_param, mode_param;
-    AEFX_CLR_STRUCT(roi_param);
-    AEFX_CLR_STRUCT(mode_param);
-
-    ERR(PF_CHECKOUT_PARAM(
-        in_data,
-        MSX1PQ_PARAM_ROI_OPTIMIZATION,
-        in_data->current_time,
-        in_data->time_step,
-        in_data->time_scale,
-        &roi_param));
-
-    ERR(PF_CHECKOUT_PARAM(
-        in_data,
-        MSX1PQ_PARAM_USE_8DOT2COL,
-        in_data->current_time,
-        in_data->time_step,
-        in_data->time_scale,
-        &mode_param));
-
-    const A_long roi_mode  = roi_param.u.pd.value;
-    const A_long mode_8dot = mode_param.u.pd.value;
-
-    PF_CHECKIN_PARAM(in_data, &mode_param);
-    PF_CHECKIN_PARAM(in_data, &roi_param);
-
-    // MyDebugLog("  roi_mode=%ld, mode_8dot=%ld", roi_mode, mode_8dot);
-
-    // 手動 OFF
-    if (roi_mode == MSX1PQ_ROI_OPTIMIZATION_OFF) {
-        return FALSE;
-    }
-
-    // 手動 ON
-    if (roi_mode == MSX1PQ_ROI_OPTIMIZATION_ON) {
-        return TRUE;
-    }
-
-    // AUTO
-    if (mode_8dot == MSX1PQ_EIGHTDOT_MODE_ATTR_BEST ||
-        mode_8dot == MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST) {
-        MyDebugLog("  ROI not enabled by AUTO");
-        // Best-Attr / Best-Trans は ROI 無効
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-
 
 } // namespace
 
@@ -691,7 +630,7 @@ Apply8dot2colBGRA(
 }
 
 // ---------------------------------------------------------------------------
-// Render
+// Render (スマートレンダリング設定時は呼ばれない)
 // ---------------------------------------------------------------------------
 static PF_Err
 Render (
@@ -801,33 +740,26 @@ Render (
     return err;
 }
 
+
 static PF_Err
 SmartPreRender(
     PF_InData         *in_dataP,
     PF_OutData        *out_dataP,
-    PF_ParamDef         * /*params*/[],
+    PF_ParamDef       * /*params*/[],
     PF_PreRenderExtra *extraP)
 {
     PF_Err err = PF_Err_NONE;
 
-    // ROI 最適化の有無を判定
-    const A_Boolean use_roi = IsRoiEnabled(in_dataP, out_dataP);
-
-    // AE が要求している範囲（ROI 無効の場合は最大範囲を要求）
+    // AE が要求している範囲（ホストの ROI）をそのまま使う
     PF_RenderRequest req = extraP->input->output_request;
 
-    MyDebugLog("  requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
+    MyDebugLog("SmartPreRender: requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
         req.rect.left,
         req.rect.top,
         req.rect.right,
         req.rect.bottom);
 
-    if (!use_roi) {
-        req.rect = extraP->output->max_result_rect;
-    }
-
-    PF_CheckoutResult in_result;
-
+    PF_CheckoutResult in_result{};
     err = extraP->cb->checkout_layer(
               in_dataP->effect_ref,
               MSX1PQ_PARAM_INPUT,
@@ -839,15 +771,21 @@ SmartPreRender(
               &in_result);
 
     if (!err) {
-        if (use_roi) {
-            // ROI 有効時はホスト要求に従う
-            UnionLRect(&in_result.result_rect,     &extraP->output->result_rect);
-            UnionLRect(&in_result.max_result_rect, &extraP->output->max_result_rect);
-        } else {
-            // ROI 無効時は常に全体を処理
-            extraP->output->result_rect     = in_result.max_result_rect;
-            extraP->output->max_result_rect = in_result.max_result_rect;
-        }
+        // 上流が返してきた rect をそのまま SmartRender 側に渡す
+        extraP->output->result_rect     = in_result.result_rect;
+        extraP->output->max_result_rect = in_result.max_result_rect;
+
+        MyDebugLog("SmartPreRender: result_rect: L=%ld, T=%ld, R=%ld, B=%ld",
+            in_result.result_rect.left,
+            in_result.result_rect.top,
+            in_result.result_rect.right,
+            in_result.result_rect.bottom);
+
+        MyDebugLog("SmartPreRender: max_result_rect: L=%ld, T=%ld, R=%ld, B=%ld",
+            in_result.max_result_rect.left,
+            in_result.max_result_rect.top,
+            in_result.max_result_rect.right,
+            in_result.max_result_rect.bottom);
     }
 
     return err;
