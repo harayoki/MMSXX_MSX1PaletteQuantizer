@@ -50,7 +50,7 @@ namespace MSX1PQ {
     constexpr int  kVersionMajor        = 0;
     constexpr int  kVersionMinor        = 6;
     constexpr int  kVersionBug          = 0;
-    constexpr int  kVersionStage        = PF_Stage_ALPHA;
+    constexpr int  kVersionStage        = PF_Stage_BETA;
     /*
 	PF_Stage_DEVELOP,
 	PF_Stage_ALPHA,
