@@ -24,6 +24,7 @@ English documentation: [README_en](README.md)
 
 「MSX1PaletteQuantizer」は、コンポジットに MSX1（TMS9918）の見た目を再現するエフェクトプラグインです。
 これにより、画像をMSX1特有のルーㇽに基づいた（15色横8ドット内に2色）グラフィックスタイルを模倣します。
+After Effects のマルチフレームレンダリングに対応しており、書き出しを高速化できます。
 
 ## 対応プラットフォーム
 
@@ -61,8 +62,7 @@ MacもXcodeでビルドすれば動作すると思います。
 
 ## Visual Studio 2022でのビルド手順 (Windows)
 
-Visual Studio (Windows) または Xcode (Mac) を使用してプロジェクトをビルドします。
-ビルドが成功すると、プラグインファイル（.aexまたは.plugin）が生成されます。
+Visual Studio (Windows) を使用してプロジェクトをビルドします。
 
 * x64 Native Tools Command Prompt for VS2022 にて AESDK_ROOT に After Effects SDK のパスを設定。
   * `setx AESDK_ROOT F:\ae25.6_61.64bit.AfterEffectsSDK\Examples\`
@@ -82,8 +82,8 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 
 ## 実装について
 
-プラグインはレガシーなC++で記載されています。GPU利用や並列処理、スマートレンダリングには対応していません。また8ビットモードのみ対応しています。
-以上を修正するコードの改変は大歓迎です。また無料・安価な動画編集ソフトへの移植（OpenFX形式など）も歓迎します。
+プラグインは8ビットエフェクトでGPUレンダリングには対応していません。After Effects のマルチフレームレンダリングに対応しています。
+また無料・安価な動画編集ソフトへの移植（OpenFX形式など）など歓迎します。
 
 ## ライセンス
 
