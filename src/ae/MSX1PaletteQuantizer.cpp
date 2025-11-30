@@ -153,11 +153,14 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-	out_data->out_flags  = PF_OutFlag_NONE;
-	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
-    //	MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
-    //                    (unsigned int)out_data->out_flags,
-    //                    (unsigned int)out_data->out_flags2); この値を rファイルに書く
+        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
+                               PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
+    //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
+    MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
+                    (unsigned int)out_data->out_flags,
+                    (unsigned int)out_data->out_flags2); //この値を rファイルに書く 0x08000400
 
     // Premiere 用ピクセルフォーマット宣言
     if (in_dataP->appl_id == kAppID_Premiere){
@@ -459,7 +462,9 @@ apply_8dot2col_dispatch_BGRA(
 // ---------------------------------------------------------------------------
 
 struct FilterRefcon {
-    QuantInfo *qi{};
+    // QuantInfo は各レンダー呼び出しごとに値コピーを保持し、
+    // iterate() の並列実行でも他スレッドと状態を共有しない。
+    QuantInfo qi{};
     A_long     global_x0{};
     A_long     global_y0{};
 };
@@ -473,12 +478,7 @@ FilterImage8 (
     PF_Pixel8   *outP)
 {
     auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
-    QuantInfo *qi = ref->qi;
-
-    // TODO: 並列レンダリング時に複数スレッドから同じ refcon を参照すると、
-    //       非 const ポインタ経由で共有状態を書き換えた場合にデータ競合が起きる。
-    //       apply_preprocess / quantize_pixel で状態を持たせるなら、スレッドごとに
-    //       コピーを渡すか読み取り専用の構造体にしてスレッドセーフ化する。
+    const QuantInfo *qi = &ref->qi;
 
     // 入力色をローカルコピー
     A_u_char r = inP->red;
@@ -516,11 +516,7 @@ FilterImageBGRA_8u (
     PF_Pixel8   *outP)
 {
     auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
-    QuantInfo *qi = ref->qi;
-
-    // TODO: AE 側のスレッド並列実行では上と同様に refcon の共有で競合する。
-    //       BGRA パスもスレッドローカルな QuantInfo コピーに置き換えるなど、
-    //       参照専用にして安全にする必要がある。
+    const QuantInfo *qi = &ref->qi;
 
     MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
     MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
@@ -696,7 +692,7 @@ Render (
 
             // ---- 1パス目：通常の量子化（ディザなど）----
             FilterRefcon refcon{};
-            refcon.qi = &qi;
+            refcon.qi = qi;
             refcon.global_x0 = output->extent_hint.left;
             refcon.global_y0 = output->extent_hint.top;
 
@@ -733,7 +729,7 @@ Render (
 
         // ---- 1パス目：通常の量子化 ----
         FilterRefcon refcon{};
-        refcon.qi = &qi;
+        refcon.qi = qi;
         refcon.global_x0 = output->extent_hint.left;
         refcon.global_y0 = output->extent_hint.top;
 
@@ -1105,7 +1101,7 @@ SmartRender(
                 aligned_rect.bottom);
 
             FilterRefcon refcon{};
-            refcon.qi = &qi;
+            refcon.qi = qi;
             refcon.global_x0 = aligned_rect.left;
             refcon.global_y0 = aligned_rect.top;
 
