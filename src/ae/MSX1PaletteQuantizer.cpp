@@ -17,13 +17,13 @@
 #include "MSX1PQPalettes.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 
 
 #ifdef AE_OS_WIN
 #include <Windows.h>
-#include <cstdarg>
-#include <cstdio>
-inline void MSX1PQ_DebugLog(const char* fmt, ...)
+static inline void MyDebugLog(const char* fmt, ...)
 {
     char buf[512];
 
@@ -37,7 +37,14 @@ inline void MSX1PQ_DebugLog(const char* fmt, ...)
 }
 #else
 // Mac の場合（AE_OS_WIN が未定義）
-inline void MSX1PQ_DebugLog(const char* /*fmt*/, ...) {}
+static inline void MyDebugLog(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    std::fprintf(stderr, "\n");
+    va_end(args);
+}
 #endif
 
 namespace MSX1PQ {
@@ -147,7 +154,7 @@ IsRoiEnabled(const PF_InData *in_data,  PF_OutData *out_data)
     PF_CHECKIN_PARAM(in_data, &mode_param);
     PF_CHECKIN_PARAM(in_data, &roi_param);
 
-    // MSX1PQ_DebugLog("  roi_mode=%ld, mode_8dot=%ld", roi_mode, mode_8dot);
+    // MyDebugLog("  roi_mode=%ld, mode_8dot=%ld", roi_mode, mode_8dot);
 
     // 手動 OFF
     if (roi_mode == MSX1PQ_ROI_OPTIMIZATION_OFF) {
@@ -162,7 +169,7 @@ IsRoiEnabled(const PF_InData *in_data,  PF_OutData *out_data)
     // AUTO
     if (mode_8dot == MSX1PQ_EIGHTDOT_MODE_ATTR_BEST ||
         mode_8dot == MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST) {
-        MSX1PQ_DebugLog("  ROI not enabled by AUTO");
+        MyDebugLog("  ROI not enabled by AUTO");
         // Best-Attr / Best-Trans は ROI 無効
         return FALSE;
     }
@@ -208,11 +215,11 @@ GlobalSetup (
 {
     PF_Err    err = PF_Err_NONE;
     out_data->my_version = MSX1PQ::kVersionPacked;
-    // MSX1PQ_DebugLog("my_version = %lu", (unsigned long)out_data->my_version);
+    // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
 	out_data->out_flags  = PF_OutFlag_NONE;
 	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER;
-    //	MSX1PQ_DebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
+    //	MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
     //                    (unsigned int)out_data->out_flags,
     //                    (unsigned int)out_data->out_flags2); この値を rファイルに書く
 
@@ -809,7 +816,7 @@ SmartPreRender(
     // AE が要求している範囲（ROI 無効の場合は最大範囲を要求）
     PF_RenderRequest req = extraP->input->output_request;
 
-    MSX1PQ_DebugLog("  requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
+    MyDebugLog("  requested rect: L=%ld, T=%ld, R=%ld, B=%ld",
         req.rect.left,
         req.rect.top,
         req.rect.right,
@@ -1077,8 +1084,8 @@ UpdateParameterUI(
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
     A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
 
-    // MSX1PQ_DebugLog("=== UpdateParameterUI CALLED ===");
-    // MSX1PQ_DebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
+    // MyDebugLog("=== UpdateParameterUI CALLED ===");
+    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
     //          mode, enable_hsb ? 1 : 0);
 
     PF_ParamDef tmp;
@@ -1089,7 +1096,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  H ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_H,
                                  &tmp);
@@ -1100,7 +1107,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  S ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
@@ -1111,7 +1118,7 @@ UpdateParameterUI(
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
-    // MSX1PQ_DebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
+    // MyDebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_B,
                                  &tmp);
