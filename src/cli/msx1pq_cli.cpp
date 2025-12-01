@@ -460,6 +460,23 @@ bool write_sc5(const fs::path& output_path, const std::vector<RgbaPixel>& pixels
         std::cerr << "Failed to open output file: " << output_path << "\n";
         return false;
     }
+
+    // SC5ヘッダ
+    unsigned char header[7];
+    header[0] = 0xFE;      // BSAVE signature
+    header[1] = 0x00;      // Start low
+    header[2] = 0x00;      // Start high
+    header[3] = 0x00;      // End low   (0x6B00)
+    header[4] = 0x6B;      // End high
+    header[5] = 0x00;      // Exec low
+    header[6] = 0x00;      // Exec high
+
+    ofs.write(reinterpret_cast<const char*>(header), 7);
+    if (!ofs) {
+        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
+        return false;
+    }
+
     ofs.write(reinterpret_cast<const char*>(packed.data()), static_cast<std::streamsize>(packed.size()));
     if (!ofs) {
         std::cerr << "Failed to write SC5 data: " << output_path << "\n";
