@@ -7,7 +7,7 @@ import tempfile
 import msxdisk
 
 autoexec_bas_template = """10 DEFINT A-Z
-20 SCREEN 5:COLOR 15,0,0:KEY OFF:CLS
+20 SCREEN 2:COLOR 15,0,0:KEY OFF:CLS
 # 画像ファイル数を設定
 30 NIMG = {{num_images}}
 40 DIM F$(NIMG-1)
@@ -30,31 +30,35 @@ autoexec_bas_template = """10 DEFINT A-Z
 510 IF I >= NIMG THEN I = 0
 520 GOSUB 1000
 530 RETURN
-1000 CLS
+1000 'SETUP SCREEN AND LOAD IMAGE
 # ファイル名がSC5ならSCREEN 5 SC2ならSCREEN 2 に設定
-1010 IF RIGHT$(F$(I),3)="SC5" THEN SCREEN 5:GOTO 1300
+1010 IF RIGHT$(F$(I),3)="SC2" THEN GOTO 1300
 # パレットを毎回設定する必要はないかもだが、画像によって変更する可能性はある
-1020 COLOR=(1,0,0,0)
-1030 COLOR=(2,2,5,2)
-1040 COLOR=(3,3,5,3)
-1050 COLOR=(4,2,2,6)
-1060 COLOR=(5,3,3,6)
-1070 COLOR=(6,5,2,2)
-1080 COLOR=(7,2,6,6)
-1090 COLOR=(8,6,2,2)
-1010 COLOR=(9,7,3,3)
-1110 COLOR=(10,5,5,2)
-1120 COLOR=(11,6,5,3)
-1130 COLOR=(12,1,4,1)
-1140 COLOR=(13,5,3,5)
-1150 COLOR=(14,5,5,5)
-1160 COLOR=(15,7,7,7)
-1200 IF RIGHT$(F$(I),3)="SC2" THEN SCREEN 2
-# パレット設定の必要あればここに書く
-1210 GOTO 1300
-1300 COLOR 15,0,0:CLS
-1310 BLOAD F$(I),S
-1320 RETURN
+1020 SCREEN 5
+1030 COLOR=(0,0,0,0)
+1040 COLOR=(1,0,0,0)
+1050 COLOR=(2,2,5,2)
+1060 COLOR=(3,3,5,3)
+1070 COLOR=(4,2,2,6)
+1080 COLOR=(5,3,3,6)
+1090 COLOR=(6,5,2,2)
+1100 COLOR=(7,2,6,6)
+1110 COLOR=(8,6,2,2)
+1120 COLOR=(9,7,3,3)
+1130 COLOR=(10,5,5,2)
+1140 COLOR=(11,6,5,3)
+1150 COLOR=(12,1,4,1)
+1160 COLOR=(13,5,3,5)
+1170 COLOR=(14,5,5,5)
+1180 COLOR=(15,7,7,7)
+1190 'COLOR 15,0,0:CLS
+1200 GOTO 1400
+1300 SCREEN 2
+## パレット設定の必要あればここに書く
+1310 GOTO 1400
+1400 'COLOR 15,0,0:CLS
+1410 BLOAD F$(I),S
+1420 RETURN
 1500 DATA {% for item in my_list %}"{{item}}"{% if not loop.last %},{% else%}{% endif %}{% endfor %}"""
 
 def get_name_in_dos_83(name: str) -> str:
@@ -84,7 +88,7 @@ def get_file_list(input_paths: List[str], target_exts: Set[str]) -> List[Path]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a basic MSX disk image viewer for .sc2 files.")
+        description="Create a basic MSX disk image viewer for .sc2 / .sc5 files.")
     parser.add_argument(
         "input_files_or_dirs",
         nargs="+",
@@ -101,7 +105,7 @@ def main():
 
     args = parser.parse_args()
     input_paths = args.input_files_or_dirs
-    flatten_paths = get_file_list(input_paths, target_exts={'sc2', "sc5"})
+    flatten_paths = get_file_list(input_paths, target_exts={'sc2', 'sc5'})
     if not flatten_paths:
         sys.exit("No .sc2 files found in the provided paths.")
 
@@ -117,8 +121,10 @@ def main():
         my_list=[str(p.name) for p in files_in_temp]
     ).splitlines()
     output_lines = [line for line in output_lines if not line.strip().startswith('#')] # #で始まる行を削除
-    # for line in output_lines:
-    #     print(line)
+    print()
+    for line in output_lines:
+        print(line)
+    print()
     autoexec_bas_path = Path(temp_dir.name) / "AUTOEXEC.BAS"
     with open(autoexec_bas_path, 'w') as f:
         f.write('\n'.join(output_lines))
