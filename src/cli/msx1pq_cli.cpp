@@ -445,10 +445,10 @@ bool write_sc5(const fs::path& output_path, const std::vector<RgbaPixel>& pixels
     const int copy_width = static_cast<int>(std::min<unsigned>(kSc5Width, width));
     const int copy_height = static_cast<int>(std::min<unsigned>(kSc5Height, height));
 
-    const int src_offset_x = (width > kSc5Width) ? static_cast<int>((width - kSc5Width) / 2) : 0;
-    const int src_offset_y = (height > kSc5Height) ? static_cast<int>((height - kSc5Height) / 2) : 0;
-    const int dst_offset_x = (width < kSc5Width) ? static_cast<int>((kSc5Width - width) / 2) : 0;
-    const int dst_offset_y = (height < kSc5Height) ? static_cast<int>((kSc5Height - height) / 2) : 0;
+    const int src_offset_x = 0;
+    const int src_offset_y = 0;
+    const int dst_offset_x = 0;
+    const int dst_offset_y = 0;
 
     for (int y = 0; y < copy_height; ++y) {
         const unsigned src_y = static_cast<unsigned>(src_offset_y + y);
