@@ -14,3 +14,21 @@ usage:
 ```
 python basic_sc2_viewer.py -i images image001.sc2 -o image.dsk
 ```
+
+## Build an EXE with Nuitka
+
+You can bundle the script into a standalone executable (useful for Windows) with Nuitka.
+
+1. Install the Python dependencies from the repository root (Python 3.11+).
+
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. Run the helper script to invoke Nuitka.
+
+   ```
+   python pyutils/basic_sc2_viewer/make_exe.py
+   ```
+
+   The resulting executable is written to `pyutils/basic_sc2_viewer/dist/basic_sc2_viewer.exe` by default. Use `--output-dir` to change the destination.
