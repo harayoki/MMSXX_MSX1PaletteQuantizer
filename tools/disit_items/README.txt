@@ -25,6 +25,12 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_
 
 バッチファイル内の各行は直接コマンドを実行する際の参考としても利用できます。
 
+## basic sc2 viewer
+
+`basic_sc2_viewer.exe` は 複数の画像ファイルと自動実行のBASICコードを収めたdskイメージを生成するツールです。
+msx1pq_cli.exe が書き出したsc2ファイルを引数に渡すと、MSXエミュレーター等で読み込んで表示できるdskイメージを生成します。
+2DDディスクに書き込めば実機でも実行可能と思われますが、動作確認はしていません。
+`basic_sc2_viewer.exe` の使い方はヘルプを参照してください。
 
 # ドキュメント
 詳しくは以下のURLを確認してください。
@@ -53,6 +59,12 @@ to an `out` folder next to the input, with numbered prefixes to distinguish each
 
 Each line in the batch file can also serve as a reference if you want to run the commands directly.
 
+## basic sc2 viewer
+
+`basic_sc2_viewer.exe` is a tool that generates a DSK image containing multiple image files and auto-executable BASIC code.
+By passing the SC2 files output by `msx1pq_cli.exe` as arguments, it generates a DSK image that can be loaded and displayed on MSX emulators.
+It is assumed that writing the image to a 2DD disk will allow it to run on actual hardware, but this has not been verified.
+Refer to the help for instructions on how to use `basic_sc2_viewer.exe`.
 
 # Documentation
 For more details, see the repository below.

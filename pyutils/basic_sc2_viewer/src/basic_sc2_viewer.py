@@ -83,7 +83,8 @@ def get_file_list(input_paths: List[str], target_exts: Set[str]) -> List[Path]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Basic sc2 Viewer")
+    parser = argparse.ArgumentParser(
+        description="Create a basic MSX disk image viewer for .sc2 files.")
     parser.add_argument(
         "input_files_or_dirs",
         nargs="+",
@@ -97,6 +98,7 @@ def main():
         type=str,
         help="Output Diskimage(*.dsk) path",
     )
+
     args = parser.parse_args()
     input_paths = args.input_files_or_dirs
     flatten_paths = get_file_list(input_paths, target_exts={'sc2', "sc5"})
