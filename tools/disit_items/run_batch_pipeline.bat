@@ -15,7 +15,7 @@ set "INPUT_NAME=%~n1"
 set "INPUT_DIR=%~dp1"
 set "SCRIPT_DIR=%~dp0"
 set "OUTPUT_DIR=%SCRIPT_DIR%out"
-set "LUT_PATH=%SCRIPT_DIR%ContrastAndSaturationBoos.cube"
+set "LUT_PATH=%SCRIPT_DIR%ContrastAndSaturationBoost.cube"
 
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
