@@ -12,7 +12,7 @@ diskイメージはエミュレータで開くことができます。実際に2
 usage:
 
 ```
-python basic_sc2_viewer.py -i images image001.sc2 -o image.dsk
+python basic_sc2_viewer.py -i image_folder_path -o image.dsk
 ```
 
 ## Build an EXE with Nuitka
