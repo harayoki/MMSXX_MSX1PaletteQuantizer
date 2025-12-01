@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://example.com/msxdisk"
+Homepage = "https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/pyutils/msxdisk"
 
 [project.scripts]
 msxdisk = "msxdisk.cli:main"

@@ -1,0 +1,4 @@
+msxdisk @ file:pyutils/msxdisk
+Nuitka==2.8.9
+ordered-set==4.1.0
+zstandard==0.25.0
