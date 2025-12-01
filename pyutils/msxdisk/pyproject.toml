@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "msxdisk"
+version = "0.0.1"
+description = "Utilities for building MSX disk images"
+readme = "README.md"
+authors = [{ name = "MSX Tools" }]
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["MSX", "disk", "tools"]
+dependencies = []
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://example.com/msxdisk"
+
+[project.scripts]
+msxdisk = "msxdisk.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/msxdisk"]
