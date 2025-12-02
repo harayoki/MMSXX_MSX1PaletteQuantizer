@@ -74,8 +74,8 @@ Apply stronger saturation and the "best-attr" 8-dot algorithm:
 ./bin/msx1pq_cli -i shot.png -o dist --pre-sat 1.4 --8dot best-attr
 ```
 
-Write a SCREEN5 binary for MSX emulators:
+Write a SCREEN2 binary for MSX emulators:
 
 ```bash
-./bin/msx1pq_cli -i input.png -o dist --out-sc5 --color-system msx2
+./bin/msx1pq_cli -i input.png -o dist --out-sc2
 ```

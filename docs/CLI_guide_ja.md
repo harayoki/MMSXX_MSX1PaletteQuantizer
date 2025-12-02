@@ -74,8 +74,8 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 ./bin/msx1pq_cli -i shot.png -o dist --pre-sat 1.4 --8dot best-attr
 ```
 
-MSX エミュレーター向けに SCREEN5 バイナリを書き出す例:
+MSX エミュレーター向けに SCREEN2 バイナリを書き出す例:
 
 ```bash
-./bin/msx1pq_cli -i input.png -o dist --out-sc5 --color-system msx2
+./bin/msx1pq_cli -i input.png -o dist --out-sc2
 ```
