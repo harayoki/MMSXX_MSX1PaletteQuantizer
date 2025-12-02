@@ -29,6 +29,8 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | `--input, -i <ファイル|ディレクトリ>` | 入力 PNG ファイルまたはディレクトリを指定。 |
 | `--output, -o <ディレクトリ>` | 変換結果を保存するディレクトリを指定。 |
 | `--output-prefix <文字列>` | 出力ファイル名の先頭に付与する接頭辞。 |
+| `--out-sc5` | PNG ではなく SCREEN5 の `.sc5` バイナリで書き出し。 |
+| `--out-sc2` | SCREEN2 の `.sc2` バイナリで書き出し（`--8dot` が `none` 以外であることが必要）。 |
 | `--color-system <msx1|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
@@ -48,6 +50,10 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | `-h, --help` | ロケールに応じたヘルプを表示（日本語優先）。 |
 | `--help-ja`, `--help-en` | 日本語または英語のヘルプを強制表示。 |
 
+補足:
+- `--out-sc2` と `--out-sc5` は同時に指定できません。指定した場合、出力拡張子はそれぞれ `.sc2` / `.sc5` に変わります。
+- SCREEN2 での出力には 8dot 2色処理が必須です（`--8dot none` 以外の指定が必要）。
+
 ### 使用例
 
 単一ファイルを `dist/` に出力:
@@ -66,4 +72,10 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 ```bash
 ./bin/msx1pq_cli -i shot.png -o dist --pre-sat 1.4 --8dot best-attr
+```
+
+MSX エミュレーター向けに SCREEN5 バイナリを書き出す例:
+
+```bash
+./bin/msx1pq_cli -i input.png -o dist --out-sc5 --color-system msx2
 ```
