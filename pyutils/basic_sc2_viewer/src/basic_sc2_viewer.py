@@ -6,7 +6,7 @@ from typing import List, Set
 import tempfile
 import msxdisk
 
-autoexec_bas = """RUN "V.BAS"
+autoexec_bas = """10 RUN "V.BAS"
 """
 
 viewer_template = """10 DEFINT A-Z:CLS:KEY 6,"AUTOEXEC.BAS"
