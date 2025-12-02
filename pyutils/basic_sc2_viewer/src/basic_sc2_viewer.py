@@ -113,7 +113,7 @@ def get_file_list(input_paths: List[str], target_exts: Set[str]) -> List[Path]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a basic MSX disk image viewer for .sc2 / .sc5 files.")
+        description="Create a MSX disk image with sc2/sc5 viewer.")
     parser.add_argument(
         "input_files_or_dirs",
         nargs="+",
@@ -132,7 +132,7 @@ def main():
         "--allow-sc2-in-msx2",
         default=1,
         type=int,
-        help="Allow .sc2 files to be viewed on MSX2 machines.",
+        help="allow sc2 files to be viewed on MSX2 machines.",
     )
 
     args = parser.parse_args()
