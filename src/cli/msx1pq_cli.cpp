@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -24,6 +25,8 @@ struct CliOptions {
     bool force{false};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
+    bool out_sc5{false};
+    bool out_sc2{false};
     bool use_dither{true};
     bool use_palette_color{false};
     bool use_dark_dither{true};
@@ -102,6 +105,8 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
                   << "  --output-prefix <文字列>        出力ファイル名の先頭に付与する接頭辞を指定\n"
+                  << "  --out-sc5                   PNGではなくSCREEN5 .sc5バイナリで出力\n"
+                  << "  --out-sc2                   SCREEN2 .sc2バイナリで出力\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
@@ -130,6 +135,8 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
               << "  --output, -o <dir>           Specify the output directory\n"
               << "  --output-prefix <string>     Prefix to add to output file names\n"
+              << "  --out-sc5                   Output SCREEN5 .sc5 binary instead of PNG\n"
+              << "  --out-sc2                   Output SCREEN2 .sc2 binary\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
@@ -192,6 +199,10 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.output_dir = require_value(arg);
         } else if (arg == "--output-prefix") {
             opts.output_prefix = require_value(arg);
+        } else if (arg == "--out-sc5") {
+            opts.out_sc5 = true;
+        } else if (arg == "--out-sc2") {
+            opts.out_sc2 = true;
         } else if (arg == "--color-system") {
             std::string value = require_value(arg);
             if (value == "msx1") {
@@ -265,6 +276,15 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
 
     if (opts.input_path.empty() || opts.output_dir.empty()) {
         throw std::runtime_error("--input and --output are required");
+    }
+
+    if (opts.out_sc2 && opts.out_sc5) {
+        throw std::runtime_error("--out-sc2 and --out-sc5 cannot be used together");
+    }
+
+    if (opts.out_sc2 &&
+        opts.use_8dot2col == MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+        throw std::runtime_error("--out-sc2 requires --8dot != none");
     }
 
     return true;
@@ -381,6 +401,214 @@ bool write_png(const fs::path& output_path, const std::vector<RgbaPixel>& pixels
     return true;
 }
 
+constexpr int kSc5Width = 256;
+constexpr int kSc5Height = 212;
+constexpr int kSc2Width = 256;
+constexpr int kSc2Height = 192;
+
+std::array<MSX1PQ::QuantColor, 16> make_sc5_palette(int color_system) {
+    std::array<MSX1PQ::QuantColor, 16> palette{};
+    palette[0] = {0, 0, 0};
+
+    const MSX1PQ::QuantColor* base = MSX1PQCore::get_basic_palette(color_system);
+    for (int i = 0; i < MSX1PQ::kNumBasicColors && (i + 1) < static_cast<int>(palette.size()); ++i) {
+        palette[static_cast<size_t>(i + 1)] = base[i];
+    }
+
+    return palette;
+}
+
+int nearest_palette_index(const std::array<MSX1PQ::QuantColor, 16>& palette, const RgbaPixel& px) {
+    long best_dist = 0x7fffffffL;
+    int best_idx = 0;
+
+    for (size_t i = 0; i < palette.size(); ++i) {
+        long dr = static_cast<long>(px.red) - static_cast<long>(palette[i].r);
+        long dg = static_cast<long>(px.green) - static_cast<long>(palette[i].g);
+        long db = static_cast<long>(px.blue) - static_cast<long>(palette[i].b);
+
+        long d2 = dr * dr + dg * dg + db * db;
+        if (d2 < best_dist) {
+            best_dist = d2;
+            best_idx = static_cast<int>(i);
+        }
+    }
+
+    return best_idx;
+}
+
+bool write_sc5(const fs::path& output_path, const std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, int color_system) {
+    const auto palette = make_sc5_palette(color_system);
+
+    std::vector<std::uint8_t> color_codes(static_cast<size_t>(kSc5Width * kSc5Height), 0);
+
+    const int copy_width = static_cast<int>(std::min<unsigned>(kSc5Width, width));
+    const int copy_height = static_cast<int>(std::min<unsigned>(kSc5Height, height));
+
+    const int src_offset_x = 0;
+    const int src_offset_y = 0;
+    const int dst_offset_x = 0;
+    const int dst_offset_y = 0;
+
+    for (int y = 0; y < copy_height; ++y) {
+        const unsigned src_y = static_cast<unsigned>(src_offset_y + y);
+        const unsigned dst_y = static_cast<unsigned>(dst_offset_y + y);
+        for (int x = 0; x < copy_width; ++x) {
+            const unsigned src_x = static_cast<unsigned>(src_offset_x + x);
+            const unsigned dst_x = static_cast<unsigned>(dst_offset_x + x);
+            const RgbaPixel& px = pixels[static_cast<size_t>(src_y * width + src_x)];
+            color_codes[static_cast<size_t>(dst_y * kSc5Width + dst_x)] = static_cast<std::uint8_t>(nearest_palette_index(palette, px));
+        }
+    }
+
+    std::vector<std::uint8_t> packed;
+    packed.reserve(static_cast<size_t>(kSc5Width * kSc5Height / 2));
+    for (int y = 0; y < kSc5Height; ++y) {
+        for (int x = 0; x < kSc5Width; x += 2) {
+            const std::uint8_t left = static_cast<std::uint8_t>(color_codes[static_cast<size_t>(y * kSc5Width + x)] & 0x0F);
+            const std::uint8_t right = static_cast<std::uint8_t>(color_codes[static_cast<size_t>(y * kSc5Width + x + 1)] & 0x0F);
+            packed.push_back(static_cast<std::uint8_t>((left << 4) | right));
+        }
+    }
+
+    std::ofstream ofs(output_path, std::ios::binary);
+    if (!ofs) {
+        std::cerr << "Failed to open output file: " << output_path << "\n";
+        return false;
+    }
+
+    // SC5ヘッダ
+    unsigned char header[7];
+    header[0] = 0xFE;      // BSAVE signature
+    header[1] = 0x00;      // Start low
+    header[2] = 0x00;      // Start high
+    header[3] = 0x00;      // End low   (0x6B00)
+    header[4] = 0x6B;      // End high
+    header[5] = 0x00;      // Exec low
+    header[6] = 0x00;      // Exec high
+
+    ofs.write(reinterpret_cast<const char*>(header), 7);
+    if (!ofs) {
+        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
+        return false;
+    }
+
+    ofs.write(reinterpret_cast<const char*>(packed.data()), static_cast<std::streamsize>(packed.size()));
+    if (!ofs) {
+        std::cerr << "Failed to write SC5 data: " << output_path << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool write_sc2(const fs::path& output_path,
+               const std::vector<RgbaPixel>& pixels,
+               unsigned width,
+               unsigned height,
+               int color_system) {
+    std::vector<RgbaPixel> canvas(static_cast<size_t>(kSc2Width * kSc2Height));
+
+    RgbaPixel bg{};
+    bg.red = 0;
+    bg.green = 0;
+    bg.blue = 0;
+    bg.alpha = 255;
+
+    for (int y = 0; y < kSc2Height; ++y) {
+        for (int x = 0; x < kSc2Width; ++x) {
+            if (y < static_cast<int>(height) && x < static_cast<int>(width)) {
+                canvas[static_cast<size_t>(y * kSc2Width + x)] = pixels[static_cast<size_t>(y * width + x)];
+            } else {
+                canvas[static_cast<size_t>(y * kSc2Width + x)] = bg;
+            }
+        }
+    }
+
+    std::vector<std::uint8_t> vram(0x4000, 0);
+
+    for (int ty = 0; ty < 24; ++ty) {
+        for (int tx = 0; tx < 32; ++tx) {
+            const int ty_mod = ty & 7;
+            const int char_index = ty_mod * 32 + tx;
+
+            const int pattern_base = (ty < 8) ? 0x0000 : (ty < 16 ? 0x0800 : 0x1000);
+            const int color_base = (ty < 8) ? 0x2000 : (ty < 16 ? 0x2800 : 0x3000);
+
+            const std::size_t name_addr = static_cast<std::size_t>(0x1800 + ty * 32 + tx);
+            vram[name_addr] = static_cast<std::uint8_t>(char_index);
+
+            for (int ry = 0; ry < 8; ++ry) {
+                const int y_base = ty * 8 + ry;
+
+                int color_min = 16;
+                int color_max = -1;
+
+                for (int rx = 0; rx < 8; ++rx) {
+                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
+                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
+                    color_min = std::min(color_min, basic_idx);
+                    color_max = std::max(color_max, basic_idx);
+                }
+
+                if (color_max < 0) {
+                    color_min = 0;
+                    color_max = 0;
+                }
+
+                const int bg_color = color_min + 1;
+                const int fg_color = (color_max >= 0) ? (color_max + 1) : bg_color;
+
+                std::uint8_t pattern_byte = 0;
+                for (int rx = 0; rx < 8; ++rx) {
+                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
+                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
+                    const int color_code = basic_idx + 1;
+                    pattern_byte <<= 1;
+                    if (color_code == fg_color) {
+                        pattern_byte |= 0x01;
+                    }
+                }
+
+                const std::size_t pattern_addr = static_cast<std::size_t>(pattern_base + char_index * 8 + ry);
+                const std::size_t color_addr = static_cast<std::size_t>(color_base + char_index * 8 + ry);
+
+                vram[pattern_addr] = pattern_byte;
+                vram[color_addr] = static_cast<std::uint8_t>((fg_color << 4) | (bg_color & 0x0F));
+            }
+        }
+    }
+
+    std::ofstream ofs(output_path, std::ios::binary);
+    if (!ofs) {
+        std::cerr << "Failed to open output file: " << output_path << "\n";
+        return false;
+    }
+
+    unsigned char header[7];
+    header[0] = 0xFE;
+    header[1] = 0x00;
+    header[2] = 0x00;
+    header[3] = 0xFF;
+    header[4] = 0x3F;
+    header[5] = 0x00;
+    header[6] = 0x00;
+
+    ofs.write(reinterpret_cast<const char*>(header), 7);
+    if (!ofs) {
+        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
+        return false;
+    }
+
+    ofs.write(reinterpret_cast<const char*>(vram.data()), static_cast<std::streamsize>(vram.size()));
+    if (!ofs) {
+        std::cerr << "Failed to write SC2 data: " << output_path << "\n";
+        return false;
+    }
+
+    return true;
+}
+
 bool process_file(const fs::path& input, const fs::path& output, const CliOptions& opts) {
     std::vector<unsigned char> raw;
     unsigned width = 0;
@@ -406,6 +634,12 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
     }
 
     quantize_image(pixels, width, height, opts);
+    if (opts.out_sc5) {
+        return write_sc5(output, pixels, width, height, opts.color_system);
+    }
+    if (opts.out_sc2) {
+        return write_sc2(output, pixels, width, height, opts.color_system);
+    }
     return write_png(output, pixels, width, height);
 }
 
@@ -468,6 +702,12 @@ int main(int argc, char** argv) {
         fs::path output_filename = input.filename();
         if (!opts.output_prefix.empty()) {
             output_filename = fs::path(opts.output_prefix + output_filename.string());
+        }
+
+        if (opts.out_sc5) {
+            output_filename.replace_extension(".sc5");
+        } else if (opts.out_sc2) {
+            output_filename.replace_extension(".sc2");
         }
 
         fs::path out_path = opts.output_dir / output_filename;
