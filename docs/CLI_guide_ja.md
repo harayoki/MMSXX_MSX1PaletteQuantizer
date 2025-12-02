@@ -32,6 +32,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | `--color-system <msx1|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
+| `--no-preprocess` | すべての前処理（ポスタリゼーション、彩度、ガンマ、ハイライト、色相、LUT）をスキップ。 |
 | `--8dot <none|fast|basic|best|best-attr|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
 | `--distance <rgb|hsb>` | パレット選択時の色距離計算方法。既定: `hsb`。 |
 | `--weight-h`, `--weight-s`, `--weight-b` | `hsb` 距離使用時の色相・彩度・明度の重み（0〜1）。 |

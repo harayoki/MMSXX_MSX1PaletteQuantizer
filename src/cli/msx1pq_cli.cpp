@@ -30,6 +30,7 @@ struct CliOptions {
     bool use_dither{true};
     bool use_palette_color{false};
     bool use_dark_dither{true};
+    bool use_preprocess{true};
     int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
     bool use_hsb{true};
     float weight_h{1.0f};
@@ -110,6 +111,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
+                  << "  --no-preprocess             前処理をスキップ\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
@@ -141,6 +143,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
+              << "  --no-preprocess             Skip preprocessing adjustments\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
@@ -222,6 +225,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.use_dark_dither = true;
         } else if (arg == "--no-dark-dither") {
             opts.use_dark_dither = false;
+        } else if (arg == "--no-preprocess") {
+            opts.use_preprocess = false;
         } else if (arg == "--8dot") {
             auto parsed = parse_8dot_mode(require_value(arg));
             if (!parsed) {
@@ -340,7 +345,9 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
             std::uint8_t g = px.green;
             std::uint8_t b = px.blue;
 
-            MSX1PQCore::apply_preprocess(&qi, r, g, b);
+            if (opts.use_preprocess) {
+                MSX1PQCore::apply_preprocess(&qi, r, g, b);
+            }
             const MSX1PQ::QuantColor& qc = MSX1PQCore::quantize_pixel(
                 qi,
                 r,
