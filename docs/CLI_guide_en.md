@@ -29,6 +29,8 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | `--input, -i <file|dir>` | Input PNG file or directory to process. |
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
 | `--output-prefix <string>` | Prefix added to every output file name. |
+| `--out-sc5` | Save as SCREEN5 `.sc5` binary instead of PNG. |
+| `--out-sc2` | Save as SCREEN2 `.sc2` binary instead of PNG (requires `--8dot` set to anything other than `none`). |
 | `--color-system <msx1|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
@@ -48,6 +50,10 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | `-h, --help` | Show help in the detected locale (Japanese if available). |
 | `--help-ja`, `--help-en` | Force Japanese or English help text. |
 
+Notes:
+- `--out-sc2` and `--out-sc5` cannot be used together. When either is specified the output extension changes to `.sc2` or `.sc5` respectively.
+- SCREEN2 export needs the 8-dot/2-color processing enabled (any `--8dot` value other than `none`).
+
 ### Examples
 
 Process one file into `dist/`:
@@ -66,4 +72,10 @@ Apply stronger saturation and the "best-attr" 8-dot algorithm:
 
 ```bash
 ./bin/msx1pq_cli -i shot.png -o dist --pre-sat 1.4 --8dot best-attr
+```
+
+Write a SCREEN5 binary for MSX emulators:
+
+```bash
+./bin/msx1pq_cli -i input.png -o dist --out-sc5 --color-system msx2
 ```
