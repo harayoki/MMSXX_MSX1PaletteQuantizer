@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 BANK_SIZE = 0x4000
+BANK_SIZE_PLUS_HEADER = BANK_SIZE + 7
 ROM_SIZE = BANK_SIZE * 2
 HEADER_SIZE = 16
 INIT_ADDR = 0x4010
@@ -91,6 +92,8 @@ def validate_sc2(path: Path) -> bytes:
         print(f"Input file not found: {path}", file=sys.stderr)
         sys.exit(1)
     data = path.read_bytes()
+    if len(data) == BANK_SIZE_PLUS_HEADER:
+        data = data[7:]
     if len(data) != BANK_SIZE:
         print(
             f"Invalid SC2 size: {len(data)} bytes (expected {BANK_SIZE})",
