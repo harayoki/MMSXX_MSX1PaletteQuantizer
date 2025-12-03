@@ -19,18 +19,23 @@ INIT_ADDR = 0x4010
 # Z80 bootstrap code placed at 0x4010 (bank 0 start is treated as 0x4000).
 #
 # Assembly (origin 0x4010):
+#   F3           di
+#   31 80 F3     ld   sp,0f380h
 #   3E 02        ld   a,2            ; SCREEN2
 #   CD 5F 00     call 005Fh          ; CHGMOD BIOS
-#   3E 01        ld   a,1            ; select bank 1
-#   32 00 60     ld   (6000h),a      ; ASCII16 bank switch
-#   32 00 70     ld   (7000h),a
-#   21 00 40     ld   hl,4000h       ; source in bank1
+#   3E 01        ld   a,1            ; select bank 1 for 0x8000-
+#   32 00 70     ld   (7000h),a      ; ASCII16 bank switch (0x8000 area)
+#   21 00 80     ld   hl,8000h       ; source in bank1
 #   11 00 00     ld   de,0000h       ; VRAM dest
 #   01 00 40     ld   bc,4000h       ; 16KB length
 #   CD 5C 00     call 005Ch          ; LDIRVM
 #   18 FE        jr   $              ; infinite loop
 BOOT_CODE = bytes(
     [
+        0xF3,
+        0x31,
+        0x80,
+        0xF3,
         0x3E,
         0x02,
         0xCD,
@@ -40,13 +45,10 @@ BOOT_CODE = bytes(
         0x01,
         0x32,
         0x00,
-        0x60,
-        0x32,
-        0x00,
         0x70,
         0x21,
         0x00,
-        0x40,
+        0x80,
         0x11,
         0x00,
         0x00,
@@ -65,7 +67,7 @@ BOOT_CODE = bytes(
 def build_header() -> bytes:
     """Build the 16-byte MSX cartridge header for an INIT at INIT_ADDR."""
     init_le = INIT_ADDR.to_bytes(2, "little")
-    return bytes([0x41, 0x42]) + init_le + (b"\x00" * (HEADER_SIZE - 4))
+    return bytes([0x41, 0x42]) + init_le + init_le + (b"\x00" * (HEADER_SIZE - 6))
 
 
 def build_bank0() -> bytes:
@@ -80,10 +82,15 @@ def build_bank0() -> bytes:
 
 
 def build_rom(sc2_data: bytes) -> bytes:
-    """Build the 32KB ROM image from SC2 data."""
+    """Build the 32KB ASCII16 ROM image from SC2 data."""
+    if len(sc2_data) != BANK_SIZE:
+        raise ValueError("SC2 payload must be exactly 16KB")
     bank0 = build_bank0()
     bank1 = sc2_data
-    return bank0 + bank1
+    rom = bank0 + bank1
+    if len(rom) != ROM_SIZE:
+        raise ValueError("Generated ROM size mismatch")
+    return rom
 
 
 def validate_sc2(path: Path) -> bytes:
