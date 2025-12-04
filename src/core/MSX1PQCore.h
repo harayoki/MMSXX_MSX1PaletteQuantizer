@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,7 @@ struct QuantInfo {
     float pre_gamma{};
     float pre_highlight{};
     float pre_hue{};
+    float pre_sharpness{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
     const std::uint8_t* pre_lut{nullptr};
@@ -73,6 +75,73 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &r8,
                       std::uint8_t &g8,
                       std::uint8_t &b8);
+
+void apply_sharpness_rgb(float amount,
+                         std::uint8_t blurred_r,
+                         std::uint8_t blurred_g,
+                         std::uint8_t blurred_b,
+                         std::uint8_t &r8,
+                         std::uint8_t &g8,
+                         std::uint8_t &b8);
+
+template<typename PixelT>
+void apply_sharpness_3x3(
+    PixelT* data,
+    std::ptrdiff_t row_pitch,
+    std::int32_t width,
+    std::int32_t height,
+    float amount)
+{
+    if (!data || width <= 0 || height <= 0) {
+        return;
+    }
+
+    amount = clamp01f(amount);
+    if (amount <= 0.0f) {
+        return;
+    }
+
+    const std::ptrdiff_t pitch = row_pitch;
+    std::vector<PixelT> copy(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+
+    for (std::int32_t y = 0; y < height; ++y) {
+        PixelT* row = data + y * pitch;
+        PixelT* dst = copy.data() + static_cast<std::size_t>(y) * width;
+        std::copy(row, row + width, dst);
+    }
+
+    auto sample = [&](std::int32_t x, std::int32_t y, int dx, int dy) -> const PixelT& {
+        std::int32_t sx = clamp_value<std::int32_t>(x + dx, 0, width - 1);
+        std::int32_t sy = clamp_value<std::int32_t>(y + dy, 0, height - 1);
+        return copy[static_cast<std::size_t>(sy) * width + static_cast<std::size_t>(sx)];
+    };
+
+    for (std::int32_t y = 0; y < height; ++y) {
+        PixelT* row = data + y * pitch;
+        for (std::int32_t x = 0; x < width; ++x) {
+            int sum_r = 0;
+            int sum_g = 0;
+            int sum_b = 0;
+
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const PixelT& p = sample(x, y, dx, dy);
+                    sum_r += static_cast<int>(p.red);
+                    sum_g += static_cast<int>(p.green);
+                    sum_b += static_cast<int>(p.blue);
+                }
+            }
+
+            std::uint8_t blurred_r = static_cast<std::uint8_t>(sum_r / 9);
+            std::uint8_t blurred_g = static_cast<std::uint8_t>(sum_g / 9);
+            std::uint8_t blurred_b = static_cast<std::uint8_t>(sum_b / 9);
+
+            PixelT& dst = row[x];
+            apply_sharpness_rgb(amount, blurred_r, blurred_g, blurred_b,
+                                dst.red, dst.green, dst.blue);
+        }
+    }
+}
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         int num_colors);
