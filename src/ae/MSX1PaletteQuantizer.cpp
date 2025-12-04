@@ -13,6 +13,7 @@
 #include "MSX1PaletteQuantizer.h"
 #include "MSX1PQPalettes.h"
 
+#include <cstddef>
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
@@ -360,6 +361,20 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 6: Sharpen",
+        0,
+        1,
+        0,
+        1,
+        0,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_SHARPEN
+    );
+
+    AEFX_CLR_STRUCT(def);
     def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_CHECKBOX(
         "92-color",
@@ -467,7 +482,122 @@ struct FilterRefcon {
     QuantInfo qi{};
     A_long     global_x0{};
     A_long     global_y0{};
+    const void* input_base{nullptr};
+    std::ptrdiff_t input_pitch{};
+    A_long     width{};
+    A_long     height{};
 };
+
+template <typename PixelT>
+static void SetupInputLayout(const PF_EffectWorld* worldP,
+                             const PF_Rect& rect,
+                             const PixelT*& base_out,
+                             std::ptrdiff_t& pitch_out,
+                             A_long& width_out,
+                             A_long& height_out)
+{
+    if (!worldP) {
+        base_out   = nullptr;
+        pitch_out  = 0;
+        width_out  = 0;
+        height_out = 0;
+        return;
+    }
+
+    const A_long row_bytes = worldP->rowbytes;
+    pitch_out = (row_bytes >= 0)
+        ? (row_bytes / static_cast<A_long>(sizeof(PixelT)))
+        : ((-row_bytes) / static_cast<A_long>(sizeof(PixelT)));
+
+    const char* base = reinterpret_cast<const char*>(worldP->data);
+    if (row_bytes < 0) {
+        base += (worldP->height - 1 - rect.top) * (-row_bytes);
+    } else {
+        base += rect.top * row_bytes;
+    }
+    base += rect.left * static_cast<A_long>(sizeof(PixelT));
+
+    base_out   = reinterpret_cast<const PixelT*>(base);
+    width_out  = rect.right  - rect.left;
+    height_out = rect.bottom - rect.top;
+}
+
+template <typename PixelT, typename ExtractFunc>
+static void SampleSharpenedRGB(const FilterRefcon* ref,
+                               const PixelT* inP,
+                               A_long x,
+                               A_long y,
+                               std::uint8_t& r,
+                               std::uint8_t& g,
+                               std::uint8_t& b,
+                               ExtractFunc extract)
+{
+    if (!ref || !inP) {
+        return;
+    }
+
+    extract(inP, r, g, b);
+
+    if (!ref->input_base || ref->qi.pre_sharpen <= 0.0f ||
+        ref->width <= 0 || ref->height <= 0) {
+        return;
+    }
+
+    const float amount = clamp01f(ref->qi.pre_sharpen);
+    if (amount <= 0.0f) {
+        return;
+    }
+
+    const auto* base = reinterpret_cast<const PixelT*>(ref->input_base);
+    const std::ptrdiff_t pitch = ref->input_pitch;
+    const A_long max_x = ref->width - 1;
+    const A_long max_y = ref->height - 1;
+
+    const int weights[3][3] = {
+        {1, 2, 1},
+        {2, 4, 2},
+        {1, 2, 1}
+    };
+
+    float blur_r = 0.0f;
+    float blur_g = 0.0f;
+    float blur_b = 0.0f;
+
+    for (int dy = -1; dy <= 1; ++dy) {
+        A_long sy = clamp_value(static_cast<A_long>(y) + dy,
+                                static_cast<A_long>(0),
+                                max_y);
+        const PixelT* row = base + sy * pitch;
+
+        for (int dx = -1; dx <= 1; ++dx) {
+            A_long sx = clamp_value(static_cast<A_long>(x) + dx,
+                                    static_cast<A_long>(0),
+                                    max_x);
+            std::uint8_t sr{}, sg{}, sb{};
+            extract(row + sx, sr, sg, sb);
+            int w = weights[dy + 1][dx + 1];
+            blur_r += static_cast<float>(sr) * static_cast<float>(w);
+            blur_g += static_cast<float>(sg) * static_cast<float>(w);
+            blur_b += static_cast<float>(sb) * static_cast<float>(w);
+        }
+    }
+
+    const float inv_norm = 1.0f / 16.0f;
+    blur_r *= inv_norm;
+    blur_g *= inv_norm;
+    blur_b *= inv_norm;
+
+    auto apply_channel = [&](float orig, float blur) -> std::uint8_t {
+        float detail = orig - blur;
+        float value  = orig + amount * detail;
+        return static_cast<std::uint8_t>(
+            clamp_value(value, 0.0f, 255.0f) + 0.5f);
+    };
+
+    r = apply_channel(static_cast<float>(r), blur_r);
+    g = apply_channel(static_cast<float>(g), blur_g);
+    b = apply_channel(static_cast<float>(b), blur_b);
+}
 
 static PF_Err
 FilterImage8 (
@@ -480,10 +610,22 @@ FilterImage8 (
     auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
     const QuantInfo *qi = &ref->qi;
 
-    // 入力色をローカルコピー
-    A_u_char r = inP->red;
-    A_u_char g = inP->green;
-    A_u_char b = inP->blue;
+    std::uint8_t r = 0;
+    std::uint8_t g = 0;
+    std::uint8_t b = 0;
+    SampleSharpenedRGB<PF_Pixel8>(
+        ref,
+        inP,
+        xL,
+        yL,
+        r,
+        g,
+        b,
+        [](const PF_Pixel8* p, std::uint8_t& out_r, std::uint8_t& out_g, std::uint8_t& out_b) {
+            out_r = p->red;
+            out_g = p->green;
+            out_b = p->blue;
+        });
 
     // 前処理
     apply_preprocess(qi, r, g, b);
@@ -521,9 +663,25 @@ FilterImageBGRA_8u (
     MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
     MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
 
-    A_u_char r = inBGRA_8uP->red;
-    A_u_char g = inBGRA_8uP->green;
-    A_u_char b = inBGRA_8uP->blue;
+    std::uint8_t r = 0;
+    std::uint8_t g = 0;
+    std::uint8_t b = 0;
+    SampleSharpenedRGB<MSX1PQ_Pixel_BGRA_8u>(
+        ref,
+        inBGRA_8uP,
+        xL,
+        yL,
+        r,
+        g,
+        b,
+        [](const MSX1PQ_Pixel_BGRA_8u* p,
+           std::uint8_t& out_r,
+           std::uint8_t& out_g,
+           std::uint8_t& out_b) {
+            out_r = p->red;
+            out_g = p->green;
+            out_b = p->blue;
+        });
 
     apply_preprocess(qi, r, g, b);
 
@@ -670,6 +828,8 @@ Render (
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
     qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
+    qi.pre_sharpen   = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_PRE_SHARPEN]->u.fs_d.value));
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
@@ -695,6 +855,24 @@ Render (
             refcon.qi = qi;
             refcon.global_x0 = output->extent_hint.left;
             refcon.global_y0 = output->extent_hint.top;
+
+            const PF_EffectWorld* input_world = reinterpret_cast<PF_EffectWorld*>(
+                &params[MSX1PQ_PARAM_INPUT]->u.ld);
+            const MSX1PQ_Pixel_BGRA_8u* input_base = nullptr;
+            std::ptrdiff_t input_pitch  = 0;
+            A_long src_w = 0;
+            A_long src_h = 0;
+            SetupInputLayout(
+                input_world,
+                input_world ? input_world->extent_hint : output->extent_hint,
+                input_base,
+                input_pitch,
+                src_w,
+                src_h);
+            refcon.input_base  = input_base;
+            refcon.input_pitch = input_pitch;
+            refcon.width       = src_w;
+            refcon.height      = src_h;
 
             err = RunIteratePass(
                       in_dataP,
@@ -732,6 +910,24 @@ Render (
         refcon.qi = qi;
         refcon.global_x0 = output->extent_hint.left;
         refcon.global_y0 = output->extent_hint.top;
+
+        const PF_EffectWorld* input_world = reinterpret_cast<PF_EffectWorld*>(
+            &params[MSX1PQ_PARAM_INPUT]->u.ld);
+        const PF_Pixel8* input_base = nullptr;
+        std::ptrdiff_t input_pitch  = 0;
+        A_long src_w = 0;
+        A_long src_h = 0;
+        SetupInputLayout(
+            input_world,
+            input_world ? input_world->extent_hint : output->extent_hint,
+            input_base,
+            input_pitch,
+            src_w,
+            src_h);
+        refcon.input_base  = input_base;
+        refcon.input_pitch = input_pitch;
+        refcon.width       = src_w;
+        refcon.height      = src_h;
 
         err = RunIteratePass(
                   in_dataP,
@@ -1012,6 +1208,13 @@ SmartRender(
         qi.pre_hue = static_cast<float>(param.u.fs_d.value);
         ERR( CheckinParam(in_dataP, param) );
 
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_SHARPEN,
+                param) );
+        qi.pre_sharpen = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
         // USE_DARK_DITHER
         ERR( CheckoutParam(
                 in_dataP,
@@ -1104,6 +1307,22 @@ SmartRender(
             refcon.qi = qi;
             refcon.global_x0 = aligned_rect.left;
             refcon.global_y0 = aligned_rect.top;
+
+            const PF_Pixel8* input_base = nullptr;
+            std::ptrdiff_t input_pitch  = 0;
+            A_long src_w = 0;
+            A_long src_h = 0;
+            SetupInputLayout(
+                &input_roi,
+                input_roi.extent_hint,
+                input_base,
+                input_pitch,
+                src_w,
+                src_h);
+            refcon.input_base  = input_base;
+            refcon.input_pitch = input_pitch;
+            refcon.width       = src_w;
+            refcon.height      = src_h;
 
             // ----------------------------------------------------------------
             // 1パス目：通常量子化

@@ -41,6 +41,7 @@ struct CliOptions {
     float pre_gamma{1.0f};
     float pre_highlight{1.0f};
     float pre_hue{0.0f};
+    float pre_sharpen{0.0f};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
     std::vector<float> pre_lut3d_data;
@@ -120,6 +121,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --pre-sharpen <0-1>          処理前にシャープ処理を適用 (デフォルト: 0.0)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
@@ -152,6 +154,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --pre-sharpen <0-1>          Apply sharpening before processing (default: 0.0)\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
@@ -258,6 +261,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_highlight = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
+        } else if (arg == "--pre-sharpen") {
+            opts.pre_sharpen = std::stof(require_value(arg));
         } else if (arg == "--pre-lut") {
             opts.pre_lut_path = require_value(arg);
         } else if (arg == "--force" || arg == "-f") {
@@ -332,18 +337,78 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_gamma       = opts.pre_gamma;
     qi.pre_highlight   = opts.pre_highlight;
     qi.pre_hue         = opts.pre_hue;
+    qi.pre_sharpen     = MSX1PQCore::clamp01f(opts.pre_sharpen);
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
     qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
     qi.pre_lut3d_size  = opts.pre_lut3d_size;
 
+    const std::vector<RgbaPixel>* source_pixels = &pixels;
+    std::vector<RgbaPixel> sharpened;
+    if (opts.use_preprocess && qi.pre_sharpen > 0.0f) {
+        sharpened.resize(pixels.size());
+        const float amount = qi.pre_sharpen;
+
+        auto clamp_channel = [](float v) -> std::uint8_t {
+            return static_cast<std::uint8_t>(
+                MSX1PQCore::clamp_value(v, 0.0f, 255.0f) + 0.5f);
+        };
+
+        auto sample = [&](int sx, int sy) -> const RgbaPixel& {
+            int clamped_x = MSX1PQCore::clamp_value(
+                sx, 0, static_cast<int>(width) - 1);
+            int clamped_y = MSX1PQCore::clamp_value(
+                sy, 0, static_cast<int>(height) - 1);
+            return pixels[static_cast<std::size_t>(clamped_y) * width + clamped_x];
+        };
+
+        const int weights[3][3] = {
+            {1, 2, 1},
+            {2, 4, 2},
+            {1, 2, 1}
+        };
+
+        for (unsigned y = 0; y < height; ++y) {
+            for (unsigned x = 0; x < width; ++x) {
+                float blur_r = 0.0f;
+                float blur_g = 0.0f;
+                float blur_b = 0.0f;
+
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const RgbaPixel& p = sample(static_cast<int>(x) + dx,
+                                                    static_cast<int>(y) + dy);
+                        int w = weights[dy + 1][dx + 1];
+                        blur_r += static_cast<float>(p.red) * static_cast<float>(w);
+                        blur_g += static_cast<float>(p.green) * static_cast<float>(w);
+                        blur_b += static_cast<float>(p.blue) * static_cast<float>(w);
+                    }
+                }
+
+                blur_r *= 1.0f / 16.0f;
+                blur_g *= 1.0f / 16.0f;
+                blur_b *= 1.0f / 16.0f;
+
+                const RgbaPixel& src = pixels[y * width + x];
+                RgbaPixel& dst = sharpened[y * width + x];
+                dst.alpha = src.alpha;
+                dst.red   = clamp_channel(static_cast<float>(src.red) + amount * (static_cast<float>(src.red) - blur_r));
+                dst.green = clamp_channel(static_cast<float>(src.green) + amount * (static_cast<float>(src.green) - blur_g));
+                dst.blue  = clamp_channel(static_cast<float>(src.blue) + amount * (static_cast<float>(src.blue) - blur_b));
+            }
+        }
+
+        source_pixels = &sharpened;
+    }
+
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
             RgbaPixel& px = pixels[y * width + x];
-            std::uint8_t r = px.red;
-            std::uint8_t g = px.green;
-            std::uint8_t b = px.blue;
+            const RgbaPixel& src_px = (*source_pixels)[y * width + x];
+            std::uint8_t r = src_px.red;
+            std::uint8_t g = src_px.green;
+            std::uint8_t b = src_px.blue;
 
             if (opts.use_preprocess) {
                 MSX1PQCore::apply_preprocess(&qi, r, g, b);

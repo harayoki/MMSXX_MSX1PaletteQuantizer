@@ -43,6 +43,7 @@ struct QuantInfo {
     float pre_gamma{};
     float pre_highlight{};
     float pre_hue{};
+    float pre_sharpen{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
     const std::uint8_t* pre_lut{nullptr};
