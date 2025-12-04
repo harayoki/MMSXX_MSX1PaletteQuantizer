@@ -26,16 +26,16 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 | オプション | 説明 |
 | --- | --- |
-| `--input, -i <ファイル|ディレクトリ>` | 入力 PNG ファイルまたはディレクトリを指定。 |
+| `--input, -i <ファイル\|ディレクトリ>` | 入力 PNG ファイルまたはディレクトリを指定。 |
 | `--output, -o <ディレクトリ>` | 変換結果を保存するディレクトリを指定。 |
 | `--output-prefix <文字列>` | 出力ファイル名の先頭に付与する接頭辞。 |
 | `--out-sc5` | PNG ではなく SCREEN5 の `.sc5` バイナリで書き出し。 |
 | `--out-sc2` | SCREEN2 の `.sc2` バイナリで書き出し（`--8dot` が `none` 以外であることが必要）。 |
-| `--color-system <msx1|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
+| `--color-system <msx1\|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
 | `--no-preprocess` | すべての前処理（ポスタリゼーション、彩度、ガンマ、ハイライト、色相、LUT）をスキップ。 |
-| `--8dot <none|fast|basic|best|best-attr|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
+| `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
 | `--distance <rgb|hsb>` | パレット選択時の色距離計算方法。既定: `hsb`。 |
 | `--weight-h`, `--weight-s`, `--weight-b` | `hsb` 距離使用時の色相・彩度・明度の重み（0〜1）。 |
 | `--pre-posterize <0-255>` | 前処理でポスタリゼーションを適用（既定: `16`。`<=1` で無効）。 |
