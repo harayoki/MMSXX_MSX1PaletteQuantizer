@@ -398,6 +398,169 @@ ParamsSetup (
         MSX1PQ_PARAM_USE_PALETTE_COLOR
     );
 
+    // Palette control topic
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC(
+        "MSX1 パレット制御",
+        MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POPUP(
+        "色の利用モード",
+        3,
+        1,
+        "全色使用|選択した色のみ使用|選択した色を禁止",
+        MSX1PQ_PARAM_COLOR_USAGE_MODE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️1: 色1",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_1
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️2: 色2",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_2
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️3: 色3",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_3
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️4: 色4",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_4
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️5: 色5",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_5
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️6: 色6",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_6
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️7: 色7",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_7
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️8: 色8",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_8
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️9: 色9",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_9
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️10: 色10",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_10
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️11: 色11",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_11
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️12: 色12",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_12
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️13: 色13",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_13
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️14: 色14",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_14
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️15: 色15",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_15
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "◽️16: 色16",
+        "",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_16
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
