@@ -129,6 +129,13 @@ float clamp01f(float v)
     return v;
 }
 
+static float clamp_sharp_amount(float v)
+{
+    if (v < 0.0f) return 0.0f;
+    if (v > 10.0f) return 10.0f;
+    return v;
+}
+
 void apply_sharpness_rgb(float amount,
                          std::uint8_t black_threshold,
                          std::uint8_t blurred_r,
@@ -138,7 +145,7 @@ void apply_sharpness_rgb(float amount,
                          std::uint8_t &g8,
                          std::uint8_t &b8)
 {
-    amount = clamp01f(amount);
+    amount = clamp_sharp_amount(amount);
     if (amount <= 0.0f) {
         return;
     }

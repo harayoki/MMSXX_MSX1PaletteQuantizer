@@ -99,7 +99,7 @@ void apply_sharpness_3x3(
         return;
     }
 
-    amount = clamp01f(amount);
+    amount = clamp_value(amount, 0.0f, 10.0f);
     if (amount <= 0.0f) {
         return;
     }

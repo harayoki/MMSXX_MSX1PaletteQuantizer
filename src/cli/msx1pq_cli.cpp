@@ -124,7 +124,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
-                  << "  --pre-sharpness <0-1>        処理前にシャープネスを適用 (デフォルト: 0.0)\n"
+                  << "  --pre-sharpness <0-10>       処理前にシャープネスを適用 (デフォルト: 0.0)\n"
                   << "  --pre-sharpness-threshold <0-255> 黒付近のみシャープ化する際のしきい値 (デフォルト: 48)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
@@ -159,7 +159,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
-              << "  --pre-sharpness <0-1>        Apply sharpening before processing (default: 0.0)\n"
+              << "  --pre-sharpness <0-10>       Apply sharpening before processing (default: 0.0)\n"
               << "  --pre-sharpness-threshold <0-255> Threshold for black-only sharpening (default: 48)\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
@@ -347,7 +347,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_gamma       = opts.pre_gamma;
     qi.pre_highlight   = opts.pre_highlight;
     qi.pre_hue         = opts.pre_hue;
-    qi.pre_sharpness   = MSX1PQCore::clamp01f(opts.pre_sharpness);
+    qi.pre_sharpness   = MSX1PQCore::clamp_value(opts.pre_sharpness, 0.0f, 10.0f);
     qi.pre_sharpness_black_threshold = MSX1PQCore::clamp_value(
         opts.pre_sharpness_black_threshold,
         0,

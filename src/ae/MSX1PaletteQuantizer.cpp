@@ -364,9 +364,9 @@ ParamsSetup (
     PF_ADD_FLOAT_SLIDERX(
         "Pre 6: Sharpness",
         0,
-        1,
+        10,
         0,
-        1,
+        10,
         0,
         2,
         0,
@@ -779,7 +779,10 @@ Render (
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
     qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
-    qi.pre_sharpness = clamp01f(static_cast<float>(params[MSX1PQ_PARAM_PRE_SHARPNESS]->u.fs_d.value));
+    qi.pre_sharpness = clamp_value(
+        static_cast<float>(params[MSX1PQ_PARAM_PRE_SHARPNESS]->u.fs_d.value),
+        0.0f,
+        10.0f);
     qi.pre_sharpness_black_threshold = clamp_value(
         static_cast<int>(params[MSX1PQ_PARAM_PRE_SHARP_THRESHOLD]->u.fs_d.value + 0.5f),
         0,
