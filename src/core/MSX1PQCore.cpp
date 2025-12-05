@@ -142,6 +142,13 @@ void apply_sharpness_rgb(float amount,
         return;
     }
 
+    // 黒付近のみシャープ化を適用する（黒辺の強調用）
+    constexpr std::uint8_t kBlackThreshold = 48; // 0x30 相当の暗さまで
+    const std::uint8_t blurred_max = std::max({blurred_r, blurred_g, blurred_b});
+    if (blurred_max > kBlackThreshold) {
+        return;
+    }
+
     auto sharpen = [amount](std::uint8_t src, std::uint8_t blurred) {
         float delta = static_cast<float>(src) - static_cast<float>(blurred);
         float value = static_cast<float>(src) + delta * (1.5f * amount);
