@@ -45,7 +45,6 @@ struct QuantInfo {
     float pre_highlight{};
     float pre_hue{};
     float pre_sharpness{};
-    int   pre_sharpness_black_threshold{48};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
     const std::uint8_t* pre_lut{nullptr};
@@ -78,7 +77,6 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &b8);
 
 void apply_sharpness_rgb(float amount,
-                         std::uint8_t black_threshold,
                          std::uint8_t blurred_r,
                          std::uint8_t blurred_g,
                          std::uint8_t blurred_b,
@@ -92,8 +90,7 @@ void apply_sharpness_3x3(
     std::ptrdiff_t row_pitch,
     std::int32_t width,
     std::int32_t height,
-    float amount,
-    std::uint8_t black_threshold)
+    float amount)
 {
     if (!data || width <= 0 || height <= 0) {
         return;
@@ -141,7 +138,6 @@ void apply_sharpness_3x3(
 
             PixelT& dst = row[x];
             apply_sharpness_rgb(amount,
-                                black_threshold,
                                 blurred_r, blurred_g, blurred_b,
                                 dst.red, dst.green, dst.blue);
         }
