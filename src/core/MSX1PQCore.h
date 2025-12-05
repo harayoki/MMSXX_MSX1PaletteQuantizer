@@ -48,6 +48,7 @@ struct QuantInfo {
     int   pre_sharpness_black_threshold{48};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
+    std::uint16_t disabled_basic_colors_mask{};
     const std::uint8_t* pre_lut{nullptr};
     const float* pre_lut3d{nullptr};
     int pre_lut3d_size{0};
@@ -149,14 +150,21 @@ void apply_sharpness_3x3(
 }
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        int num_colors);
+                        int num_colors,
+                        std::uint16_t disabled_mask,
+                        std::int32_t x,
+                        std::int32_t y);
 
 int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
-                        int num_colors);
+                        int num_colors,
+                        std::uint16_t disabled_mask,
+                        std::int32_t x,
+                        std::int32_t y);
 
 int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                      float w_h, float w_s, float w_b);
+                      float w_h, float w_s, float w_b,
+                      std::uint16_t disabled_mask);
 
 const MSX1PQ::QuantColor* get_basic_palette(int color_system);
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -119,6 +120,33 @@ bool  g_palette_hsb_initialized = false;
 float g_palette_h[256];
 float g_palette_s[256];
 float g_palette_b[256];
+
+int first_enabled_basic_color(std::uint16_t disabled_mask)
+{
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        if ((disabled_mask & (static_cast<std::uint16_t>(1) << i)) == 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+bool is_palette_disabled_for_position(int palette_idx,
+                                      std::uint16_t disabled_mask,
+                                      std::int32_t x,
+                                      std::int32_t y)
+{
+    if (disabled_mask == 0) {
+        return false;
+    }
+
+    const int basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
+    if (basic_idx < 0 || basic_idx >= MSX1PQ::kNumBasicColors) {
+        return false;
+    }
+
+    return (disabled_mask & (static_cast<std::uint16_t>(1) << basic_idx)) != 0;
+}
 
 } // namespace
 
@@ -489,12 +517,19 @@ void ensure_palette_hsb_initialized()
 }
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        int num_colors)
+                        int num_colors,
+                        std::uint16_t disabled_mask,
+                        std::int32_t x,
+                        std::int32_t y)
 {
-    int   best_idx = 0;
+    int   best_idx = -1;
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
+        if (is_palette_disabled_for_position(i, disabled_mask, x, y)) {
+            continue;
+        }
+
         const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[i];
         float dr = static_cast<float>(r8) - static_cast<float>(qc.r);
         float dg = static_cast<float>(g8) - static_cast<float>(qc.g);
@@ -506,22 +541,29 @@ int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_idx = i;
         }
     }
-    return best_idx;
+    return (best_idx >= 0) ? best_idx : 0;
 }
 
 int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
-                        int num_colors)
+                        int num_colors,
+                        std::uint16_t disabled_mask,
+                        std::int32_t x,
+                        std::int32_t y)
 {
     ensure_palette_hsb_initialized();
 
     float h, s, v;
     rgb_to_hsb(r8, g8, b8, h, s, v);
 
-    int   best_idx = 0;
+    int   best_idx = -1;
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
+        if (is_palette_disabled_for_position(i, disabled_mask, x, y)) {
+            continue;
+        }
+
         float dh = h - g_palette_h[i];
         float ds = s - g_palette_s[i];
         float dv = v - g_palette_b[i];
@@ -535,11 +577,12 @@ int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_idx = i;
         }
     }
-    return best_idx;
+    return (best_idx >= 0) ? best_idx : 0;
 }
 
 int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                      float w_h, float w_s, float w_b)
+                      float w_h, float w_s, float w_b,
+                      std::uint16_t disabled_mask)
 {
     ensure_palette_hsb_initialized();
 
@@ -550,10 +593,14 @@ int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     float ws = clamp01f(w_s);
     float wb = clamp01f(w_b);
 
-    int   best_idx = 0;
+    int   best_idx = -1;
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
+        if ((disabled_mask & (static_cast<std::uint16_t>(1) << i)) != 0) {
+            continue;
+        }
+
         float dh = std::fabs(h - g_palette_h[i]);
         if (dh > 0.5f) {
             dh = 1.0f - dh;
@@ -571,7 +618,34 @@ int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_idx = i;
         }
     }
-    return best_idx;
+    return (best_idx >= 0) ? best_idx : first_enabled_basic_color(disabled_mask);
+}
+
+int nearest_basic_rgb_masked(std::uint8_t r,
+                             std::uint8_t g,
+                             std::uint8_t b,
+                             std::uint16_t disabled_mask)
+{
+    int  best_idx  = -1;
+    long best_dist = LONG_MAX;
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
+        if ((disabled_mask & (static_cast<std::uint16_t>(1) << i)) != 0) {
+            continue;
+        }
+
+        long dr = (long)r - (long)MSX1PQ::kQuantColors[i].r;
+        long dg = (long)g - (long)MSX1PQ::kQuantColors[i].g;
+        long db = (long)b - (long)MSX1PQ::kQuantColors[i].b;
+
+        long dist = dr * dr + dg * dg + db * db;
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_idx  = i;
+        }
+    }
+
+    return (best_idx >= 0) ? best_idx : first_enabled_basic_color(disabled_mask);
 }
 
 const MSX1PQ::QuantColor* get_basic_palette(int color_system)
@@ -612,8 +686,8 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
 {
     if (qi.use_palette_color) {
         const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors)
-            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors, qi.disabled_basic_colors_mask, x, y)
+            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors, qi.disabled_basic_colors_mask, x, y);
 
         return MSX1PQ::kQuantColors[palette_idx];
     }
@@ -627,14 +701,19 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
         }
 
         const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors)
-            : nearest_palette_rgb(r, g, b, num_colors);
+            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors, qi.disabled_basic_colors_mask, x, y)
+            : nearest_palette_rgb(r, g, b, num_colors, qi.disabled_basic_colors_mask, x, y);
 
         basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
     } else if (qi.use_hsb) {
-        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
+        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, qi.disabled_basic_colors_mask);
     } else {
-        basic_idx = MSX1PQ::nearest_basic_rgb(r, g, b);
+        basic_idx = nearest_basic_rgb_masked(r, g, b, qi.disabled_basic_colors_mask);
+    }
+
+    if (basic_idx < 0 || basic_idx >= MSX1PQ::kNumBasicColors ||
+        (qi.disabled_basic_colors_mask & (static_cast<std::uint16_t>(1) << basic_idx)) != 0) {
+        basic_idx = first_enabled_basic_color(qi.disabled_basic_colors_mask);
     }
 
     const MSX1PQ::QuantColor* palette =

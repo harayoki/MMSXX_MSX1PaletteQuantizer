@@ -35,6 +35,7 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | `--color-system <msx1\|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
+| `--disable-colors <1-15 list>` | Skip specific MSX1 basic colors (comma-separated or ranges such as `1,5,8-10`). |
 | `--no-preprocess` | Skip all preprocessing tweaks (posterize, saturation, gamma, highlight, hue, LUT). |
 | `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
 | `--distance <rgb|hsb>` | Color distance mode for palette selection. Default: `hsb`. |

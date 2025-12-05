@@ -398,6 +398,22 @@ ParamsSetup (
         MSX1PQ_PARAM_USE_PALETTE_COLOR
     );
 
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        AEFX_CLR_STRUCT(def);
+        def.flags |= PF_ParamFlag_CANNOT_TIME_VARY;
+
+        char label[32];
+        std::snprintf(label, sizeof(label), "Disable color %d", i + 1);
+
+        PF_ADD_CHECKBOX(
+            label,
+            "Off",
+            FALSE,
+            0,
+            MSX1PQ_PARAM_DISABLE_COLOR1 + i
+        );
+    }
+
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
@@ -501,6 +517,18 @@ struct FilterRefcon {
     std::ptrdiff_t input_row_pitch{}; // in pixels
     PF_Rect input_rect{};
 };
+
+static std::uint16_t build_disabled_mask(PF_ParamDef* params[])
+{
+    std::uint16_t mask = 0;
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const int param_id = MSX1PQ_PARAM_DISABLE_COLOR1 + i;
+        if (params[param_id]->u.bd.value != 0) {
+            mask |= static_cast<std::uint16_t>(1u << i);
+        }
+    }
+    return mask;
+}
 
 static PF_Err
 FilterImage8 (
@@ -789,6 +817,7 @@ Render (
         255);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
+    qi.disabled_basic_colors_mask = build_disabled_mask(params);
 
     // 画像サイズ（extent_hint ベース）
     const A_long width  = output->extent_hint.right  - output->extent_hint.left;

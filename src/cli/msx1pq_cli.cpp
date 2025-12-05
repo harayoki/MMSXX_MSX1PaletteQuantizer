@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -44,6 +45,7 @@ struct CliOptions {
     float pre_hue{0.0f};
     float pre_sharpness{0.0f};
     int pre_sharpness_black_threshold{48};
+    std::uint16_t disabled_basic_colors_mask{0};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
     std::vector<float> pre_lut3d_data;
@@ -115,6 +117,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
+                  << "  --disable-colors <1-15の番号[,範囲]>  特定のMSX1基本色を不使用にする (例: 1,5,8-10)\n"
                   << "  --no-preprocess             前処理をスキップ\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
@@ -150,6 +153,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
+              << "  --disable-colors <1-15 numbers[,ranges]>  Disable specific MSX1 basic colors (e.g., 1,5,8-10)\n"
               << "  --no-preprocess             Skip preprocessing adjustments\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
@@ -188,6 +192,50 @@ std::optional<int> parse_8dot_mode(const std::string& value) {
         return it->second;
     }
     return std::nullopt;
+}
+
+std::uint16_t parse_disable_colors(const std::string& value) {
+    std::uint16_t mask = 0;
+    std::stringstream ss(value);
+    std::string token;
+
+    auto parse_number = [](const std::string& text) -> int {
+        std::string trimmed = text;
+        trimmed.erase(std::remove_if(trimmed.begin(), trimmed.end(), [](unsigned char c) {
+            return std::isspace(c) != 0;
+        }), trimmed.end());
+        if (trimmed.empty()) {
+            throw std::runtime_error("Empty color id");
+        }
+        int v = std::stoi(trimmed);
+        if (v < 1 || v > MSX1PQ::kNumBasicColors) {
+            throw std::runtime_error("Color id out of range (1-15): " + trimmed);
+        }
+        return v;
+    };
+
+    while (std::getline(ss, token, ',')) {
+        if (token.empty()) {
+            continue;
+        }
+
+        auto dash = token.find('-');
+        if (dash == std::string::npos) {
+            int v = parse_number(token);
+            mask |= static_cast<std::uint16_t>(1u << (v - 1));
+        } else {
+            int start = parse_number(token.substr(0, dash));
+            int end   = parse_number(token.substr(dash + 1));
+            if (start > end) {
+                std::swap(start, end);
+            }
+            for (int v = start; v <= end; ++v) {
+                mask |= static_cast<std::uint16_t>(1u << (v - 1));
+            }
+        }
+    }
+
+    return mask;
 }
 
 bool parse_arguments(int argc, char** argv, CliOptions& opts) {
@@ -236,6 +284,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.use_dark_dither = true;
         } else if (arg == "--no-dark-dither") {
             opts.use_dark_dither = false;
+        } else if (arg == "--disable-colors") {
+            opts.disabled_basic_colors_mask = parse_disable_colors(require_value(arg));
         } else if (arg == "--no-preprocess") {
             opts.use_preprocess = false;
         } else if (arg == "--8dot") {
@@ -354,6 +404,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         255);
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
+    qi.disabled_basic_colors_mask = opts.disabled_basic_colors_mask;
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
     qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
     qi.pre_lut3d_size  = opts.pre_lut3d_size;
