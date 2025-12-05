@@ -130,6 +130,7 @@ float clamp01f(float v)
 }
 
 void apply_sharpness_rgb(float amount,
+                         std::uint8_t black_threshold,
                          std::uint8_t blurred_r,
                          std::uint8_t blurred_g,
                          std::uint8_t blurred_b,
@@ -143,9 +144,8 @@ void apply_sharpness_rgb(float amount,
     }
 
     // 黒付近のみシャープ化を適用する（黒辺の強調用）
-    constexpr std::uint8_t kBlackThreshold = 48; // 0x30 相当の暗さまで
     const std::uint8_t blurred_max = std::max({blurred_r, blurred_g, blurred_b});
-    if (blurred_max > kBlackThreshold) {
+    if (blurred_max > black_threshold) {
         return;
     }
 

@@ -375,6 +375,20 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 6b: Sharp threshold",
+        0,
+        255,
+        0,
+        255,
+        48,
+        0,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_SHARP_THRESHOLD
+    );
+
+    AEFX_CLR_STRUCT(def);
     def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
     PF_ADD_CHECKBOX(
         "92-color",
@@ -537,6 +551,7 @@ FilterImage8 (
         std::uint8_t blurred_b = static_cast<std::uint8_t>(sum_b / 9);
 
         MSX1PQCore::apply_sharpness_rgb(qi->pre_sharpness,
+                                        static_cast<std::uint8_t>(qi->pre_sharpness_black_threshold),
                                         blurred_r, blurred_g, blurred_b,
                                         r, g, b);
     }
@@ -614,6 +629,7 @@ FilterImageBGRA_8u (
         std::uint8_t blurred_b = static_cast<std::uint8_t>(sum_b / 9);
 
         MSX1PQCore::apply_sharpness_rgb(qi->pre_sharpness,
+                                        static_cast<std::uint8_t>(qi->pre_sharpness_black_threshold),
                                         blurred_r, blurred_g, blurred_b,
                                         r, g, b);
     }
@@ -764,6 +780,10 @@ Render (
     qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
     qi.pre_sharpness = clamp01f(static_cast<float>(params[MSX1PQ_PARAM_PRE_SHARPNESS]->u.fs_d.value));
+    qi.pre_sharpness_black_threshold = clamp_value(
+        static_cast<int>(params[MSX1PQ_PARAM_PRE_SHARP_THRESHOLD]->u.fs_d.value + 0.5f),
+        0,
+        255);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
@@ -1151,6 +1171,16 @@ SmartRender(
                 MSX1PQ_PARAM_PRE_SHARPNESS,
                 param) );
         qi.pre_sharpness = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_SHARP_THRESHOLD,
+                param) );
+        qi.pre_sharpness_black_threshold = clamp_value(
+            static_cast<int>(param.u.fs_d.value + 0.5f),
+            0,
+            255);
         ERR( CheckinParam(in_dataP, param) );
 
         // USE_DARK_DITHER
