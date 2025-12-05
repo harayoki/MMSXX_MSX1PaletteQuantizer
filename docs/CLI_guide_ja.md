@@ -28,7 +28,8 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | --- | --- |
 | `--input, -i <ファイル\|ディレクトリ>` | 入力 PNG ファイルまたはディレクトリを指定。 |
 | `--output, -o <ディレクトリ>` | 変換結果を保存するディレクトリを指定。 |
-| `--output-prefix <文字列>` | 出力ファイル名の先頭に付与する接頭辞。 |
+| `--out-prefix <文字列>` | 出力ファイル名の先頭に付与する接頭辞。 |
+| `--out-suffix <文字列>` | 出力ファイル名の末尾（拡張子の前）に付与する接尾辞。 |
 | `--out-sc5` | PNG ではなく SCREEN5 の `.sc5` バイナリで書き出し。 |
 | `--out-sc2` | SCREEN2 の `.sc2` バイナリで書き出し（`--8dot` が `none` 以外であることが必要）。 |
 | `--color-system <msx1\|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
