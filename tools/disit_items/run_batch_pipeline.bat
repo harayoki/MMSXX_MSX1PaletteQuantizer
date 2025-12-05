@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 
 :: Batch runner for chaining multiple msx1pq_cli.exe calls against a dropped file or folder.
 if "%~1"=="" (
-    echo gp@: ﾌバb`t@Cﾉフ@CﾜはフH_[hbOhbvﾄ�B
-    echo ﾍフ@CitH_jﾉ対て異なＱ[^[ 10 msxGtFNgKpﾜ�B
+    echo 使用法: このバッチファイルにファイルまたはフォルダーをドラッグ＆ドロップしてください。
+    echo 入力ファイル（フォルダ）に対して異なるパラメーターで 10回の msxエフェクトを適用します。
     echo Usage: Drag and drop a file or folder onto this batch file.
     echo The script will run 10 msx1pq_cli.exe commands with varied parameters against the input.
     exit /b 1
