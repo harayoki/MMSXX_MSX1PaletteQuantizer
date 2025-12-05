@@ -38,6 +38,7 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_PRE_HIGHLIGHT,   // Highlight correction
     MSX1PQ_PARAM_PRE_HUE,         // Hue rotation
     MSX1PQ_PARAM_PRE_SHARPNESS,   // Sharpen amount
+    MSX1PQ_PARAM_PRE_SHARP_THRESHOLD, // Black-level threshold for sharpening
 
     MSX1PQ_PARAM_USE_PALETTE_COLOR, // Use 92-color palette directly
 

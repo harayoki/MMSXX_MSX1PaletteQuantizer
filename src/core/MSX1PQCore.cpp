@@ -129,7 +129,15 @@ float clamp01f(float v)
     return v;
 }
 
+static float clamp_sharp_amount(float v)
+{
+    if (v < 0.0f) return 0.0f;
+    if (v > 10.0f) return 10.0f;
+    return v;
+}
+
 void apply_sharpness_rgb(float amount,
+                         std::uint8_t black_threshold,
                          std::uint8_t blurred_r,
                          std::uint8_t blurred_g,
                          std::uint8_t blurred_b,
@@ -137,8 +145,14 @@ void apply_sharpness_rgb(float amount,
                          std::uint8_t &g8,
                          std::uint8_t &b8)
 {
-    amount = clamp01f(amount);
+    amount = clamp_sharp_amount(amount);
     if (amount <= 0.0f) {
+        return;
+    }
+
+    // 黒付近のみシャープ化を適用する（黒辺の強調用）
+    const std::uint8_t blurred_max = std::max({blurred_r, blurred_g, blurred_b});
+    if (blurred_max > black_threshold) {
         return;
     }
 
