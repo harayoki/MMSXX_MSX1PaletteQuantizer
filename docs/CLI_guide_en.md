@@ -28,7 +28,8 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | --- | --- |
 | `--input, -i <file\|dir>` | Input PNG file or directory to process. |
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
-| `--output-prefix <string>` | Prefix added to every output file name. |
+| `--out-prefix <string>` | Prefix added to every output file name. |
+| `--out-suffix <string>` | Suffix inserted before the output file extension. |
 | `--out-sc5` | Save as SCREEN5 `.sc5` binary instead of PNG. |
 | `--out-sc2` | Save as SCREEN2 `.sc2` binary instead of PNG (requires `--8dot` set to anything other than `none`). |
 | `--color-system <msx1\|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
