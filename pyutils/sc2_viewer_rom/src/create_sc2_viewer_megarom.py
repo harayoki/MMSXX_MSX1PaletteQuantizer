@@ -92,45 +92,31 @@ def build_boot_code(background_color: int, border_color: int) -> bytes:
         (CHGCLR >> 8) & 0xFF,
     ]
 
-    #   3E 01        ld a,1
-    #   32 00 70     ld (7000h),a
     boot_code_arr += [
-        0x3E,
-        0x01,
+        0x3E, 1,  # LD A, 01H         ; Aレジスタにバンク番号「0」をセット
+        0x21, 0x00, 0x70,  # LD   (7000H), A     ; 7000Hへ書き込み -> ページ2がバンク1に切り替わる
 
-        0x32,
-        0x00,
-        0x70,
+        # ページ1自身も明示的にバンク0に設定しておく
+        0x3E, 0,  # LD A, 00H         ; Aレジスタを0にする
+        0x21, 0x00, 0x60,  # LD   (6000H), A     ; 6000Hへ書き込み -> ページ1をバンク0に固定
     ]
 
-    #   CD 38 01     call RSLREG        ; 現在のスロットレジスタ取得
-    #   0F           rrca               ; ページ2のスロット番号を下位ビットへ
-    #   0F           rrca
-    #   0F           rrca
-    #   0F           rrca
-    #   E6 03        and 00000011b
-    #   21 00 C0     ld   hl,0C000h     ; ページ3のアドレス
-    #   CD 24 00     call ENASLT        ; ページ3をROMスロットに切替
+    #   スロット有効化
     boot_code_arr += [
-        0xCD,
-        RSLREG & 0xFF,
-        (RSLREG >> 8) & 0xFF,
-
-        0x0F,
-        0x0F,
-        0x0F,
-        0x0F,
-
-        0xE6,
-        0x03,
-
-        0x21,
-        0x00,
-        0xC0,
-
-        0xCD,
-        ENASLT & 0xFF,
-        (ENASLT >> 8) & 0xFF,
+        0xCD,0x38,0x01,  # CALL RSLREG
+        0x0F,  # RRCA
+        0x0F,  # RRCA
+        0xE6,0x03,  # AND 3
+        0x4F,  # LD C,A
+        0x21,0xC1,0x0F,  # LD HL,0FCC1H
+        0x09,  # ADD A,L
+        0x6F,  # LD L,A
+        0x7E,  # LD A,(HL)
+        0xE6,0x80,  # AND 80H
+        0xB1,  # OR C
+        0x4F,  # LD C,A
+        0x3E,0x80,  # LD A,80H
+        0xCD,0x24,0x00,  # CALL ENASLT
     ]
 
     #   21 00 80     ld   hl,8000h       ; source in bank1
