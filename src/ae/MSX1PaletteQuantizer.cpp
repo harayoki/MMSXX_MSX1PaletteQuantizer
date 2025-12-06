@@ -372,23 +372,14 @@ ParamsSetup (
     // Palette control topic
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC(
-        "MSX1 パレット制御",
+        "MSX1 Palette Control",
         MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
     );
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP(
-        "色の利用モード",
-        3,
-        1,
-        "全色使用|選択した色のみ使用|選択した色を禁止",
-        MSX1PQ_PARAM_COLOR_USAGE_MODE
-    );
-
-    AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*1: 色1",
-        "",
+        "*1: Black",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_1
@@ -396,8 +387,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*2: 色2",
-        "",
+        "*2: Medium Green",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_2
@@ -405,8 +396,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*3: 色3",
-        "",
+        "*3: Light Green",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_3
@@ -414,8 +405,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*4: 色4",
-        "",
+        "*4: Dark Blue",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_4
@@ -423,8 +414,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*5: 色5",
-        "",
+        "*5: Light Blue",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_5
@@ -432,8 +423,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*6: 色6",
-        "",
+        "*6: Dark Red",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_6
@@ -441,8 +432,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*7: 色7",
-        "",
+        "*7: Cyan",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_7
@@ -450,8 +441,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*8: 色8",
-        "",
+        "*8: Medium Red",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_8
@@ -459,8 +450,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*9: 色9",
-        "",
+        "*9: Light Red",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_9
@@ -468,8 +459,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*10: 色10",
-        "",
+        "*10: Dark Yellow",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_10
@@ -477,8 +468,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*11: 色11",
-        "",
+        "*11: Light Yellow",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_11
@@ -486,8 +477,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*12: 色12",
-        "",
+        "*12: Dark Green",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_12
@@ -495,8 +486,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*13: 色13",
-        "",
+        "*13: Magenta",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_13
@@ -504,8 +495,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*14: 色14",
-        "",
+        "*14: Gray",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_14
@@ -513,20 +504,11 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "*15: 色15",
-        "",
+        "*15: White",
+        "Disable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_15
-    );
-
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_CHECKBOX(
-        "*16: 色16",
-        "",
-        TRUE,
-        0,
-        MSX1PQ_PARAM_COLOR_FLAG_16
     );
 
     AEFX_CLR_STRUCT(def);

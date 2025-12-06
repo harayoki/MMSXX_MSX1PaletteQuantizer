@@ -126,7 +126,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
-                  << "  --disable-colors <番号|範囲>... パレット番号(0-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
+                  << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
@@ -160,7 +160,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
-              << "  --disable-colors <index|range>... Disable palette indices (0-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
+              << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
@@ -200,8 +200,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         auto dash_pos = token.find('-');
         if (dash_pos == std::string::npos) {
             int idx = std::stoi(token);
-            if (idx < 0 || idx >= static_cast<int>(opts.palette_enabled.size())) {
-                throw std::runtime_error("Color index for disable-colors must be between 0 and 15");
+            if (idx < 1 || idx >= static_cast<int>(opts.palette_enabled.size())) {
+                throw std::runtime_error("Color index for disable-colors must be between 1 and 15");
             }
             opts.palette_enabled[static_cast<size_t>(idx)] = false;
             return;
@@ -218,8 +218,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         if (start > end) {
             throw std::runtime_error("disable-colors range start must be <= end");
         }
-        if (start < 0 || end >= static_cast<int>(opts.palette_enabled.size())) {
-            throw std::runtime_error("Color index for disable-colors must be between 0 and 15");
+        if (start < 1 || end >= static_cast<int>(opts.palette_enabled.size())) {
+            throw std::runtime_error("Color index for disable-colors must be between 1 and 15");
         }
 
         for (int idx = start; idx <= end; ++idx) {
