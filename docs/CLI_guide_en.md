@@ -26,16 +26,17 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 
 | Option | Description |
 | --- | --- |
-| `--input, -i <file|dir>` | Input PNG file or directory to process. |
+| `--input, -i <file\|dir>` | Input PNG file or directory to process. |
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
-| `--output-prefix <string>` | Prefix added to every output file name. |
+| `--out-prefix <string>` | Prefix added to every output file name. |
+| `--out-suffix <string>` | Suffix inserted before the output file extension. |
 | `--out-sc5` | Save as SCREEN5 `.sc5` binary instead of PNG. |
 | `--out-sc2` | Save as SCREEN2 `.sc2` binary instead of PNG (requires `--8dot` set to anything other than `none`). |
-| `--color-system <msx1|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
+| `--color-system <msx1\|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
 | `--no-preprocess` | Skip all preprocessing tweaks (posterize, saturation, gamma, highlight, hue, LUT). |
-| `--8dot <none|fast|basic|best|best-attr|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
+| `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
 | `--distance <rgb|hsb>` | Color distance mode for palette selection. Default: `hsb`. |
 | `--weight-h`, `--weight-s`, `--weight-b` | Weights (0–1) for hue, saturation, and brightness when `hsb` distance is selected. |
 | `--pre-posterize <0-255>` | Posterize before processing (default: `16`; skipped if `<=1`). |

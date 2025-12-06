@@ -22,6 +22,7 @@ struct CliOptions {
     fs::path input_path;
     fs::path output_dir;
     std::string output_prefix;
+    std::string output_suffix;
     bool force{false};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
@@ -105,7 +106,8 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
-                  << "  --output-prefix <文字列>        出力ファイル名の先頭に付与する接頭辞を指定\n"
+                  << "  --out-prefix <文字列>          出力ファイル名の先頭に付与する接頭辞を指定\n"
+                  << "  --out-suffix <文字列>          出力ファイル名の末尾（拡張子の前）に付与する接尾辞を指定\n"
                   << "  --out-sc5                   PNGではなくSCREEN5 .sc5バイナリで出力\n"
                   << "  --out-sc2                   SCREEN2 .sc2バイナリで出力\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
@@ -133,12 +135,13 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
     std::cout << "MMSXX - MSX1 Palette Quantizer\n"
               << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
               << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
-              << "Options:\n"
-              << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
-              << "  --output, -o <dir>           Specify the output directory\n"
-              << "  --output-prefix <string>     Prefix to add to output file names\n"
-              << "  --out-sc5                   Output SCREEN5 .sc5 binary instead of PNG\n"
-              << "  --out-sc2                   Output SCREEN2 .sc2 binary\n"
+                  << "Options:\n"
+                  << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
+                  << "  --output, -o <dir>           Specify the output directory\n"
+                  << "  --out-prefix <string>       Prefix to add to output file names\n"
+                  << "  --out-suffix <string>       Suffix to add before the output file extension\n"
+                  << "  --out-sc5                   Output SCREEN5 .sc5 binary instead of PNG\n"
+                  << "  --out-sc2                   Output SCREEN2 .sc2 binary\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
@@ -200,8 +203,10 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.input_path = require_value(arg);
         } else if (arg == "--output" || arg == "-o") {
             opts.output_dir = require_value(arg);
-        } else if (arg == "--output-prefix") {
+        } else if (arg == "--out-prefix") {
             opts.output_prefix = require_value(arg);
+        } else if (arg == "--out-suffix") {
+            opts.output_suffix = require_value(arg);
         } else if (arg == "--out-sc5") {
             opts.out_sc5 = true;
         } else if (arg == "--out-sc2") {
@@ -709,6 +714,11 @@ int main(int argc, char** argv) {
         fs::path output_filename = input.filename();
         if (!opts.output_prefix.empty()) {
             output_filename = fs::path(opts.output_prefix + output_filename.string());
+        }
+        if (!opts.output_suffix.empty()) {
+            const auto ext = output_filename.extension();
+            const std::string stem_with_suffix = output_filename.stem().string() + opts.output_suffix;
+            output_filename = fs::path(stem_with_suffix + ext.string());
         }
 
         if (opts.out_sc5) {
