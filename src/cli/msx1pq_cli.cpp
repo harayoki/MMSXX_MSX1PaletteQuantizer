@@ -25,6 +25,10 @@ struct CliOptions {
     std::string output_suffix;
     bool force{false};
 
+    std::array<bool, 16> palette_enabled{{
+        true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true}};
+
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
     bool out_sc5{false};
     bool out_sc2{false};
@@ -122,6 +126,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --disable-colors <番号|範囲>... パレット番号(0-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
@@ -155,6 +160,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --disable-colors <index|range>... Disable palette indices (0-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
@@ -189,6 +195,37 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         print_usage(argv[0], detect_usage_language_from_env());
         return false;
     }
+
+    auto parse_disable_token = [&](const std::string& token) {
+        auto dash_pos = token.find('-');
+        if (dash_pos == std::string::npos) {
+            int idx = std::stoi(token);
+            if (idx < 0 || idx >= static_cast<int>(opts.palette_enabled.size())) {
+                throw std::runtime_error("Color index for disable-colors must be between 0 and 15");
+            }
+            opts.palette_enabled[static_cast<size_t>(idx)] = false;
+            return;
+        }
+
+        std::string start_str = token.substr(0, dash_pos);
+        std::string end_str = token.substr(dash_pos + 1);
+        if (start_str.empty() || end_str.empty()) {
+            throw std::runtime_error("Invalid range format for disable-colors. Use start-end, e.g., 3-5");
+        }
+
+        int start = std::stoi(start_str);
+        int end = std::stoi(end_str);
+        if (start > end) {
+            throw std::runtime_error("disable-colors range start must be <= end");
+        }
+        if (start < 0 || end >= static_cast<int>(opts.palette_enabled.size())) {
+            throw std::runtime_error("Color index for disable-colors must be between 0 and 15");
+        }
+
+        for (int idx = start; idx <= end; ++idx) {
+            opts.palette_enabled[static_cast<size_t>(idx)] = false;
+        }
+    };
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -247,6 +284,25 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             } else {
                 throw std::runtime_error("Unknown distance mode: " + value);
             }
+        } else if (arg == "--disable-colors") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing values for --disable-colors");
+            }
+
+            int parsed_count = 0;
+            while (i + 1 < argc) {
+                const std::string next = argv[i + 1];
+                if (!next.empty() && next[0] == '-') {
+                    break;
+                }
+                ++i;
+                parse_disable_token(next);
+                ++parsed_count;
+            }
+
+            if (parsed_count == 0) {
+                throw std::runtime_error("Missing values for --disable-colors");
+            }
         } else if (arg == "--weight-h") {
             opts.weight_h = std::stof(require_value(arg));
         } else if (arg == "--weight-s") {
@@ -286,6 +342,12 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
 
     if (opts.input_path.empty() || opts.output_dir.empty()) {
         throw std::runtime_error("--input and --output are required");
+    }
+
+    const int enabled_colors = static_cast<int>(std::count(
+        opts.palette_enabled.begin(), opts.palette_enabled.end(), true));
+    if (enabled_colors < 2) {
+        throw std::runtime_error("At least two palette colors must remain enabled");
     }
 
     if (opts.out_sc2 && opts.out_sc5) {
