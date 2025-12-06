@@ -18,6 +18,9 @@ HEADER_SIGNATURE = b"AB"
 CHGMOD = 0x005F
 CHGCLR = 0x0062
 LDIRVM = 0x005C
+FORCLR = 0xF3E9
+BAKCLR = 0xF3EA
+BDRCLR = 0xF3EB
 
 
 def int_from_str(value: str) -> int:
@@ -43,12 +46,21 @@ def build_loader(
         0xCD,
         CHGMOD & 0xFF,
         (CHGMOD >> 8) & 0xFF,  # CALL CHGMOD
-        0x06,
-        0x0F,  # LD B,0Fh        ; foreground (white)
-        0x0E,
-        background_color & 0x0F,  # LD C,background
-        0x16,
-        border_color & 0x0F,  # LD D,border
+        0x3E,
+        0x0F,  # LD A,0Fh        ; foreground (white)
+        0x32,
+        FORCLR & 0xFF,
+        (FORCLR >> 8) & 0xFF,  # LD (FORCLR),A
+        0x3E,
+        background_color & 0x0F,  # LD A,background
+        0x32,
+        BAKCLR & 0xFF,
+        (BAKCLR >> 8) & 0xFF,  # LD (BAKCLR),A
+        0x3E,
+        border_color & 0x0F,  # LD A,border
+        0x32,
+        BDRCLR & 0xFF,
+        (BDRCLR >> 8) & 0xFF,  # LD (BDRCLR),A
         0xCD,
         CHGCLR & 0xFF,
         (CHGCLR >> 8) & 0xFF,  # CALL CHGCLR
