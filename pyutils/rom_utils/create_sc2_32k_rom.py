@@ -81,9 +81,9 @@ def build_rom(sc2_bytes: bytes, fill_byte: int) -> bytes:
 
     # Header
     rom[0:2] = HEADER_SIGNATURE
-    rom[2] = 0x00
-    rom[3] = entry_address & 0xFF
-    rom[4] = (entry_address >> 8) & 0xFF
+    rom[2] = entry_address & 0xFF
+    rom[3] = (entry_address >> 8) & 0xFF
+    rom[4] = 0x00
     rom[5] = 0x00
     rom[6] = 0x00
 
