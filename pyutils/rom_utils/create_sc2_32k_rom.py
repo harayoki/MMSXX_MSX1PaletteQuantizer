@@ -12,6 +12,7 @@ from typing import Iterable
 
 ROM_SIZE = 0x8000  # 32 KiB
 VRAM_SIZE = 0x4000  # SCREEN2 VRAM dump size (16 KiB)
+SC2_HEADER_SIZE = 7  # Optional header seen in some .sc2 files
 ROM_BASE = 0x4000
 HEADER_SIGNATURE = b"AB"
 CHGMOD = 0x005F
@@ -57,14 +58,23 @@ def build_loader(sc2_address: int, image_length: int) -> bytes:
     return bytes(code)
 
 
+def sanitize_sc2_data(sc2_bytes: bytes) -> bytes:
+    """Strip optional 7-byte .sc2 header if present and validate size."""
+
+    if len(sc2_bytes) == VRAM_SIZE + SC2_HEADER_SIZE:
+        return sc2_bytes[SC2_HEADER_SIZE:]
+
+    if len(sc2_bytes) > VRAM_SIZE:
+        raise ValueError("SC2 data must be 16 KiB or smaller")
+
+    return sc2_bytes
+
+
 def build_rom(sc2_bytes: bytes, fill_byte: int) -> bytes:
     """Build a 32 KiB ROM image that displays the provided SC2 data."""
 
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must fit in a byte")
-
-    if len(sc2_bytes) > VRAM_SIZE:
-        raise ValueError("SC2 data must be 16 KiB or smaller")
 
     rom = bytearray([fill_byte] * ROM_SIZE)
 
@@ -127,7 +137,7 @@ def main() -> None:
     if not sc2_path.is_file():
         raise SystemExit(f"Input file not found: {sc2_path}")
 
-    sc2_bytes = sc2_path.read_bytes()
+    sc2_bytes = sanitize_sc2_data(sc2_path.read_bytes())
     rom_bytes = build_rom(sc2_bytes, args.fill_byte)
 
     output_path = args.output

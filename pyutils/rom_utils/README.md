@@ -6,6 +6,9 @@
 (non-MegaROM). The generated ROM switches to SCREEN2, copies the bundled image to
 VRAM, and waits so the picture remains on screen.
 
+The script accepts `.sc2` files that include the optional 7-byte header; the
+header is stripped automatically before building the ROM.
+
 ### Usage
 
 ```bash
