@@ -19,7 +19,9 @@ SCREEN = 0x8
 
 CHGCLR = 0x0062
 CHGMOD = 0x005F
+ENASLT = 0x0024
 LDIRVM = 0x005C
+RSLREG = 0x0138
 FORCLR = 0xF3E9
 BAKCLR = 0xF3EA
 BDRCLR = 0xF3EB
@@ -99,6 +101,36 @@ def build_boot_code(background_color: int, border_color: int) -> bytes:
         0x32,
         0x00,
         0x70,
+    ]
+
+    #   CD 38 01     call RSLREG        ; 現在のスロットレジスタ取得
+    #   0F           rrca               ; ページ2のスロット番号を下位ビットへ
+    #   0F           rrca
+    #   0F           rrca
+    #   0F           rrca
+    #   E6 03        and 00000011b
+    #   21 00 C0     ld   hl,0C000h     ; ページ3のアドレス
+    #   CD 24 00     call ENASLT        ; ページ3をROMスロットに切替
+    boot_code_arr += [
+        0xCD,
+        RSLREG & 0xFF,
+        (RSLREG >> 8) & 0xFF,
+
+        0x0F,
+        0x0F,
+        0x0F,
+        0x0F,
+
+        0xE6,
+        0x03,
+
+        0x21,
+        0x00,
+        0xC0,
+
+        0xCD,
+        ENASLT & 0xFF,
+        (ENASLT >> 8) & 0xFF,
     ]
 
     #   21 00 80     ld   hl,8000h       ; source in bank1
