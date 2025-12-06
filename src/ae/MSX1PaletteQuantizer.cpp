@@ -387,7 +387,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️1: 色1",
+        "*1: 色1",
         "",
         TRUE,
         0,
@@ -396,7 +396,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️2: 色2",
+        "*2: 色2",
         "",
         TRUE,
         0,
@@ -405,7 +405,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️3: 色3",
+        "*3: 色3",
         "",
         TRUE,
         0,
@@ -414,7 +414,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️4: 色4",
+        "*4: 色4",
         "",
         TRUE,
         0,
@@ -423,7 +423,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️5: 色5",
+        "*5: 色5",
         "",
         TRUE,
         0,
@@ -432,7 +432,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️6: 色6",
+        "*6: 色6",
         "",
         TRUE,
         0,
@@ -441,7 +441,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️7: 色7",
+        "*7: 色7",
         "",
         TRUE,
         0,
@@ -450,7 +450,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️8: 色8",
+        "*8: 色8",
         "",
         TRUE,
         0,
@@ -459,7 +459,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️9: 色9",
+        "*9: 色9",
         "",
         TRUE,
         0,
@@ -468,7 +468,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️10: 色10",
+        "*10: 色10",
         "",
         TRUE,
         0,
@@ -477,7 +477,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️11: 色11",
+        "*11: 色11",
         "",
         TRUE,
         0,
@@ -486,7 +486,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️12: 色12",
+        "*12: 色12",
         "",
         TRUE,
         0,
@@ -495,7 +495,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️13: 色13",
+        "*13: 色13",
         "",
         TRUE,
         0,
@@ -504,7 +504,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️14: 色14",
+        "*14: 色14",
         "",
         TRUE,
         0,
@@ -513,7 +513,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️15: 色15",
+        "*15: 色15",
         "",
         TRUE,
         0,
@@ -522,7 +522,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
-        "◽️16: 色16",
+        "*16: 色16",
         "",
         TRUE,
         0,
