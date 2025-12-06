@@ -43,7 +43,6 @@ struct CliOptions {
     float pre_highlight{1.0f};
     float pre_hue{0.0f};
     float pre_sharpness{0.0f};
-    int pre_sharpness_black_threshold{48};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
     std::vector<float> pre_lut3d_data;
@@ -125,7 +124,6 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
                   << "  --pre-sharpness <0-10>       処理前にシャープネスを適用 (デフォルト: 0.0)\n"
-                  << "  --pre-sharpness-threshold <0-255> 黒付近のみシャープ化する際のしきい値 (デフォルト: 48)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
@@ -160,7 +158,6 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
               << "  --pre-sharpness <0-10>       Apply sharpening before processing (default: 0.0)\n"
-              << "  --pre-sharpness-threshold <0-255> Threshold for black-only sharpening (default: 48)\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
@@ -271,8 +268,6 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_hue = std::stof(require_value(arg));
         } else if (arg == "--pre-sharpness") {
             opts.pre_sharpness = std::stof(require_value(arg));
-        } else if (arg == "--pre-sharpness-threshold") {
-            opts.pre_sharpness_black_threshold = std::stoi(require_value(arg));
         } else if (arg == "--pre-lut") {
             opts.pre_lut_path = require_value(arg);
         } else if (arg == "--force" || arg == "-f") {
@@ -348,10 +343,6 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_highlight   = opts.pre_highlight;
     qi.pre_hue         = opts.pre_hue;
     qi.pre_sharpness   = MSX1PQCore::clamp_value(opts.pre_sharpness, 0.0f, 10.0f);
-    qi.pre_sharpness_black_threshold = MSX1PQCore::clamp_value(
-        opts.pre_sharpness_black_threshold,
-        0,
-        255);
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
@@ -367,8 +358,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
             pitch,
             w,
             h,
-            qi.pre_sharpness,
-            static_cast<std::uint8_t>(qi.pre_sharpness_black_threshold));
+            qi.pre_sharpness);
     }
 
     for (unsigned y = 0; y < height; ++y) {
