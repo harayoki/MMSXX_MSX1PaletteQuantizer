@@ -16,6 +16,7 @@ SC2_HEADER_SIZE = 7  # Optional header seen in some .sc2 files
 ROM_BASE = 0x4000
 HEADER_SIGNATURE = b"AB"
 CHGMOD = 0x005F
+CHGCLR = 0x0062
 LDIRVM = 0x005C
 
 
@@ -25,7 +26,9 @@ def int_from_str(value: str) -> int:
     return int(value, 0)
 
 
-def build_loader(sc2_address: int, image_length: int) -> bytes:
+def build_loader(
+    sc2_address: int, image_length: int, background_color: int, border_color: int
+) -> bytes:
     """Build the Z80 loader that switches to SCREEN2 and copies VRAM data.
 
     The loader uses BIOS calls only, so it works on plain MSX1 hardware.
@@ -40,6 +43,15 @@ def build_loader(sc2_address: int, image_length: int) -> bytes:
         0xCD,
         CHGMOD & 0xFF,
         (CHGMOD >> 8) & 0xFF,  # CALL CHGMOD
+        0x06,
+        0x0F,  # LD B,0Fh        ; foreground (white)
+        0x0E,
+        background_color & 0x0F,  # LD C,background
+        0x16,
+        border_color & 0x0F,  # LD D,border
+        0xCD,
+        CHGCLR & 0xFF,
+        (CHGCLR >> 8) & 0xFF,  # CALL CHGCLR
         0x21,
         sc2_address & 0xFF,
         (sc2_address >> 8) & 0xFF,  # LD HL,sc2_data
@@ -70,11 +82,17 @@ def sanitize_sc2_data(sc2_bytes: bytes) -> bytes:
     return sc2_bytes
 
 
-def build_rom(sc2_bytes: bytes, fill_byte: int) -> bytes:
+def build_rom(
+    sc2_bytes: bytes, fill_byte: int, background_color: int, border_color: int
+) -> bytes:
     """Build a 32 KiB ROM image that displays the provided SC2 data."""
 
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must fit in a byte")
+    if not 0 <= background_color <= 0x0F:
+        raise ValueError("background_color must be between 0 and 15")
+    if not 0 <= border_color <= 0x0F:
+        raise ValueError("border_color must be between 0 and 15")
 
     rom = bytearray([fill_byte] * ROM_SIZE)
 
@@ -83,11 +101,11 @@ def build_rom(sc2_bytes: bytes, fill_byte: int) -> bytes:
 
     # Reserve space for the loader and align SC2 data on a 16-byte boundary.
     # The header occupies the first 16 bytes, so we start code at 0x4010.
-    loader_placeholder = build_loader(0, 0)
+    loader_placeholder = build_loader(0, 0, background_color, border_color)
     data_offset = (code_offset + len(loader_placeholder) + 0x0F) & ~0x0F
     sc2_address = ROM_BASE + data_offset
 
-    loader = build_loader(sc2_address, len(sc2_bytes))
+    loader = build_loader(sc2_address, len(sc2_bytes), background_color, border_color)
 
     # Header
     rom[0:2] = HEADER_SIGNATURE
@@ -127,6 +145,18 @@ def parse_args() -> argparse.Namespace:
         default=0xFF,
         help="Byte value used to pad unused ROM space (default: 0xFF)",
     )
+    parser.add_argument(
+        "--background-color",
+        type=int_from_str,
+        default=0,
+        help="SCREEN2 background color value (0-15, default: 0)",
+    )
+    parser.add_argument(
+        "--border-color",
+        type=int_from_str,
+        default=0,
+        help="VDP border color value (0-15, default: 0)",
+    )
     return parser.parse_args()
 
 
@@ -138,7 +168,9 @@ def main() -> None:
         raise SystemExit(f"Input file not found: {sc2_path}")
 
     sc2_bytes = sanitize_sc2_data(sc2_path.read_bytes())
-    rom_bytes = build_rom(sc2_bytes, args.fill_byte)
+    rom_bytes = build_rom(
+        sc2_bytes, args.fill_byte, args.background_color, args.border_color
+    )
 
     output_path = args.output
     if output_path is None:
