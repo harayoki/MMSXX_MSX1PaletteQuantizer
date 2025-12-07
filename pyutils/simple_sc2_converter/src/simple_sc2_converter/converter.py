@@ -359,16 +359,38 @@ def _strip_header(sc2_bytes: bytes) -> bytes:
     )
 
 
+def _encode_msx1_palette() -> bytes:
+    """Encode the fixed MSX1 palette into MSX2 palette table format.
+
+    The V9938 palette expects two bytes per color entry:
+
+    * Byte 0: ``0BBB0RRR`` (lower 3 bits = red, upper 3 bits = blue)
+    * Byte 1: ``0GGG0000`` (lower 3 bits = green)
+
+    MSX1 colors are expressed in 0–255 RGB values. They are quantized to the
+    3-bit-per-channel format by scaling into the 0–7 range.
+    """
+
+    def to_3bit(component: int) -> int:
+        return max(0, min(7, round(component * 7 / 255)))
+
+    palette_bytes = bytearray()
+    for r, g, b in BASIC_COLORS_MSX1:
+        r3, g3, b3 = to_3bit(r), to_3bit(g), to_3bit(b)
+        palette_bytes.append((b3 << 4) | r3)
+        palette_bytes.append(g3)
+    return bytes(palette_bytes)
+
+
 def sc2_to_sc4(sc2_bytes: bytes, include_header: bool = True) -> bytes:
     """Convert SC2 VRAM bytes into SC4 VRAM bytes.
 
-    The current converter generates Screen 2 VRAM. Screen 4 uses a compatible
-    16 KiB layout for pattern, name, and color tables, so this function mainly
-    normalizes the input to raw VRAM and rewrites the optional header for an
-    ``.sc4`` payload.
-
-    Warning: SC4 binary layout differs from SC2; this placeholder implementation
-    will be corrected in a future update.
+    Screen 2 and Screen 4 share the same pattern generator, pattern color, and
+    sprite pattern locations, but Screen 4 relocates sprite attributes and
+    inserts a dedicated color palette table plus a sprite color table. This
+    converter remaps each region according to the layout at the top of this
+    module, injects the fixed MSX1 palette into the color palette table, and
+    clears unused gaps to keep the VRAM image deterministic.
     """
 
     vram = _strip_header(sc2_bytes)
@@ -376,11 +398,29 @@ def sc2_to_sc4(sc2_bytes: bytes, include_header: bool = True) -> bytes:
     if len(vram) != VRAM_SIZE:
         raise ConversionError("SC2 VRAM payload must be exactly 16 KiB.")
 
+    sc4 = bytearray(VRAM_SIZE)
+
+    # Pattern generator and name table align between SC2 and SC4.
+    sc4[0x0000:0x1800] = vram[0x0000:0x1800]
+    sc4[0x1800:0x1B00] = vram[0x1800:0x1B00]
+
+    # Insert MSX1 palette in the SC4 color palette table slot.
+    sc4[0x1B80:0x1BA0] = _encode_msx1_palette()
+
+    # Sprite attributes shift from 0x1B00 in SC2 to 0x1E00 in SC4. The gap
+    # between 0x1B00–0x1B7F and 0x1C00–0x1DFF is left zeroed (sprite colors are
+    # not part of SC2 and default to color 0 here).
+    sc4[0x1E00:0x1E80] = vram[0x1B00:0x1B80]
+
+    # Pattern colors and sprite patterns are aligned across both modes.
+    sc4[0x2000:0x3800] = vram[0x2000:0x3800]
+    sc4[0x3800:0x4000] = vram[0x3800:0x4000]
+
     if not include_header:
-        return bytes(vram)
+        return bytes(sc4)
 
     header = bytes([0xFE, 0x00, 0x00, 0xFF, 0x3F, 0x00, 0x00])
-    return header + bytes(vram)
+    return header + bytes(sc4)
 
 
 def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
