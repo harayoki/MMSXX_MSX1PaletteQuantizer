@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from .converter import (
+from simple_sc2_converter.converter import (
     BASIC_COLORS_MSX1,
     BASIC_COLORS_MSX2,
     ConvertOptions,

@@ -4,4 +4,5 @@ msxdisk @ file:///pyutils/msxdisk
 Nuitka==2.8.9
 ordered-set==4.1.0
 pillow==12.0.0
+simple-sc2-converter @ file:///F:/git/MMSXX_MSX1PaletteQuantizer/pyutils/simple_sc2_converter
 zstandard==0.25.0
