@@ -12,8 +12,10 @@ from .converter import (
     PaletteOverride,
     convert_image_to_sc2,
     convert_image_to_sc4,
+    convert_image_to_msx_png,
     convert_png_to_sc2,
     convert_png_to_sc4,
+    convert_png_to_msx_png,
     format_palette_text,
 )
 
@@ -24,7 +26,9 @@ __all__ = [
     "PaletteOverride",
     "convert_image_to_sc2",
     "convert_image_to_sc4",
+    "convert_image_to_msx_png",
     "convert_png_to_sc2",
     "convert_png_to_sc4",
+    "convert_png_to_msx_png",
     "format_palette_text",
 ]

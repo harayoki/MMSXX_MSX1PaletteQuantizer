@@ -2,7 +2,7 @@
 
 (!) This tool is under development and may change in future releases.
 
-A small utility to convert PNG images into MSX Screen 2 (`.sc2`) or Screen 4 (`.sc4`) binaries.
+A small utility to convert PNG images into MSX Screen 2 (`.sc2`) or Screen 4 (`.sc4`) binaries, or to create palette-constrained PNG previews.
 
 The converter applies a lightweight line-based dithering step before the 8-dot two-color reduction,
 favoring palette pairs that mix cleanly and avoiding harsh complementary blends. Dithering can be
@@ -39,7 +39,7 @@ Key options:
 
 * `-o`, `--output-dir`: Required output directory.
 * `--prefix`, `--suffix`: Customize the output filename.
-* `--format {sc2,sc4}`: Choose Screen 2 (`.sc2`) or Screen 4 (`.sc4`) output.
+* `--format {png,sc2,sc4}`: Choose palette-constrained PNG, Screen 2 (`.sc2`), or Screen 4 (`.sc4`) output.
 * `--no-header`: Write raw 16 KiB VRAM data without the BSAVE header.
 * `--force`, `-f`: Overwrite existing files without prompting.
 * `--oversize {error,shrink,crop}`: How to handle inputs larger than `256x192` (default: `error`).
@@ -58,13 +58,21 @@ Tip: Adjusting gamma, contrast, or hue *before* MSX1 mapping can better align th
 ## Module usage
 
 ```python
-from simple_sc2_converter import ConvertOptions, convert_png_to_sc2, convert_png_to_sc4
+from simple_sc2_converter import (
+    ConvertOptions,
+    convert_png_to_msx_png,
+    convert_png_to_sc2,
+    convert_png_to_sc4,
+)
 
 opts = ConvertOptions()
 opts.oversize_mode = "shrink"
 sc2_bytes = convert_png_to_sc2("input.png", options=opts)
 
 sc4_bytes = convert_png_to_sc4("input.png", options=opts)
+
+preview_png = convert_png_to_msx_png("input.png", options=opts)
+preview_png.save("output.png")
 
 with open("output.sc2", "wb") as f:
     f.write(sc2_bytes)
