@@ -52,6 +52,7 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | `--help-ja`, `--help-en` | Force Japanese or English help text. |
 
 Notes:
+- SCREEN5 (`--out-sc5`) output is slated for deprecation.
 - `--out-sc2` and `--out-sc5` cannot be used together. When either is specified the output extension changes to `.sc2` or `.sc5` respectively.
 - SCREEN2 export needs the 8-dot/2-color processing enabled (any `--8dot` value other than `none`).
 

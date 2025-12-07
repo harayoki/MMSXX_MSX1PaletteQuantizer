@@ -6,6 +6,8 @@ from typing import List, Set
 import tempfile
 import msxdisk
 
+# NOTE: SCREEN5 対応は廃止予定で、今後は SCREEN4 対応を追加する予定です。
+
 autoexec_bas = """10 RUN "V.BAS"
 """
 
@@ -113,7 +115,10 @@ def get_file_list(input_paths: List[str], target_exts: Set[str]) -> List[Path]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a MSX disk image with sc2/sc5 viewer.")
+        description=(
+            "Create a MSX disk image with sc2/sc5 viewer. "
+            "SCREEN5 support is slated for removal; SCREEN4 support is planned."
+        ))
     parser.add_argument(
         "input_files_or_dirs",
         nargs="+",
@@ -139,7 +144,7 @@ def main():
     input_paths = args.input_files_or_dirs
     flatten_paths = get_file_list(input_paths, target_exts={'sc2', 'sc5'})
     if not flatten_paths:
-        sys.exit("No .sc2 files found in the provided paths.")
+        sys.exit("No .sc2 or .sc5 files found in the provided paths.")
 
     temp_dir = tempfile.TemporaryDirectory()
     for i, p in enumerate(flatten_paths):

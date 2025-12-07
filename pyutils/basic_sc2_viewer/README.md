@@ -3,10 +3,14 @@
 The image (sc2 file) provided as an argument is stored in a disk image and can be displayed using an auto-start BASIC program.
 The disk image can be opened with an emulator. To write it to a 2DD disk, additional tools are required.
 
+Note: SCREEN5 output is planned for deprecation. Future builds are expected to support SCREEN4 instead.
+
 ---
  
 引数で与えられた画像（sc2ファイル）をdiskイメージに格納し、自動起動するBASICプログラムで画像を表示できるようにします。
 diskイメージはエミュレータで開くことができます。実際に2DDディスクに書き込むには、別途ツールが必要です。
+
+注記: 現在はSCREEN5出力にも対応していますが、これは廃止予定です。今後は SCREEN4 対応の追加を予定しています。
 
 
 usage:

@@ -52,6 +52,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 | `--help-ja`, `--help-en` | 日本語または英語のヘルプを強制表示。 |
 
 補足:
+- SCREEN5（`--out-sc5`）出力は廃止予定です。
 - `--out-sc2` と `--out-sc5` は同時に指定できません。指定した場合、出力拡張子はそれぞれ `.sc2` / `.sc5` に変わります。
 - SCREEN2 での出力には 8dot 2色処理が必須です（`--8dot none` 以外の指定が必要）。
 
