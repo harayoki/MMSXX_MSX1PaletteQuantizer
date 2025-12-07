@@ -160,7 +160,7 @@ def build_loader(
             (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
         )
 
-    code: Iterable[int] = (
+    code: list[int] = [
         # Set SCREEN2
         0x3E,
         0x02,  # LD A,2
@@ -188,18 +188,30 @@ def build_loader(
         (CHGCLR >> 8) & 0xFF,  # CALL CHGCLR
         # Show image0 initially
         *copy_image_block(image0_addr),
-        # Main loop
-        0xCD,
-        CHGET & 0xFF,
-        (CHGET >> 8) & 0xFF,  # CALL CHGET (wait for key)
-        *copy_image_block(image1_addr),
-        0xCD,
-        CHGET & 0xFF,
-        (CHGET >> 8) & 0xFF,  # CALL CHGET (wait for key)
-        *copy_image_block(image0_addr),
-        0x18,
-        0xB0,  # JR -80 (= back to first CHGET)
+    ]
+
+    loop_start = len(code)
+
+    code.extend(
+        (
+            # Main loop
+            0xCD,
+            CHGET & 0xFF,
+            (CHGET >> 8) & 0xFF,  # CALL CHGET (wait for key)
+            *copy_image_block(image1_addr),
+            0xCD,
+            CHGET & 0xFF,
+            (CHGET >> 8) & 0xFF,  # CALL CHGET (wait for key)
+            *copy_image_block(image0_addr),
+        )
     )
+
+    # JR back to the first CHGET in the loop
+    jr_displacement = loop_start - (len(code) + 2)
+    if not -128 <= jr_displacement <= 127:
+        raise ValueError("Loop jump displacement out of JR range")
+
+    code.extend((0x18, jr_displacement & 0xFF))
 
     return bytes(code)
 
