@@ -88,9 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--eightdot",
-        choices=["FAST", "BASIC", "BEST"],
+        choices=["FAST", "BASIC", "BEST", "NONE"],
         default="BASIC",
-        help="Strategy for limiting each 8-pixel block to two colors",
+        help=(
+            "Strategy for limiting each 8-pixel block to two colors; "
+            "use NONE to disable the limit (PNG output only)"
+        ),
     )
     parser.add_argument(
         "--no-dither",
@@ -243,6 +246,11 @@ def main(argv: list[str] | None = None) -> int:
         options.hue_shift = args.hue_shift
         options.posterize_colors = args.posterize_colors
         options.enable_dither = not args.no_dither
+
+        if options.eightdot_mode.upper() == "NONE" and args.format != "png":
+            raise ConversionError(
+                "--eightdot NONE disables the 8-pixel two-color limit and only supports PNG output"
+            )
 
         inputs = iter_pngs(args.inputs)
         output_dir = Path(args.output_dir)
