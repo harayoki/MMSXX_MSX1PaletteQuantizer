@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "msxasmhelper"
+version = "0.1.0"
+description = "Lightweight helper to convert common MSX Z80 mnemonics into machine bytes"
+readme = "README.md"
+authors = [{ name = "MSX Tools" }]
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["MSX", "Z80", "assembler", "bytecode"]
+dependencies = []
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/pyutils/msxasmhelper"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/msxasmhelper"]
