@@ -90,6 +90,7 @@ class ConvertOptions:
     contrast: float | None = None
     hue_shift: float | None = None
     posterize_colors: int | None = None
+    enable_dither: bool = True
 
 
 class ConversionError(Exception):
@@ -230,6 +231,299 @@ def nearest_palette_index(rgb: Color, palette: Sequence[Color]) -> int:
             best_idx = i
             best_dist = dist
     return best_idx
+
+
+def _squared_distance(a: Color, b: Color) -> int:
+    return sum((x - y) ** 2 for x, y in zip(a, b))
+
+
+SPARSE_DITHER_PATTERN = (
+    (True, False),
+    (False, False),
+    (False, True),
+    (False, False),
+)
+
+# Palette index reference (1-based for users, 0-based in code):
+#  0: Black
+#  1: Medium Green
+#  2: Light Green
+#  3: Dark Blue
+#  4: Light Blue
+#  5: Dark Red
+#  6: Cyan
+#  7: Medium Red
+#  8: Light Red
+#  9: Dark Yellow
+# 10: Light Yellow
+# 11: Dark Green
+# 12: Magenta
+# 13: Gray
+# 14: White
+
+DITHER_PAIR_ALLOWLIST_HALF: List[List[bool]] = [
+    # 0: Black — always allowed with every partner
+    [
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+    ],
+    # 1: Medium Green
+    [
+        True,  # with Light Green
+        True,  # with Dark Blue
+        True,  # with Light Blue
+        False,  # with Dark Red — complementary clash
+        True,  # with Cyan
+        False,  # with Medium Red — complementary clash
+        False,  # with Light Red — complementary clash
+        True,  # with Dark Yellow
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        False,  # with Magenta — complementary clash
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 2: Light Green
+    [
+        True,  # with Dark Blue
+        True,  # with Light Blue
+        False,  # with Dark Red — complementary clash
+        True,  # with Cyan
+        False,  # with Medium Red — complementary clash
+        False,  # with Light Red — complementary clash
+        True,  # with Dark Yellow
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        False,  # with Magenta — complementary clash
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 3: Dark Blue
+    [
+        True,  # with Light Blue
+        True,  # with Dark Red
+        True,  # with Cyan
+        True,  # with Medium Red
+        False,  # with Light Red — blue/orange contrast
+        False,  # with Dark Yellow — complementary contrast
+        False,  # with Light Yellow — complementary contrast
+        True,  # with Dark Green
+        True,  # with Magenta
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 4: Light Blue
+    [
+        True,  # with Dark Red
+        True,  # with Cyan
+        False,  # with Medium Red — blue/orange contrast
+        False,  # with Light Red — blue/orange contrast
+        False,  # with Dark Yellow — complementary contrast
+        False,  # with Light Yellow — complementary contrast
+        True,  # with Dark Green
+        True,  # with Magenta
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 5: Dark Red
+    [
+        False,  # with Cyan — complementary clash
+        True,  # with Medium Red
+        True,  # with Light Red
+        True,  # with Dark Yellow
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        True,  # with Magenta
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 6: Cyan
+    [
+        False,  # with Medium Red — complementary clash
+        False,  # with Light Red — complementary clash
+        True,  # with Dark Yellow
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        True,  # with Magenta
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 7: Medium Red
+    [
+        True,  # with Light Red
+        True,  # with Dark Yellow
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        True,  # with Magenta
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 8: Light Red
+    [
+        True,  # with Dark Yellow
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        True,  # with Magenta
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 9: Dark Yellow
+    [
+        True,  # with Light Yellow
+        True,  # with Dark Green
+        False,  # with Magenta — complementary contrast
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 10: Light Yellow
+    [
+        True,  # with Dark Green
+        False,  # with Magenta — complementary contrast
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 11: Dark Green
+    [
+        False,  # with Magenta — complementary clash
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 12: Magenta
+    [
+        True,  # with Gray
+        True,  # with White
+    ],
+    # 13: Gray
+    [
+        True,  # with White — always okay with neutral white
+    ],
+]
+
+
+def _blend(color_a: Color, color_b: Color, weight_a: float) -> Color:
+    weight_b = 1.0 - weight_a
+    return (
+        int(round(color_a[0] * weight_a + color_b[0] * weight_b)),
+        int(round(color_a[1] * weight_a + color_b[1] * weight_b)),
+        int(round(color_a[2] * weight_a + color_b[2] * weight_b)),
+    )
+
+
+def build_dither_pair_allowlist(palette: Sequence[Color]) -> List[List[bool]]:
+    """Mark palette pairs that are suitable for dithering.
+
+    Strong complementary pairs tend to produce distracting artifacts on MSX1
+    artwork. The allowlist keeps black and white paired with everything but
+    rejects vivid opposites and other combinations that differ wildly in hue.
+    """
+
+    size = len(palette)
+    allow = [[True for _ in range(size)] for _ in range(size)]
+
+    for i, row in enumerate(DITHER_PAIR_ALLOWLIST_HALF):
+        for offset, allowed in enumerate(row, start=i + 1):
+            allow[i][offset] = allowed
+            allow[offset][i] = allowed
+        allow[i][i] = True
+
+    # Any extra palette entries beyond the base 15 are allowed by default to
+    # avoid over-restricting extended palettes.
+    for i in range(len(DITHER_PAIR_ALLOWLIST_HALF), size):
+        allow[i][i] = True
+        for j in range(i + 1, size):
+            allow[i][j] = True
+            allow[j][i] = True
+
+    return allow
+
+
+def _line_dither_index(
+    x: int, y: int, primary: int, secondary: int, secondary_on_even_row: bool
+) -> int:
+    use_secondary = ((y & 1) == 0) if secondary_on_even_row else ((y & 1) == 1)
+    return secondary if use_secondary else primary
+
+
+def _sparse_dither_index(
+    x: int, y: int, primary: int, secondary: int, minority_is_primary: bool
+) -> int:
+    minority_spot = SPARSE_DITHER_PATTERN[y % len(SPARSE_DITHER_PATTERN)][x % len(SPARSE_DITHER_PATTERN[0])]
+    if minority_is_primary:
+        return primary if minority_spot else secondary
+    return secondary if minority_spot else primary
+
+
+def map_palette_with_dither(
+    rgb_values: List[Color],
+    palette: Sequence[Color],
+    allow_pairs: Sequence[Sequence[bool]],
+    enable_dither: bool,
+) -> List[int]:
+    if not enable_dither:
+        return [nearest_palette_index(rgb, palette) for rgb in rgb_values]
+
+    size = len(palette)
+    result: List[int] = []
+
+    for y in range(TARGET_HEIGHT):
+        row_offset = y * TARGET_WIDTH
+        for x in range(TARGET_WIDTH):
+            rgb = rgb_values[row_offset + x]
+            best_idx = nearest_palette_index(rgb, palette)
+            best_error = _squared_distance(rgb, palette[best_idx])
+            best_choice = ("single", best_idx, best_idx, False)
+
+            for a in range(size):
+                for b in range(a + 1, size):
+                    if not allow_pairs[a][b]:
+                        continue
+
+                    color_a = palette[a]
+                    color_b = palette[b]
+
+                    candidates = [
+                        ("half_even", 0.5, False),
+                        ("half_odd", 0.5, True),
+                        ("quarter_a", 0.25, True),
+                        ("quarter_b", 0.25, False),
+                    ]
+
+                    for tag, weight_a, minority_is_a in candidates:
+                        if tag.startswith("half"):
+                            mix = _blend(color_a, color_b, 0.5)
+                        elif minority_is_a:
+                            mix = _blend(color_a, color_b, weight_a)
+                        else:
+                            mix = _blend(color_a, color_b, 1.0 - weight_a)
+
+                        error = _squared_distance(rgb, mix)
+                        if error < best_error:
+                            best_error = error
+                            best_choice = (tag, a, b, minority_is_a)
+
+            choice_tag, a_idx, b_idx, minority_is_a = best_choice
+            if choice_tag == "single":
+                chosen = a_idx
+            elif choice_tag in {"half_even", "half_odd"}:
+                secondary_on_even = choice_tag == "half_even"
+                chosen = _line_dither_index(x, y, a_idx, b_idx, secondary_on_even)
+            else:
+                chosen = _sparse_dither_index(x, y, a_idx, b_idx, minority_is_a)
+
+            result.append(chosen)
+
+    return result
 
 
 def enforce_two_colors_per_block(
@@ -380,7 +674,10 @@ def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = No
     image = resize_image(image, options)
 
     rgb_values = list(image.getdata())
-    palette_indices = [nearest_palette_index(rgb, palette) for rgb in rgb_values]
+    allow_pairs = build_dither_pair_allowlist(palette)
+    palette_indices = map_palette_with_dither(
+        rgb_values, palette, allow_pairs, options.enable_dither
+    )
 
     vram = to_vram(palette_indices, rgb_values, palette, options.eightdot_mode)
 
@@ -482,6 +779,7 @@ def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = No
         contrast=options.contrast,
         hue_shift=options.hue_shift,
         posterize_colors=options.posterize_colors,
+        enable_dither=options.enable_dither,
     )
 
     sc2_vram = convert_image_to_sc2(image, sc2_options)
