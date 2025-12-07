@@ -245,6 +245,16 @@ SPARSE_DITHER_PATTERN = (
     (False, False),
 )
 
+_PERCEIVED_LUMINANCE_WEIGHTS = (0.299, 0.587, 0.114)
+DARK_COLOR_LUMINANCE_THRESHOLD = 140.0
+
+
+def _perceived_luminance(color: Color) -> float:
+    r, g, b = color
+    wr, wg, wb = _PERCEIVED_LUMINANCE_WEIGHTS
+    return r * wr + g * wg + b * wb
+
+
 # Palette index reference (1-based for users, 0-based in code):
 #  0: Black
 #  1: Medium Green
@@ -516,17 +526,19 @@ def _build_dither_candidates(
                 )
             )
 
-    # Special 3:1 mixes with black as the majority color against every other entry.
+    # Special 3:1 mixes with black as the minority color against dark palette entries.
     black_index = 0
     if black_index < len(palette):
         black_color = palette[black_index]
         for color_index in range(1, len(palette)):
+            if _perceived_luminance(palette[color_index]) > DARK_COLOR_LUMINANCE_THRESHOLD:
+                continue
             candidates.append(
                 DitherCandidate(
                     tag="black_three_one",
-                    primary=black_index,
-                    secondary=color_index,
-                    mix_color=_blend(black_color, palette[color_index], 0.75),
+                    primary=color_index,
+                    secondary=black_index,
+                    mix_color=_blend(palette[color_index], black_color, 0.75),
                     minority_is_primary=False,
                 )
             )
