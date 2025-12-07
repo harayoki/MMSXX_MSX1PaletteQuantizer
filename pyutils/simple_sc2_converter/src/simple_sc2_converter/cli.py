@@ -13,6 +13,7 @@ from .converter import (
     ConvertOptions,
     ConversionError,
     convert_png_to_sc2,
+    convert_png_to_sc4,
     format_palette_text,
     parse_color,
 )
@@ -43,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Convert PNG files into MSX Screen 2 (.sc2) binaries.\n"
+            "Convert PNG files into MSX Screen 2 (.sc2) or Screen 4 (.sc4) binaries.\n"
             "Default palette: MSX1 basic colors. Use --msx2-palette for MSX2 palette (both are used in conversion calculations).\n"
             f"MSX1 palette: {palette_text}\nMSX2 palette: {palette_text_msx2}"
         ),
@@ -59,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-o",
         "--output-dir",
         required=True,
-        help="Destination directory for .sc2 files",
+        help="Destination directory for .sc2/.sc4 files",
     )
     parser.add_argument("--prefix", default="", help="Optional prefix for output filenames")
     parser.add_argument("--suffix", default="", help="Optional suffix for output filenames")
@@ -79,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--background",
         default="0,0,0",
         help="Background color for padding (e.g., 0,0,0 or #000000)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["sc2", "sc4"],
+        default="sc2",
+        help="Output format (Screen 2 or Screen 4)",
     )
     parser.add_argument(
         "--msx2-palette",
@@ -122,11 +129,11 @@ def collect_overrides(namespace: argparse.Namespace) -> Dict[int, tuple[int, int
     return overrides
 
 
-def ensure_unique_names(paths: List[Path], prefix: str, suffix: str) -> List[str]:
+def ensure_unique_names(paths: List[Path], prefix: str, suffix: str, extension: str) -> List[str]:
     names: List[str] = []
     seen = set()
     for path in paths:
-        name = f"{prefix}{path.stem}{suffix}.sc2"
+        name = f"{prefix}{path.stem}{suffix}.{extension}"
         if name in seen:
             raise ConversionError(f"Duplicate output name would occur: {name}")
         seen.add(name)
@@ -134,7 +141,14 @@ def ensure_unique_names(paths: List[Path], prefix: str, suffix: str) -> List[str
     return names
 
 
-def write_outputs(inputs: List[Path], names: List[str], options: ConvertOptions, output_dir: Path, force: bool) -> None:
+def write_outputs(
+    inputs: List[Path],
+    names: List[str],
+    options: ConvertOptions,
+    output_dir: Path,
+    force: bool,
+    output_format: str,
+) -> None:
     conflicts = []
     for name in names:
         target = output_dir / name
@@ -148,7 +162,10 @@ def write_outputs(inputs: List[Path], names: List[str], options: ConvertOptions,
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for src, name in zip(inputs, names):
-        data = convert_png_to_sc2(src, options)
+        if output_format == "sc4":
+            data = convert_png_to_sc4(src, options)
+        else:
+            data = convert_png_to_sc2(src, options)
         target = output_dir / name
         target.write_bytes(data)
         print(f"wrote {target}")
@@ -169,8 +186,8 @@ def main(argv: list[str] | None = None) -> int:
 
         inputs = iter_pngs(args.inputs)
         output_dir = Path(args.output_dir)
-        names = ensure_unique_names(inputs, args.prefix, args.suffix)
-        write_outputs(inputs, names, options, output_dir, args.force)
+        names = ensure_unique_names(inputs, args.prefix, args.suffix, args.format)
+        write_outputs(inputs, names, options, output_dir, args.force, args.format)
         return 0
     except ConversionError as exc:
         print(exc, file=sys.stderr)

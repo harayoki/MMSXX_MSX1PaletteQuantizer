@@ -259,11 +259,72 @@ def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = No
     return header + vram
 
 
+def _strip_header(sc2_bytes: bytes) -> bytes:
+    header = bytes([0xFE, 0x00, 0x00, 0xFF, 0x3F, 0x00, 0x00])
+    if len(sc2_bytes) == VRAM_SIZE:
+        return sc2_bytes
+    if len(sc2_bytes) == VRAM_SIZE + len(header) and sc2_bytes.startswith(header):
+        return sc2_bytes[len(header) :]
+    raise ConversionError(
+        "SC2 data must be 16 KiB or a 7-byte header plus 16 KiB of VRAM data."
+    )
+
+
+def sc2_to_sc4(sc2_bytes: bytes, include_header: bool = True) -> bytes:
+    """Convert SC2 VRAM bytes into SC4 VRAM bytes.
+
+    The current converter generates Screen 2 VRAM. Screen 4 uses a compatible
+    16 KiB layout for pattern, name, and color tables, so this function mainly
+    normalizes the input to raw VRAM and rewrites the optional header for an
+    ``.sc4`` payload.
+    """
+
+    vram = _strip_header(sc2_bytes)
+
+    if len(vram) != VRAM_SIZE:
+        raise ConversionError("SC2 VRAM payload must be exactly 16 KiB.")
+
+    if not include_header:
+        return bytes(vram)
+
+    header = bytes([0xFE, 0x00, 0x00, 0xFF, 0x3F, 0x00, 0x00])
+    return header + bytes(vram)
+
+
+def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
+    """Convert an in-memory image to SC4 bytes via SC2 VRAM generation."""
+
+    options = options or ConvertOptions()
+
+    sc2_options = ConvertOptions(
+        oversize_mode=options.oversize_mode,
+        undersize_mode=options.undersize_mode,
+        background_color=options.background_color,
+        use_msx2_palette=options.use_msx2_palette,
+        palette_overrides=dict(options.palette_overrides),
+        include_header=False,
+    )
+
+    sc2_vram = convert_image_to_sc2(image, sc2_options)
+    return sc2_to_sc4(sc2_vram, include_header=options.include_header)
+
+
 def convert_png_to_sc2(path: str | Path, options: ConvertOptions | None = None) -> bytes:
     path = Path(path)
     try:
         with Image.open(path) as img:
             return convert_image_to_sc2(img, options)
+    except FileNotFoundError as exc:
+        raise ConversionError(f"Input file not found: {path}") from exc
+    except OSError as exc:
+        raise ConversionError(f"Failed to read PNG: {path}") from exc
+
+
+def convert_png_to_sc4(path: str | Path, options: ConvertOptions | None = None) -> bytes:
+    path = Path(path)
+    try:
+        with Image.open(path) as img:
+            return convert_image_to_sc4(img, options)
     except FileNotFoundError as exc:
         raise ConversionError(f"Input file not found: {path}") from exc
     except OSError as exc:
