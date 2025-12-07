@@ -77,57 +77,13 @@ def build_loader(
     if image_length != IMAGE_LENGTH:
         raise ValueError("image_length must be 0x3780 bytes")
 
-    def copy_image_block_org(base_addr: int) -> Tuple[int, ...]:
-        """Copy trimmed SCREEN2 data back to its original VRAM layout."""
-
-        return (
-            # Pattern generator + name table (0x0000-0x1AFF)
-            0x21,
-            base_addr & 0xFF,
-            (base_addr >> 8) & 0xFF,  # LD HL,image_base
-            0x11,
-            0x00,
-            0x00,  # LD DE,0000h
-            0x01,
-            0x00,
-            0x1B,  # LD BC,1B00h
-            0xCD,
-            LDIRVM & 0xFF,
-            (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
-            # Gap between name table and color table (0x1B80-0x1FFF)
-            0x21,
-            (base_addr + 0x1B00) & 0xFF,
-            ((base_addr + 0x1B00) >> 8) & 0xFF,  # LD HL,image_base+1B00h
-            0x11,
-            0x80,
-            0x1B,  # LD DE,1B80h
-            0x01,
-            0x80,
-            0x04,  # LD BC,0480h
-            0xCD,
-            LDIRVM & 0xFF,
-            (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
-            # Color table (0x2000-0x37FF)
-            0x21,
-            (base_addr + 0x1F80) & 0xFF,
-            ((base_addr + 0x1F80) >> 8) & 0xFF,  # LD HL,image_base+1F80h
-            0x11,
-            0x00,
-            0x20,  # LD DE,2000h
-            0x01,
-            0x00,
-            0x18,  # LD BC,1800h
-            0xCD,
-            LDIRVM & 0xFF,
-            (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
-        )
-
     def copy_image_block(base_addr: int) -> Tuple[int, ...]:
         """Trimmed SCREEN2 (0x3780) を VRAM に戻す。
 
         ROM:
           [0x0000〜0x1AFF]   → VRAM 0000〜1AFF (0x1B00)
-          [0x1B00〜0x377F]   → VRAM 1B80〜37FF (0x1C80)
+          [0x1B00〜0x1F7F]   → VRAM 1B80〜1FFF (0x0480)
+          [0x1F80〜0x377F]   → VRAM 2000〜37FF (0x1800)
         """
 
         return (
@@ -145,7 +101,7 @@ def build_loader(
             LDIRVM & 0xFF,
             (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
 
-            # 2nd block: 残り全部 (0x1C80 bytes) → VRAM 1B80h–37FFh
+            # 2nd block: 1B80h–1FFFh (0x0480 bytes)
             0x21,
             (base_addr + 0x1B00) & 0xFF,
             ((base_addr + 0x1B00) >> 8) & 0xFF,  # LD HL,image_base+1B00h
@@ -154,7 +110,21 @@ def build_loader(
             0x1B,  # LD DE,1B80h
             0x01,
             0x80,
-            0x1C,  # LD BC,1C80h
+            0x04,  # LD BC,0480h
+            0xCD,
+            LDIRVM & 0xFF,
+            (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
+
+            # 3rd block: 2000h–37FFh (0x1800 bytes)
+            0x21,
+            (base_addr + 0x1F80) & 0xFF,
+            ((base_addr + 0x1F80) >> 8) & 0xFF,  # LD HL,image_base+1F80h
+            0x11,
+            0x00,
+            0x20,  # LD DE,2000h
+            0x01,
+            0x00,
+            0x18,  # LD BC,1800h
             0xCD,
             LDIRVM & 0xFF,
             (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
@@ -340,7 +310,11 @@ def main() -> None:
 
     output_path = args.output
     if output_path is None:
-        output_path = args.image0.with_suffix(".rom")
+        if args.image0.resolve() == image1_path.resolve():
+            output_path = args.image0.with_suffix(".rom")
+        else:
+            combined_name = f"{args.image0.stem}_{image1_path.stem}"
+            output_path = args.image0.with_name(combined_name).with_suffix(".rom")
 
     output_path.write_bytes(rom_bytes)
     print(f"Wrote {len(rom_bytes)} bytes to {output_path}")
