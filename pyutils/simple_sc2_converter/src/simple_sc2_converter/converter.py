@@ -272,154 +272,15 @@ def _perceived_luminance(color: Color) -> float:
 # 13: Gray
 # 14: White
 
-DITHER_PAIR_ALLOWLIST_HALF: List[List[bool]] = [
-    # 0: Black — always allowed with every partner
-    [
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,
-    ],
-    # 1: Medium Green
-    [
-        True,  # with Light Green
-        True,  # with Dark Blue
-        True,  # with Light Blue
-        False,  # with Dark Red — complementary clash
-        True,  # with Cyan
-        False,  # with Medium Red — complementary clash
-        False,  # with Light Red — complementary clash
-        True,  # with Dark Yellow
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        False,  # with Magenta — complementary clash
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 2: Light Green
-    [
-        True,  # with Dark Blue
-        True,  # with Light Blue
-        False,  # with Dark Red — complementary clash
-        True,  # with Cyan
-        False,  # with Medium Red — complementary clash
-        False,  # with Light Red — complementary clash
-        True,  # with Dark Yellow
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        False,  # with Magenta — complementary clash
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 3: Dark Blue
-    [
-        True,  # with Light Blue
-        True,  # with Dark Red
-        True,  # with Cyan
-        True,  # with Medium Red
-        False,  # with Light Red — blue/orange contrast
-        False,  # with Dark Yellow — complementary contrast
-        False,  # with Light Yellow — complementary contrast
-        True,  # with Dark Green
-        True,  # with Magenta
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 4: Light Blue
-    [
-        True,  # with Dark Red
-        True,  # with Cyan
-        False,  # with Medium Red — blue/orange contrast
-        False,  # with Light Red — blue/orange contrast
-        False,  # with Dark Yellow — complementary contrast
-        False,  # with Light Yellow — complementary contrast
-        True,  # with Dark Green
-        True,  # with Magenta
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 5: Dark Red
-    [
-        False,  # with Cyan — complementary clash
-        True,  # with Medium Red
-        True,  # with Light Red
-        True,  # with Dark Yellow
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        True,  # with Magenta
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 6: Cyan
-    [
-        False,  # with Medium Red — complementary clash
-        False,  # with Light Red — complementary clash
-        True,  # with Dark Yellow
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        True,  # with Magenta
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 7: Medium Red
-    [
-        True,  # with Light Red
-        True,  # with Dark Yellow
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        True,  # with Magenta
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 8: Light Red
-    [
-        True,  # with Dark Yellow
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        True,  # with Magenta
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 9: Dark Yellow
-    [
-        True,  # with Light Yellow
-        True,  # with Dark Green
-        False,  # with Magenta — complementary contrast
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 10: Light Yellow
-    [
-        True,  # with Dark Green
-        False,  # with Magenta — complementary contrast
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 11: Dark Green
-    [
-        False,  # with Magenta — complementary clash
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 12: Magenta
-    [
-        True,  # with Gray
-        True,  # with White
-    ],
-    # 13: Gray
-    [
-        True,  # with White — always okay with neutral white
-    ],
-]
+# Legacy note: the original implementation built a dither pair allowlist by
+# brute-forcing every palette combination and rejecting visually unpleasant
+# clashes (strong complementary pairs, oversaturated mixes, etc.). The table
+# used for that decision was named ``DITHER_PAIR_ALLOWLIST_HALF`` and only
+# covered the upper triangle of the palette matrix. It is intentionally left
+# undocumented as code here; the important detail is that those experiments
+# produced a curated set of half-tone mixes and a handful of 3:1 blends with
+# black. The new logic below hardcodes the resulting intermediate colors and
+# the tile patterns they should use.
 
 
 def _blend(color_a: Color, color_b: Color, weight_a: float) -> Color:
@@ -431,34 +292,6 @@ def _blend(color_a: Color, color_b: Color, weight_a: float) -> Color:
     )
 
 
-def build_dither_pair_allowlist(palette: Sequence[Color]) -> List[List[bool]]:
-    """Mark palette pairs that are suitable for dithering.
-
-    Strong complementary pairs tend to produce distracting artifacts on MSX1
-    artwork. The allowlist keeps black and white paired with everything but
-    rejects vivid opposites and other combinations that differ wildly in hue.
-    """
-
-    size = len(palette)
-    allow = [[True for _ in range(size)] for _ in range(size)]
-
-    for i, row in enumerate(DITHER_PAIR_ALLOWLIST_HALF):
-        for offset, allowed in enumerate(row, start=i + 1):
-            allow[i][offset] = allowed
-            allow[offset][i] = allowed
-        allow[i][i] = True
-
-    # Any extra palette entries beyond the base 15 are allowed by default to
-    # avoid over-restricting extended palettes.
-    for i in range(len(DITHER_PAIR_ALLOWLIST_HALF), size):
-        allow[i][i] = True
-        for j in range(i + 1, size):
-            allow[i][j] = True
-            allow[j][i] = True
-
-    return allow
-
-
 @dataclass
 class DitherCandidate:
     tag: str
@@ -468,9 +301,92 @@ class DitherCandidate:
     minority_is_primary: bool = False
 
 
+HARDCODED_DITHER_MIXES: List[DitherCandidate] = [
+    DitherCandidate(tag="half_even", primary=0, secondary=3, mix_color=(44, 42, 112)),
+    DitherCandidate(tag="half_even", primary=0, secondary=5, mix_color=(92, 47, 40)),
+    DitherCandidate(tag="half_even", primary=0, secondary=6, mix_color=(50, 109, 119)),
+    DitherCandidate(tag="half_even", primary=0, secondary=9, mix_color=(102, 97, 47)),
+    DitherCandidate(tag="half_even", primary=0, secondary=11, mix_color=(29, 81, 32)),
+    DitherCandidate(tag="half_even", primary=0, secondary=12, mix_color=(91, 51, 90)),
+    DitherCandidate(tag="half_even", primary=0, secondary=13, mix_color=(102, 102, 102)),
+    DitherCandidate(tag="half_even", primary=0, secondary=14, mix_color=(127, 127, 127)),
+    DitherCandidate(tag="half_even", primary=1, secondary=2, mix_color=(89, 196, 99)),
+    DitherCandidate(tag="half_even", primary=1, secondary=3, mix_color=(75, 134, 148)),
+    DitherCandidate(tag="half_even", primary=1, secondary=4, mix_color=(95, 151, 157)),
+    DitherCandidate(tag="half_even", primary=1, secondary=5, mix_color=(123, 139, 77)),
+    DitherCandidate(tag="half_even", primary=1, secondary=6, mix_color=(81, 201, 156)),
+    DitherCandidate(tag="half_even", primary=1, secondary=7, mix_color=(140, 142, 81)),
+    DitherCandidate(tag="half_even", primary=1, secondary=8, mix_color=(158, 160, 99)),
+    DitherCandidate(tag="half_even", primary=1, secondary=10, mix_color=(142, 196, 104)),
+    DitherCandidate(tag="half_even", primary=1, secondary=12, mix_color=(122, 143, 127)),
+    DitherCandidate(tag="half_even", primary=1, secondary=13, mix_color=(133, 194, 138)),
+    DitherCandidate(tag="half_even", primary=1, secondary=14, mix_color=(158, 219, 164)),
+    DitherCandidate(tag="half_even", primary=2, secondary=3, mix_color=(102, 146, 174)),
+    DitherCandidate(tag="half_even", primary=2, secondary=4, mix_color=(122, 163, 183)),
+    DitherCandidate(tag="half_even", primary=2, secondary=5, mix_color=(150, 151, 103)),
+    DitherCandidate(tag="half_even", primary=2, secondary=6, mix_color=(108, 213, 182)),
+    DitherCandidate(tag="half_even", primary=2, secondary=7, mix_color=(167, 154, 107)),
+    DitherCandidate(tag="half_even", primary=2, secondary=8, mix_color=(185, 172, 125)),
+    DitherCandidate(tag="half_even", primary=2, secondary=9, mix_color=(160, 201, 109)),
+    DitherCandidate(tag="half_even", primary=2, secondary=12, mix_color=(149, 155, 153)),
+    DitherCandidate(tag="half_even", primary=2, secondary=13, mix_color=(160, 206, 164)),
+    DitherCandidate(tag="half_even", primary=2, secondary=14, mix_color=(185, 231, 190)),
+    DitherCandidate(tag="half_even", primary=3, secondary=4, mix_color=(108, 101, 232)),
+    DitherCandidate(tag="half_even", primary=3, secondary=5, mix_color=(137, 89, 152)),
+    DitherCandidate(tag="half_even", primary=3, secondary=6, mix_color=(95, 152, 231)),
+    DitherCandidate(tag="half_even", primary=3, secondary=7, mix_color=(154, 93, 156)),
+    DitherCandidate(tag="half_even", primary=3, secondary=8, mix_color=(172, 111, 174)),
+    DitherCandidate(tag="half_even", primary=3, secondary=9, mix_color=(146, 140, 159)),
+    DitherCandidate(tag="half_even", primary=3, secondary=10, mix_color=(155, 146, 179)),
+    DitherCandidate(tag="half_even", primary=3, secondary=11, mix_color=(73, 123, 144)),
+    DitherCandidate(tag="half_even", primary=3, secondary=12, mix_color=(136, 93, 202)),
+    DitherCandidate(tag="half_even", primary=3, secondary=13, mix_color=(146, 144, 214)),
+    DitherCandidate(tag="half_even", primary=3, secondary=14, mix_color=(172, 170, 239)),
+    DitherCandidate(tag="half_even", primary=4, secondary=5, mix_color=(156, 106, 161)),
+    DitherCandidate(tag="half_even", primary=4, secondary=6, mix_color=(114, 168, 240)),
+    DitherCandidate(tag="half_even", primary=4, secondary=7, mix_color=(173, 109, 165)),
+    DitherCandidate(tag="half_even", primary=4, secondary=8, mix_color=(191, 127, 183)),
+    DitherCandidate(tag="half_even", primary=4, secondary=9, mix_color=(166, 156, 167)),
+    DitherCandidate(tag="half_even", primary=4, secondary=10, mix_color=(175, 163, 188)),
+    DitherCandidate(tag="half_even", primary=4, secondary=11, mix_color=(93, 140, 153)),
+    DitherCandidate(tag="half_even", primary=4, secondary=12, mix_color=(155, 110, 211)),
+    DitherCandidate(tag="half_even", primary=4, secondary=13, mix_color=(166, 161, 222)),
+    DitherCandidate(tag="half_even", primary=4, secondary=14, mix_color=(191, 186, 248)),
+    DitherCandidate(tag="half_even", primary=5, secondary=6, mix_color=(143, 156, 160)),
+    DitherCandidate(tag="half_even", primary=5, secondary=9, mix_color=(194, 144, 87)),
+    DitherCandidate(tag="half_even", primary=5, secondary=10, mix_color=(203, 151, 108)),
+    DitherCandidate(tag="half_even", primary=5, secondary=11, mix_color=(121, 128, 73)),
+    DitherCandidate(tag="half_even", primary=5, secondary=12, mix_color=(184, 98, 131)),
+    DitherCandidate(tag="half_even", primary=5, secondary=13, mix_color=(194, 149, 142)),
+    DitherCandidate(tag="half_even", primary=6, secondary=7, mix_color=(160, 160, 164)),
+    DitherCandidate(tag="half_even", primary=9, secondary=14, mix_color=(229, 225, 174)),
+    DitherCandidate(tag="half_even", primary=12, secondary=14, mix_color=(219, 178, 218)),
+    DitherCandidate(tag="half_even", primary=6, secondary=14, mix_color=(178, 237, 247)),
+    DitherCandidate(tag="half_even", primary=8, secondary=14, mix_color=(255, 196, 190)),
+    DitherCandidate(tag="half_even", primary=10, secondary=14, mix_color=(238, 232, 195)),
+    DitherCandidate(tag="half_even", primary=9, secondary=10, mix_color=(213, 201, 114)),
+    DitherCandidate(tag="half_even", primary=2, secondary=14, mix_color=(185, 232, 190)),
+    DitherCandidate(tag="half_even", primary=3, secondary=4, mix_color=(108, 102, 232)),
+    DitherCandidate(tag="half_even", primary=4, secondary=6, mix_color=(114, 169, 240)),
+    DitherCandidate(tag="half_even", primary=13, secondary=14, mix_color=(229, 229, 229)),
+    DitherCandidate(tag="half_even", primary=7, secondary=9, mix_color=(211, 148, 91)),
+    DitherCandidate(tag="half_even", primary=7, secondary=10, mix_color=(220, 154, 112)),
+    DitherCandidate(tag="half_even", primary=8, secondary=9, mix_color=(229, 166, 109)),
+    DitherCandidate(tag="half_even", primary=8, secondary=10, mix_color=(238, 172, 130)),
+    DitherCandidate(tag="half_even", primary=5, secondary=14, mix_color=(220, 174, 168)),
+    DitherCandidate(tag="half_even", primary=7, secondary=14, mix_color=(237, 178, 172)),
+    DitherCandidate(tag="half_even", primary=10, secondary=14, mix_color=(238, 231, 195)),
+    DitherCandidate(tag="black_three_one", primary=0, secondary=5, mix_color=(46, 37, 22)),
+    DitherCandidate(tag="black_three_one", primary=0, secondary=9, mix_color=(51, 46, 39)),
+    DitherCandidate(tag="black_three_one", primary=0, secondary=11, mix_color=(47, 60, 28)),
+    DitherCandidate(tag="black_three_one", primary=0, secondary=3, mix_color=(49, 40, 82)),
+    DitherCandidate(tag="black_three_one", primary=0, secondary=6, mix_color=(46, 56, 60)),
+    DitherCandidate(tag="black_three_one", primary=0, secondary=12, mix_color=(61, 34, 61)),
+]
+
+
 def _build_dither_candidates(
     palette: Sequence[Color],
-    allow_pairs: Sequence[Sequence[bool]],
     enable_dither: bool,
 ) -> List[DitherCandidate]:
     candidates = [
@@ -481,67 +397,9 @@ def _build_dither_candidates(
     if not enable_dither:
         return candidates
 
-    size = len(palette)
-    for a in range(size):
-        for b in range(a + 1, size):
-            if not allow_pairs[a][b]:
-                continue
-
-            color_a = palette[a]
-            color_b = palette[b]
-
-            candidates.append(
-                DitherCandidate(
-                    tag="half_even",
-                    primary=a,
-                    secondary=b,
-                    mix_color=_blend(color_a, color_b, 0.5),
-                )
-            )
-            candidates.append(
-                DitherCandidate(
-                    tag="half_odd",
-                    primary=a,
-                    secondary=b,
-                    mix_color=_blend(color_a, color_b, 0.5),
-                )
-            )
-
-            candidates.append(
-                DitherCandidate(
-                    tag="quarter_primary",
-                    primary=a,
-                    secondary=b,
-                    mix_color=_blend(color_a, color_b, 0.25),
-                    minority_is_primary=True,
-                )
-            )
-            candidates.append(
-                DitherCandidate(
-                    tag="quarter_secondary",
-                    primary=a,
-                    secondary=b,
-                    mix_color=_blend(color_a, color_b, 0.75),
-                    minority_is_primary=False,
-                )
-            )
-
-    # Special 3:1 mixes with black as the minority color against dark palette entries.
-    black_index = 0
-    if black_index < len(palette):
-        black_color = palette[black_index]
-        for color_index in range(1, len(palette)):
-            if _perceived_luminance(palette[color_index]) > DARK_COLOR_LUMINANCE_THRESHOLD:
-                continue
-            candidates.append(
-                DitherCandidate(
-                    tag="black_three_one",
-                    primary=color_index,
-                    secondary=black_index,
-                    mix_color=_blend(palette[color_index], black_color, 0.75),
-                    minority_is_primary=False,
-                )
-            )
+    for candidate in HARDCODED_DITHER_MIXES:
+        if candidate.primary < len(palette) and candidate.secondary < len(palette):
+            candidates.append(candidate)
 
     return candidates
 
@@ -565,11 +423,10 @@ def _sparse_dither_index(
 def map_palette_with_dither(
     rgb_values: List[Color],
     palette: Sequence[Color],
-    allow_pairs: Sequence[Sequence[bool]],
     enable_dither: bool,
     skip_dither_application: bool,
 ) -> List[int]:
-    candidates = _build_dither_candidates(palette, allow_pairs, enable_dither)
+    candidates = _build_dither_candidates(palette, enable_dither)
 
     candidate_indices: List[int] = []
     for rgb in rgb_values:
@@ -597,11 +454,7 @@ def map_palette_with_dither(
                 chosen = _line_dither_index(
                     x, y, candidate.primary, candidate.secondary, True
                 )
-            elif candidate.tag == "half_odd":
-                chosen = _line_dither_index(
-                    x, y, candidate.primary, candidate.secondary, False
-                )
-            elif candidate.tag in {"quarter_primary", "quarter_secondary", "black_three_one"}:
+            elif candidate.tag == "black_three_one":
                 chosen = _sparse_dither_index(
                     x,
                     y,
@@ -771,11 +624,9 @@ def _prepare_quantized_image(
     image = resize_image(image, options)
 
     rgb_values = list(image.getdata())
-    allow_pairs = build_dither_pair_allowlist(palette)
     palette_indices = map_palette_with_dither(
         rgb_values,
         palette,
-        allow_pairs,
         options.enable_dither,
         options.skip_dither_application,
     )
