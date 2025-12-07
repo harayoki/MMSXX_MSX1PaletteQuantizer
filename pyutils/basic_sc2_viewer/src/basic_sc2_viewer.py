@@ -11,7 +11,7 @@ import msxdisk
 autoexec_bas = """10 RUN "V.BAS"
 """
 
-viewer_template = """10 DEFINT A-Z:CLS:KEY 6,"AUTOEXEC.BAS"
+viewer_template = """10 DEFINT A-Z:COLOR 15,0,0:CLS:KEY 6,"AUTOEXEC.BAS"
 20 PRINT "MMSXX MSX1 IMAGE VIEWER v1.0"
 30 PRINT "ESC TO EXIT, SPACE/DOWN NEXT, UP PREV"
 # データ数を埋め込み
