@@ -85,7 +85,7 @@ class ConvertOptions:
     use_msx2_palette: bool = False
     palette_overrides: PaletteOverride = field(default_factory=dict)
     include_header: bool = True
-    eightdot_mode: str = "BASIC"  # FAST, BASIC, BEST
+    eightdot_mode: str = "BASIC"  # FAST, BASIC, BEST, NONE
     gamma: float | None = None
     contrast: float | None = None
     hue_shift: float | None = None
@@ -693,6 +693,11 @@ def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = No
         image, options
     )
 
+    if options.eightdot_mode.upper() == "NONE":
+        raise ConversionError(
+            "--eightdot NONE disables the 8-pixel two-color limit and cannot produce SC2/SC4 data"
+        )
+
     vram = to_vram(palette_indices, rgb_values, palette, options.eightdot_mode)
 
     if not options.include_header:
@@ -809,20 +814,23 @@ def convert_image_to_msx_png(
         image, options
     )
 
-    final_indices: List[int] = []
-    to_vram(
-        palette_indices,
-        rgb_values,
-        palette,
-        options.eightdot_mode,
-        record_indices=final_indices,
-    )
-
-    expected_pixels = TARGET_WIDTH * TARGET_HEIGHT
-    if len(final_indices) != expected_pixels:
-        raise ConversionError(
-            "Failed to render the quantized image to Screen 2 dimensions."
+    if options.eightdot_mode.upper() == "NONE":
+        final_indices = palette_indices
+    else:
+        final_indices = []
+        to_vram(
+            palette_indices,
+            rgb_values,
+            palette,
+            options.eightdot_mode,
+            record_indices=final_indices,
         )
+
+        expected_pixels = TARGET_WIDTH * TARGET_HEIGHT
+        if len(final_indices) != expected_pixels:
+            raise ConversionError(
+                "Failed to render the quantized image to Screen 2 dimensions."
+            )
 
     preview = Image.new("RGB", (TARGET_WIDTH, TARGET_HEIGHT))
     preview.putdata([palette[idx] for idx in final_indices])
