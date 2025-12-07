@@ -12,7 +12,7 @@ Color = Tuple[int, int, int]
 PaletteOverride = Dict[int, Color]
 
 TARGET_WIDTH = 256
-TARGET_HEIGHT = 212
+TARGET_HEIGHT = 192
 VRAM_SIZE = 0x4000
 BASIC_COLORS_MSX1: List[Color] = [
     (0, 0, 0),
@@ -115,7 +115,7 @@ def resize_image(image: Image.Image, options: ConvertOptions) -> Image.Image:
 
     if width > TARGET_WIDTH or height > TARGET_HEIGHT:
         if options.oversize_mode == "error":
-            raise ConversionError("Input exceeds 256x212. Use --oversize to allow resizing or cropping.")
+            raise ConversionError("Input exceeds 256x192. Use --oversize to allow resizing or cropping.")
         if options.oversize_mode == "shrink":
             ratio = min(TARGET_WIDTH / width, TARGET_HEIGHT / height)
             new_size = (max(1, int(width * ratio)), max(1, int(height * ratio)))
@@ -131,7 +131,7 @@ def resize_image(image: Image.Image, options: ConvertOptions) -> Image.Image:
 
     if width < TARGET_WIDTH or height < TARGET_HEIGHT:
         if options.undersize_mode == "error":
-            raise ConversionError("Input is smaller than 256x212. Use --undersize pad and set --background.")
+            raise ConversionError("Input is smaller than 256x192. Use --undersize pad and set --background.")
         if options.undersize_mode == "pad":
             canvas = Image.new("RGB", target, options.background_color)
             offset = ((TARGET_WIDTH - width) // 2, (TARGET_HEIGHT - height) // 2)
@@ -141,7 +141,7 @@ def resize_image(image: Image.Image, options: ConvertOptions) -> Image.Image:
             raise ConversionError(f"Unknown undersize mode: {options.undersize_mode}")
 
     if image.size != target:
-        raise ConversionError("Image could not be resized to exactly 256x212.")
+        raise ConversionError("Image could not be resized to exactly 256x192.")
 
     return image
 

@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Convert PNG files into MSX Screen 2 (.sc2) binaries.\n"
-            "Default palette: MSX1 basic colors. Use --msx2-palette for MSX2 palette.\n"
+            "Default palette: MSX1 basic colors. Use --msx2-palette for MSX2 palette (both are used in conversion calculations).\n"
             f"MSX1 palette: {palette_text}\nMSX2 palette: {palette_text_msx2}"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
@@ -67,13 +67,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--oversize",
         choices=["error", "shrink", "crop"],
         default="error",
-        help="How to handle images larger than 256x212",
+        help="How to handle images larger than 256x192",
     )
     parser.add_argument(
         "--undersize",
         choices=["error", "pad"],
         default="error",
-        help="How to handle images smaller than 256x212",
+        help="How to handle images smaller than 256x192",
     )
     parser.add_argument(
         "--background",
