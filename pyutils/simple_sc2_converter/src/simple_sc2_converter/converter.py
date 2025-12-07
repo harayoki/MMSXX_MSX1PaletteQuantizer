@@ -1,0 +1,270 @@
+"""Core conversion logic for the simple SC2 converter."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Sequence, Tuple
+
+from PIL import Image
+
+Color = Tuple[int, int, int]
+PaletteOverride = Dict[int, Color]
+
+TARGET_WIDTH = 256
+TARGET_HEIGHT = 212
+VRAM_SIZE = 0x4000
+BASIC_COLORS_MSX1: List[Color] = [
+    (0, 0, 0),
+    (62, 184, 73),
+    (116, 208, 125),
+    (89, 85, 224),
+    (128, 118, 241),
+    (185, 94, 81),
+    (101, 219, 239),
+    (219, 101, 89),
+    (255, 137, 125),
+    (204, 195, 94),
+    (222, 208, 135),
+    (58, 162, 65),
+    (183, 102, 181),
+    (204, 204, 204),
+    (255, 255, 255),
+]
+
+BASIC_COLORS_MSX2: List[Color] = [
+    (0x00, 0x00, 0x00),
+    (0x22, 0xDD, 0x22),
+    (0x66, 0xFF, 0x66),
+    (0x22, 0x22, 0xFF),
+    (0x44, 0x66, 0xFF),
+    (0xAA, 0x22, 0x22),
+    (0x44, 0xDD, 0xFF),
+    (0xFF, 0x22, 0x22),
+    (0xFF, 0x66, 0x66),
+    (0xDD, 0xDD, 0x22),
+    (0xDD, 0xDD, 0x88),
+    (0x22, 0x88, 0x22),
+    (0xDD, 0x44, 0xAA),
+    (0xAA, 0xAA, 0xAA),
+    (0xFF, 0xFF, 0xFF),
+]
+
+
+@dataclass
+class ConvertOptions:
+    """Options for resizing and palette selection."""
+
+    oversize_mode: str = "error"  # error, shrink, crop
+    undersize_mode: str = "error"  # error, pad
+    background_color: Color = (0, 0, 0)
+    use_msx2_palette: bool = False
+    palette_overrides: PaletteOverride = field(default_factory=dict)
+    include_header: bool = True
+
+
+class ConversionError(Exception):
+    """Custom exception for conversion errors."""
+
+
+def parse_color(text: str) -> Color:
+    text = text.strip()
+    if text.startswith("#"):
+        text = text[1:]
+    if "," in text:
+        parts = text.split(",")
+    else:
+        parts = [text[i : i + 2] for i in range(0, len(text), 2)]
+    if len(parts) != 3:
+        raise ConversionError("Color must have exactly three components")
+    values = []
+    for part in parts:
+        part = part.strip()
+        base = 16 if all(c in "0123456789abcdefABCDEF" for c in part) and len(part) <= 2 else 10
+        try:
+            values.append(int(part, base))
+        except ValueError as exc:
+            raise ConversionError(f"Invalid color component: {part}") from exc
+    if any(not (0 <= v <= 255) for v in values):
+        raise ConversionError("Color components must be between 0 and 255")
+    return tuple(values)  # type: ignore[return-value]
+
+
+def build_palette(options: ConvertOptions) -> List[Color]:
+    base = BASIC_COLORS_MSX2 if options.use_msx2_palette else BASIC_COLORS_MSX1
+    palette = list(base)
+    for index, color in options.palette_overrides.items():
+        if 1 <= index <= len(palette):
+            palette[index - 1] = color
+        else:
+            raise ConversionError(f"Palette index {index} is out of range")
+    return palette
+
+
+def format_palette_text(palette: Sequence[Color]) -> str:
+    entries = [f"{idx+1}: ({r},{g},{b})" for idx, (r, g, b) in enumerate(palette)]
+    return ", ".join(entries)
+
+
+def resize_image(image: Image.Image, options: ConvertOptions) -> Image.Image:
+    width, height = image.size
+    target = (TARGET_WIDTH, TARGET_HEIGHT)
+
+    if width == TARGET_WIDTH and height == TARGET_HEIGHT:
+        return image
+
+    if width > TARGET_WIDTH or height > TARGET_HEIGHT:
+        if options.oversize_mode == "error":
+            raise ConversionError("Input exceeds 256x212. Use --oversize to allow resizing or cropping.")
+        if options.oversize_mode == "shrink":
+            ratio = min(TARGET_WIDTH / width, TARGET_HEIGHT / height)
+            new_size = (max(1, int(width * ratio)), max(1, int(height * ratio)))
+            image = image.resize(new_size, Image.LANCZOS)
+            width, height = image.size
+        elif options.oversize_mode == "crop":
+            left = max(0, (width - TARGET_WIDTH) // 2)
+            top = max(0, (height - TARGET_HEIGHT) // 2)
+            image = image.crop((left, top, left + TARGET_WIDTH, top + TARGET_HEIGHT))
+            width, height = image.size
+        else:
+            raise ConversionError(f"Unknown oversize mode: {options.oversize_mode}")
+
+    if width < TARGET_WIDTH or height < TARGET_HEIGHT:
+        if options.undersize_mode == "error":
+            raise ConversionError("Input is smaller than 256x212. Use --undersize pad and set --background.")
+        if options.undersize_mode == "pad":
+            canvas = Image.new("RGB", target, options.background_color)
+            offset = ((TARGET_WIDTH - width) // 2, (TARGET_HEIGHT - height) // 2)
+            canvas.paste(image, offset)
+            image = canvas
+        else:
+            raise ConversionError(f"Unknown undersize mode: {options.undersize_mode}")
+
+    if image.size != target:
+        raise ConversionError("Image could not be resized to exactly 256x212.")
+
+    return image
+
+
+def nearest_palette_index(rgb: Color, palette: Sequence[Color]) -> int:
+    r, g, b = rgb
+    best_idx = 0
+    best_dist = float("inf")
+    for i, (pr, pg, pb) in enumerate(palette):
+        dist = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
+        if dist < best_dist:
+            best_idx = i
+            best_dist = dist
+    return best_idx
+
+
+def enforce_two_colors_per_block(
+    indices: List[int],
+    rgb_values: List[Color],
+    palette: Sequence[Color],
+) -> List[int]:
+    result = indices[:]
+    for block_start in range(0, TARGET_WIDTH, 8):
+        block_indices = indices[block_start : block_start + 8]
+        unique_colors = set(block_indices)
+        if len(unique_colors) <= 2:
+            continue
+
+        counts: Dict[int, int] = {}
+        for idx in block_indices:
+            counts[idx] = counts.get(idx, 0) + 1
+        top_two = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:2]
+        allowed = {c for c, _ in top_two}
+
+        for i in range(block_start, block_start + 8):
+            idx = indices[i]
+            if idx in allowed:
+                continue
+            r, g, b = rgb_values[i]
+            best_choice = None
+            best_dist = float("inf")
+            for candidate in allowed:
+                cr, cg, cb = palette[candidate]
+                dist = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
+                if dist < best_dist:
+                    best_dist = dist
+                    best_choice = candidate
+            result[i] = best_choice if best_choice is not None else idx
+    return result
+
+
+def to_vram(
+    palette_indices: List[int],
+    rgb_values: List[Color],
+    palette: Sequence[Color],
+) -> bytes:
+    vram = bytearray(VRAM_SIZE)
+    pixels_per_line = TARGET_WIDTH
+
+    for ty in range((TARGET_HEIGHT + 7) // 8):
+        for tx in range(32):
+            ty_mod = ty & 7
+            char_index = ty_mod * 32 + tx
+            pattern_base = 0x0000 if ty < 8 else (0x0800 if ty < 16 else 0x1000)
+            color_base = 0x2000 if ty < 8 else (0x2800 if ty < 16 else 0x3000)
+            name_addr = 0x1800 + ty * 32 + tx
+            vram[name_addr] = char_index & 0xFF
+
+            for ry in range(8):
+                y_base = ty * 8 + ry
+                if y_base >= TARGET_HEIGHT:
+                    bg_color_code = 1
+                    fg_color_code = 1
+                    pattern_byte = 0
+                else:
+                    offset = y_base * pixels_per_line + tx * 8
+                    block_indices = palette_indices[offset : offset + 8]
+                    block_rgb = rgb_values[offset : offset + 8]
+                    block_indices = enforce_two_colors_per_block(
+                        block_indices, block_rgb, palette
+                    )
+                    color_min = min(block_indices)
+                    color_max = max(block_indices)
+                    bg_color_code = color_min + 1
+                    fg_color_code = color_max + 1
+                    pattern_byte = 0
+                    for idx, color_idx in enumerate(block_indices):
+                        pattern_byte <<= 1
+                        if color_idx == color_max:
+                            pattern_byte |= 0x01
+
+                pattern_addr = pattern_base + char_index * 8 + ry
+                color_addr = color_base + char_index * 8 + ry
+                vram[pattern_addr] = pattern_byte & 0xFF
+                vram[color_addr] = ((fg_color_code & 0x0F) << 4) | (bg_color_code & 0x0F)
+
+    return bytes(vram)
+
+
+def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
+    options = options or ConvertOptions()
+    palette = build_palette(options)
+    image = image.convert("RGB")
+    image = resize_image(image, options)
+
+    rgb_values = list(image.getdata())
+    palette_indices = [nearest_palette_index(rgb, palette) for rgb in rgb_values]
+
+    vram = to_vram(palette_indices, rgb_values, palette)
+
+    if not options.include_header:
+        return vram
+
+    header = bytes([0xFE, 0x00, 0x00, 0xFF, 0x3F, 0x00, 0x00])
+    return header + vram
+
+
+def convert_png_to_sc2(path: str | Path, options: ConvertOptions | None = None) -> bytes:
+    path = Path(path)
+    try:
+        with Image.open(path) as img:
+            return convert_image_to_sc2(img, options)
+    except FileNotFoundError as exc:
+        raise ConversionError(f"Input file not found: {path}") from exc
+    except OSError as exc:
+        raise ConversionError(f"Failed to read PNG: {path}") from exc
