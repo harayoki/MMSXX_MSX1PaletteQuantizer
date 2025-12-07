@@ -4,9 +4,10 @@
 
 A small utility to convert PNG images into MSX Screen 2 (`.sc2`) or Screen 4 (`.sc4`) binaries.
 
-This converter does **not** include any dithering or beautification logic; it simply picks the
-nearest palette color in RGB space for each pixel. For higher-quality conversions, please use the
-parent MMSXX_MSX1PaletteQuantizer CLI or other tools.
+The converter applies a lightweight line-based dithering step before the 8-dot two-color reduction,
+favoring palette pairs that mix cleanly and avoiding harsh complementary blends. Dithering can be
+disabled with `--no-dither` if you prefer straight nearest-color mapping. For more advanced tuning,
+use the parent MMSXX_MSX1PaletteQuantizer (CLI / for After Effects / for Photoshop:WIP ) or any other tools.
 
 Screen 4 output is provided because viewing Screen 2 images on MSX2 hardware applies the MSX2
 palette, which creates a brighter/vivid look than MSX1. Saving as Screen 4 lets you pair the image
@@ -44,6 +45,7 @@ Key options:
 * `--oversize {error,shrink,crop}`: How to handle inputs larger than `256x192` (default: `error`).
 * `--undersize {error,pad}`: How to handle inputs smaller than `256x192` (default: `error`).
 * `--background COLOR`: Background fill color for padding (e.g., `0,0,0` or `#000000`).
+* `--no-dither`: Disable palette dithering prior to the 8-dot two-color enforcement.
 * `--msx2-palette`: Use the MSX2 basic palette instead of MSX1 for conversion calculations.
 * `--paletteN R G B`: Override palette entry N (1–15). Example: `--palette2 62 184 73`.
 * `--gamma`, `--contrast`, `--hue-shift`: Optional pre-processing applied before the MSX1 mapping to help the palette's tonal response match the source.

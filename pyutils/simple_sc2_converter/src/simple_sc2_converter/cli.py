@@ -91,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Strategy for limiting each 8-pixel block to two colors",
     )
     parser.add_argument(
+        "--no-dither",
+        action="store_true",
+        help="Disable palette dithering before 8-dot color reduction",
+    )
+    parser.add_argument(
         "--gamma",
         type=float,
         help=(
@@ -229,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         options.contrast = args.contrast
         options.hue_shift = args.hue_shift
         options.posterize_colors = args.posterize_colors
+        options.enable_dither = not args.no_dither
 
         inputs = iter_pngs(args.inputs)
         output_dir = Path(args.output_dir)
