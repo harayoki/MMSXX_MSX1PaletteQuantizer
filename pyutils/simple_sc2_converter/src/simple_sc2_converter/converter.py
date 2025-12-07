@@ -623,6 +623,7 @@ def to_vram(
     rgb_values: List[Color],
     palette: Sequence[Color],
     mode: str,
+    record_indices: List[int] | None = None,
 ) -> bytes:
     vram = bytearray(VRAM_SIZE)
     pixels_per_line = TARGET_WIDTH
@@ -659,6 +660,9 @@ def to_vram(
                         if color_idx == color_max:
                             pattern_byte |= 0x01
 
+                if record_indices is not None:
+                    record_indices.extend(block_indices)
+
                 pattern_addr = pattern_base + char_index * 8 + ry
                 color_addr = color_base + char_index * 8 + ry
                 vram[pattern_addr] = pattern_byte & 0xFF
@@ -667,7 +671,9 @@ def to_vram(
     return bytes(vram)
 
 
-def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
+def _prepare_quantized_image(
+    image: Image.Image, options: ConvertOptions | None
+) -> tuple[ConvertOptions, List[Color], List[int], List[Color]]:
     options = options or ConvertOptions()
     image = apply_preprocessing(image, options)
     palette = build_palette(options)
@@ -677,6 +683,14 @@ def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = No
     allow_pairs = build_dither_pair_allowlist(palette)
     palette_indices = map_palette_with_dither(
         rgb_values, palette, allow_pairs, options.enable_dither
+    )
+
+    return options, palette, palette_indices, rgb_values
+
+
+def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
+    options, palette, palette_indices, rgb_values = _prepare_quantized_image(
+        image, options
     )
 
     vram = to_vram(palette_indices, rgb_values, palette, options.eightdot_mode)
@@ -786,6 +800,35 @@ def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = No
     return sc2_to_sc4(sc2_vram, include_header=options.include_header)
 
 
+def convert_image_to_msx_png(
+    image: Image.Image, options: ConvertOptions | None = None
+) -> Image.Image:
+    """Convert an in-memory image into a Screen 2-constrained PNG preview."""
+
+    options, palette, palette_indices, rgb_values = _prepare_quantized_image(
+        image, options
+    )
+
+    final_indices: List[int] = []
+    to_vram(
+        palette_indices,
+        rgb_values,
+        palette,
+        options.eightdot_mode,
+        record_indices=final_indices,
+    )
+
+    expected_pixels = TARGET_WIDTH * TARGET_HEIGHT
+    if len(final_indices) != expected_pixels:
+        raise ConversionError(
+            "Failed to render the quantized image to Screen 2 dimensions."
+        )
+
+    preview = Image.new("RGB", (TARGET_WIDTH, TARGET_HEIGHT))
+    preview.putdata([palette[idx] for idx in final_indices])
+    return preview
+
+
 def convert_png_to_sc2(path: str | Path, options: ConvertOptions | None = None) -> bytes:
     path = Path(path)
     try:
@@ -802,6 +845,19 @@ def convert_png_to_sc4(path: str | Path, options: ConvertOptions | None = None) 
     try:
         with Image.open(path) as img:
             return convert_image_to_sc4(img, options)
+    except FileNotFoundError as exc:
+        raise ConversionError(f"Input file not found: {path}") from exc
+    except OSError as exc:
+        raise ConversionError(f"Failed to read PNG: {path}") from exc
+
+
+def convert_png_to_msx_png(
+    path: str | Path, options: ConvertOptions | None = None
+) -> Image.Image:
+    path = Path(path)
+    try:
+        with Image.open(path) as img:
+            return convert_image_to_msx_png(img, options)
     except FileNotFoundError as exc:
         raise ConversionError(f"Input file not found: {path}") from exc
     except OSError as exc:
