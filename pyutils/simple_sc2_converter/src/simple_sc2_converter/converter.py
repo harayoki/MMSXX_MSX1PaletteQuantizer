@@ -813,9 +813,22 @@ def convert_image_to_msx_png(
     options, palette, palette_indices, rgb_values = _prepare_quantized_image(
         image, options
     )
+    def tile_to_raster(record_indices):
+        out = [0] * (256 * 192)
+        it = iter(record_indices)
+
+        for ty in range(24):
+            for tx in range(32):
+                for ry in range(8):
+                    for rx in range(8):
+                        color = next(it)
+                        x = tx * 8 + rx
+                        y = ty * 8 + ry
+                        out[y * 256 + x] = color
+        return out
 
     if options.eightdot_mode.upper() == "NONE":
-        final_indices = palette_indices
+        final_indices_raster = palette_indices
     else:
         final_indices = []
         to_vram(
@@ -831,21 +844,8 @@ def convert_image_to_msx_png(
             raise ConversionError(
                 "Failed to render the quantized image to Screen 2 dimensions."
             )
-    def tile_to_raster(record_indices):
-        out = [0] * (256 * 192)
-        it = iter(record_indices)
 
-        for ty in range(24):
-            for tx in range(32):
-                for ry in range(8):
-                    for rx in range(8):
-                        color = next(it)
-                        x = tx * 8 + rx
-                        y = ty * 8 + ry
-                        out[y * 256 + x] = color
-        return out
-
-    final_indices_raster = tile_to_raster(final_indices)
+        final_indices_raster = tile_to_raster(final_indices)
 
     preview = Image.new("RGB", (TARGET_WIDTH, TARGET_HEIGHT))
     preview.putdata([palette[idx] for idx in final_indices_raster])
