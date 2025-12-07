@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "simple-sc2-converter"
+version = "0.1.0"
+description = "Simple PNG to SC2 converter for MSX graphics"
+readme = "README.md"
+authors = [{ name = "harayoki" }]
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["MSX", "graphics"]
+dependencies = [
+  "Pillow>=10.0.0",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/pyutils/simple_sc2_converter"
+
+[project.scripts]
+simple-sc2-converter = "simple_sc2_converter.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/simple_sc2_converter"]
