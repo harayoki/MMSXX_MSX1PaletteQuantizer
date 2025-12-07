@@ -277,6 +277,9 @@ def sc2_to_sc4(sc2_bytes: bytes, include_header: bool = True) -> bytes:
     16 KiB layout for pattern, name, and color tables, so this function mainly
     normalizes the input to raw VRAM and rewrites the optional header for an
     ``.sc4`` payload.
+
+    Warning: SC4 binary layout differs from SC2; this placeholder implementation
+    will be corrected in a future update.
     """
 
     vram = _strip_header(sc2_bytes)

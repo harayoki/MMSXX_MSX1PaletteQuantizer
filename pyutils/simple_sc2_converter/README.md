@@ -1,6 +1,12 @@
 # Simple SC2 Converter
 
+⚠️ このツールは開発中です。
+
 A small utility to convert PNG images into MSX Screen 2 (`.sc2`) or Screen 4 (`.sc4`) binaries.
+
+This converter does **not** include any dithering or beautification logic; it simply picks the
+nearest palette color in RGB space for each pixel. For higher-quality conversions, please use the
+parent MMSXX_MSX1PaletteQuantizer CLI or other tools.
 
 * Accepts PNG files or folders (non-recursive) containing PNGs.
 * Ensures inputs are `256x192` pixels by default and supports optional resizing, cropping, or padding.
