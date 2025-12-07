@@ -1,16 +1,16 @@
-# Basic Sc2 Viewer
+# Basic Sc2/Sc4 Viewer
 
-The image (sc2 file) provided as an argument is stored in a disk image and can be displayed using an auto-start BASIC program.
+The image (sc2/sc4 file) provided as an argument is stored in a disk image and can be displayed using an auto-start BASIC program.
 The disk image can be opened with an emulator. To write it to a 2DD disk, additional tools are required.
 
-Note: SCREEN5 output is planned for deprecation. Future builds are expected to support SCREEN4 instead.
+Note: SCREEN5 output has been removed. SCREEN4 output is available for MSX2 and later machines.
 
 ---
  
-引数で与えられた画像（sc2ファイル）をdiskイメージに格納し、自動起動するBASICプログラムで画像を表示できるようにします。
+引数で与えられた画像（sc2/sc4ファイル）をdiskイメージに格納し、自動起動するBASICプログラムで画像を表示できるようにします。
 diskイメージはエミュレータで開くことができます。実際に2DDディスクに書き込むには、別途ツールが必要です。
 
-注記: 現在はSCREEN5出力にも対応していますが、これは廃止予定です。今後は SCREEN4 対応の追加を予定しています。
+注記: SCREEN5出力は廃止され、SCREEN4出力がMSX2以降向けに利用可能です。
 
 
 usage:

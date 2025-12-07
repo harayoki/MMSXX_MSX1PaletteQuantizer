@@ -6,7 +6,7 @@ from typing import List, Set
 import tempfile
 import msxdisk
 
-# NOTE: SCREEN5 対応は廃止予定で、今後は SCREEN4 対応を追加する予定です。
+# NOTE: SCREEN5 対応を廃止し、SCREEN4 対応を追加しました。
 
 autoexec_bas = """10 RUN "V.BAS"
 """
@@ -18,7 +18,7 @@ viewer_template = """10 DEFINT A-Z:CLS:KEY 6,"AUTOEXEC.BAS"
 40 GOSUB 1000 
 50 LASTI=-1:NIMG={{num_images}}:SC2MSX2={{allow_sc2_in_msx2|default(0)}}
 60 GOSUB 2000
-70 IF NING=0 THEN PRINT "NO SC2 IMAGES FOUND":END
+70 IF NING=0 THEN PRINT "NO SC2/SC4 IMAGES FOUND":END
 80 SC=0:K$=" ":GOTO 120
 100 ' ____ MAIN LOOP ____
 110 K$=INKEY$
@@ -55,31 +55,15 @@ viewer_template = """10 DEFINT A-Z:CLS:KEY 6,"AUTOEXEC.BAS"
 1220 SC=2:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 2 SET"
 1230 SCREEN 2
 1290 RETURN
-1300 '____ SETUP SCREEN 5 ____
-1310 IF SC=5 THEN RETURN ELSE SC=5:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 5 SET"
-1320 SCREEN 5
-1330 COLOR=(0,0,0,0)
-1340 COLOR=(1,0,0,0)
-1350 COLOR=(2,2,5,2)
-1360 COLOR=(3,3,5,3)
-1370 COLOR=(4,2,2,6)
-1380 COLOR=(5,3,3,6)
-1390 COLOR=(6,5,2,2)
-1400 COLOR=(7,2,6,6)
-1410 COLOR=(8,6,2,2)
-1420 COLOR=(9,7,3,3)
-1430 COLOR=(10,5,5,2)
-1440 COLOR=(11,6,5,3)
-1450 COLOR=(12,1,4,1)
-1460 COLOR=(13,5,3,5)
-1470 COLOR=(14,5,5,5)
-1480 COLOR=(15,7,7,7)
-1990 RETURN
+1300 '____ SETUP SCREEN 4 ____
+1310 IF SC=4 THEN RETURN ELSE SC=4:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 4 SET"
+1320 SCREEN 4
+1330 RETURN
 2000 '____ LOAD DATA ____
 2020 DIM F$(NIMG-1):I = 0
 2030 READ D$
 2040 IF D$="END" THEN NING=I:RETURN
-2050 IF RIGHT$(D$,3)="SC5" AND MSXV=1 THEN GOTO 2030
+2050 IF RIGHT$(D$,3)="SC4" AND MSXV=1 THEN GOTO 2030
 2060 IF RIGHT$(D$,3)="SC2" AND MSXV=2 AND SC2MSX2=0 THEN GOTO 2030
 2070 PRINT "FOUND IMG: "; D$
 2080 F$(I)=D$
@@ -116,8 +100,8 @@ def get_file_list(input_paths: List[str], target_exts: Set[str]) -> List[Path]:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Create a MSX disk image with sc2/sc5 viewer. "
-            "SCREEN5 support is slated for removal; SCREEN4 support is planned."
+            "Create a MSX disk image with sc2/sc4 viewer. "
+            "SCREEN5 support has been removed; SCREEN4 support is available."
         ))
     parser.add_argument(
         "input_files_or_dirs",
@@ -142,9 +126,9 @@ def main():
 
     args = parser.parse_args()
     input_paths = args.input_files_or_dirs
-    flatten_paths = get_file_list(input_paths, target_exts={'sc2', 'sc5'})
+    flatten_paths = get_file_list(input_paths, target_exts={'sc2', 'sc4'})
     if not flatten_paths:
-        sys.exit("No .sc2 or .sc5 files found in the provided paths.")
+        sys.exit("No .sc2 or .sc4 files found in the provided paths.")
 
     temp_dir = tempfile.TemporaryDirectory()
     for i, p in enumerate(flatten_paths):
