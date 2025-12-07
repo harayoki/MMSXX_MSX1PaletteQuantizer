@@ -211,16 +211,18 @@ def build_rom(
 
     loader_placeholder = build_loader(0, 0, IMAGE_LENGTH, background_color, border_color)
     image0_offset = (code_offset + len(loader_placeholder) + 0x0F) & ~0x0F
-    image1_offset = (image0_offset + IMAGE_LENGTH + 0x0F) & ~0x0F
+    image1_offset = 0x8000 - ROM_BASE
 
     image0_addr = ROM_BASE + image0_offset
-    image1_addr = ROM_BASE + image1_offset
+    image1_addr = 0x8000
 
     loader = build_loader(image0_addr, image1_addr, IMAGE_LENGTH, background_color, border_color)
 
     end_of_images = image1_offset + IMAGE_LENGTH
     if end_of_images > ROM_SIZE:
         raise ValueError("Images and loader do not fit in 32 KiB ROM")
+    if image0_offset + IMAGE_LENGTH > image1_offset:
+        raise ValueError("Image0 and loader must fit before the fixed image1 offset")
 
     # Header
     rom[0:2] = HEADER_SIGNATURE
