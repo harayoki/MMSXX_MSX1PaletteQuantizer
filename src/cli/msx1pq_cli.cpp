@@ -26,6 +26,7 @@ struct CliOptions {
     bool force{false};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
+    // SCREEN5 export is slated for deprecation.
     bool out_sc5{false};
     bool out_sc2{false};
     bool use_dither{true};
@@ -103,6 +104,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
         std::cout << "MMSXX - MSX1 Palette Quantizer\n"
                   << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
                   << "1つの画像またはフォルダ内の複数の画像を受け取り、MSX1(TMS9918)の表示ルールに則った画像に変換します。\n"
+                  << "※ SCREEN5(.sc5) 出力は廃止予定です。\n"
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
@@ -135,7 +137,8 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
     std::cout << "MMSXX - MSX1 Palette Quantizer\n"
               << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
               << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
-                  << "Options:\n"
+              << "Note: SCREEN5 (.sc5) output is slated for deprecation.\n"
+              << "Options:\n"
                   << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
                   << "  --output, -o <dir>           Specify the output directory\n"
                   << "  --out-prefix <string>       Prefix to add to output file names\n"
