@@ -8,6 +8,10 @@ This converter does **not** include any dithering or beautification logic; it si
 nearest palette color in RGB space for each pixel. For higher-quality conversions, please use the
 parent MMSXX_MSX1PaletteQuantizer CLI or other tools.
 
+Screen 4 output is provided because viewing Screen 2 images on MSX2 hardware applies the MSX2
+palette, which creates a brighter/vivid look than MSX1. Saving as Screen 4 lets you pair the image
+with an MSX1-style palette on MSX2 and later machines so the MSX1 color tone can be preserved.
+
 * Accepts PNG files or folders (non-recursive) containing PNGs.
 * Ensures inputs are `256x192` pixels by default and supports optional resizing, cropping, or padding.
 * Uses the MSX1 basic palette by default, with switches for the MSX2 palette and per-color overrides.

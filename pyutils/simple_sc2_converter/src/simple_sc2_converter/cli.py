@@ -46,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Convert PNG files into MSX Screen 2 (.sc2) or Screen 4 (.sc4) binaries.\n"
             "Default palette: MSX1 basic colors. Use --msx2-palette for MSX2 palette (both are used in conversion calculations).\n"
+            "Screen 4 output exists so MSX2+ users can load the data with an MSX1-style palette and avoid the vivid MSX2 default colors when viewing Screen 2 art.\n"
             f"MSX1 palette: {palette_text}\nMSX2 palette: {palette_text_msx2}"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
