@@ -78,7 +78,10 @@ def build_loader(
         raise ValueError("image_length must be 0x3780 bytes")
 
     def copy_image_block(base_addr: int) -> Tuple[int, ...]:
+        """Copy trimmed SCREEN2 data back to its original VRAM layout."""
+
         return (
+            # Pattern generator + name table (0x0000-0x1AFF)
             0x21,
             base_addr & 0xFF,
             (base_addr >> 8) & 0xFF,  # LD HL,image_base
@@ -91,6 +94,7 @@ def build_loader(
             0xCD,
             LDIRVM & 0xFF,
             (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
+            # Gap between name table and color table (0x1B80-0x1FFF)
             0x21,
             (base_addr + 0x1B00) & 0xFF,
             ((base_addr + 0x1B00) >> 8) & 0xFF,  # LD HL,image_base+1B00h
@@ -99,7 +103,20 @@ def build_loader(
             0x1B,  # LD DE,1B80h
             0x01,
             0x80,
-            0x1C,  # LD BC,1C80h
+            0x04,  # LD BC,0480h
+            0xCD,
+            LDIRVM & 0xFF,
+            (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
+            # Color table (0x2000-0x37FF)
+            0x21,
+            (base_addr + 0x1F80) & 0xFF,
+            ((base_addr + 0x1F80) >> 8) & 0xFF,  # LD HL,image_base+1F80h
+            0x11,
+            0x00,
+            0x20,  # LD DE,2000h
+            0x01,
+            0x00,
+            0x18,  # LD BC,1800h
             0xCD,
             LDIRVM & 0xFF,
             (LDIRVM >> 8) & 0xFF,  # CALL LDIRVM
@@ -216,7 +233,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "image1",
         type=Path,
-        help="Path to the second .sc2 file (displayed after key press)",
+        nargs="?",
+        help=(
+            "Path to the second .sc2 file (displayed after key press). "
+            "If omitted, the first image is reused."
+        ),
     )
     parser.add_argument(
         "-o",
@@ -250,11 +271,14 @@ def main() -> None:
 
     if not args.image0.is_file():
         raise SystemExit(f"Input file not found: {args.image0}")
-    if not args.image1.is_file():
-        raise SystemExit(f"Input file not found: {args.image1}")
+
+    image1_path = args.image1 or args.image0
+
+    if not image1_path.is_file():
+        raise SystemExit(f"Input file not found: {image1_path}")
 
     image0_bytes = sc2_to_trimmed(args.image0.read_bytes())
-    image1_bytes = sc2_to_trimmed(args.image1.read_bytes())
+    image1_bytes = sc2_to_trimmed(image1_path.read_bytes())
 
     rom_bytes = build_rom(
         image0_bytes,
