@@ -85,6 +85,7 @@ class ConvertOptions:
     use_msx2_palette: bool = False
     palette_overrides: PaletteOverride = field(default_factory=dict)
     include_header: bool = True
+    eightdot_mode: str = "BASIC"  # FAST, BASIC, BEST
 
 
 class ConversionError(Exception):
@@ -192,34 +193,91 @@ def enforce_two_colors_per_block(
     indices: List[int],
     rgb_values: List[Color],
     palette: Sequence[Color],
+    mode: str = "FAST",
 ) -> List[int]:
+    """Limit each 8-pixel block to two palette indices.
+
+    The ``mode`` argument controls how the two palette entries are chosen:
+    - ``FAST``  : pick the two most frequent palette indices in the block and
+      snap other pixels to whichever of those two colors is closer in RGB
+      distance.
+    - ``BASIC`` : evaluate all color pairs that already appear in the block and
+      choose the pair with the smallest summed RGB distance to the original
+      pixels, then remap every pixel to the nearer color from that pair.
+    - ``BEST``  : brute-force every pair from the full 15-color palette and use
+      the pair that minimizes summed RGB distance for the block, remapping
+      pixels to the nearer candidate.
+    """
+
+    mode_upper = mode.upper()
+    if mode_upper not in {"FAST", "BASIC", "BEST"}:
+        raise ConversionError(f"Unknown eightdot mode: {mode}")
+
     result = indices[:]
+
+    def block_error(pair: Tuple[int, int], start: int) -> float:
+        color_a, color_b = pair
+        err = 0.0
+        for offset, (r, g, b) in enumerate(rgb_values[start : start + 8]):
+            idx = indices[start + offset]
+            if idx == color_a or idx == color_b:
+                continue
+            ra, ga, ba = palette[color_a]
+            rb, gb, bb = palette[color_b]
+            da = (r - ra) ** 2 + (g - ga) ** 2 + (b - ba) ** 2
+            db = (r - rb) ** 2 + (g - gb) ** 2 + (b - bb) ** 2
+            err += da if da <= db else db
+        return err
+
     for block_start in range(0, TARGET_WIDTH, 8):
         block_indices = indices[block_start : block_start + 8]
-        unique_colors = set(block_indices)
+        unique_colors = sorted(set(block_indices))
         if len(unique_colors) <= 2:
             continue
 
-        counts: Dict[int, int] = {}
-        for idx in block_indices:
-            counts[idx] = counts.get(idx, 0) + 1
-        top_two = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:2]
-        allowed = {c for c, _ in top_two}
+        chosen: Tuple[int, int]
+
+        if mode_upper == "FAST":
+            counts: Dict[int, int] = {}
+            for idx in block_indices:
+                counts[idx] = counts.get(idx, 0) + 1
+            top_two = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:2]
+            chosen = (top_two[0][0], top_two[1][0])
+        elif mode_upper == "BASIC":
+            best_pair: Tuple[int, int] | None = None
+            best_error = float("inf")
+            for i, color_a in enumerate(unique_colors):
+                for color_b in unique_colors[i + 1 :]:
+                    err = block_error((color_a, color_b), block_start)
+                    if err < best_error:
+                        best_error = err
+                        best_pair = (color_a, color_b)
+            if best_pair is None:
+                continue
+            chosen = best_pair
+        else:  # BEST
+            best_pair: Tuple[int, int] | None = None
+            best_error = float("inf")
+            for color_a in range(len(palette)):
+                for color_b in range(color_a + 1, len(palette)):
+                    err = block_error((color_a, color_b), block_start)
+                    if err < best_error:
+                        best_error = err
+                        best_pair = (color_a, color_b)
+            if best_pair is None:
+                continue
+            chosen = best_pair
+
+        allowed = chosen
+        ra, ga, ba = palette[allowed[0]]
+        rb, gb, bb = palette[allowed[1]]
 
         for i in range(block_start, block_start + 8):
-            idx = indices[i]
-            if idx in allowed:
-                continue
             r, g, b = rgb_values[i]
-            best_choice = None
-            best_dist = float("inf")
-            for candidate in allowed:
-                cr, cg, cb = palette[candidate]
-                dist = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
-                if dist < best_dist:
-                    best_dist = dist
-                    best_choice = candidate
-            result[i] = best_choice if best_choice is not None else idx
+            da = (r - ra) ** 2 + (g - ga) ** 2 + (b - ba) ** 2
+            db = (r - rb) ** 2 + (g - gb) ** 2 + (b - bb) ** 2
+            result[i] = allowed[0] if da <= db else allowed[1]
+
     return result
 
 
@@ -227,6 +285,7 @@ def to_vram(
     palette_indices: List[int],
     rgb_values: List[Color],
     palette: Sequence[Color],
+    mode: str,
 ) -> bytes:
     vram = bytearray(VRAM_SIZE)
     pixels_per_line = TARGET_WIDTH
@@ -251,7 +310,7 @@ def to_vram(
                     block_indices = palette_indices[offset : offset + 8]
                     block_rgb = rgb_values[offset : offset + 8]
                     block_indices = enforce_two_colors_per_block(
-                        block_indices, block_rgb, palette
+                        block_indices, block_rgb, palette, mode
                     )
                     color_min = min(block_indices)
                     color_max = max(block_indices)
@@ -280,7 +339,7 @@ def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = No
     rgb_values = list(image.getdata())
     palette_indices = [nearest_palette_index(rgb, palette) for rgb in rgb_values]
 
-    vram = to_vram(palette_indices, rgb_values, palette)
+    vram = to_vram(palette_indices, rgb_values, palette, options.eightdot_mode)
 
     if not options.include_header:
         return vram
