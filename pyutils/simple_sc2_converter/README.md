@@ -1,6 +1,6 @@
-# Simple SC2 Converter
+# Simple SC2 Converter (WIP)
 
-⚠️ このツールは開発中です。
+(!) This tool is under development and may change in future releases.
 
 A small utility to convert PNG images into MSX Screen 2 (`.sc2`) or Screen 4 (`.sc4`) binaries.
 
