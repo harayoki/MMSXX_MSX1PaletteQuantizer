@@ -1,5 +1,29 @@
 """Core conversion logic for the simple SC2 converter."""
 
+# Reference: SCREEN 2 (MSX1)
+# Usage                 | Address Range  | Notes
+# ----------------------|---------------|-------------------------------------------------------
+# Pattern generator     | 0000h–17FFh   | 8×8 dots × 768 patterns (3 banks)
+# Name table            | 1800h–1AFFh   | 32×24 = 768 bytes; pattern numbers placed on screen
+# Sprite attributes     | 1B00h–1B7Fh   | 32 entries; terminates at Y = 216 (0xD8)
+# Color table           | 2000h–37FFh   | 8×8 × 768 bytes; color data corresponding to patterns
+# Sprite patterns       | 3800h–3FFFh   | 8×8 × 256 bytes
+
+# Reference: SCREEN 4 (Graphic 3, MSX2 and later)
+# - Resolution and color count match SCREEN 2 (2bpp with pattern colors).
+# - Compatible with SCREEN 2, but table start addresses differ and sprites are Type 2
+#   (multi-color sprites).
+# Usage                 | Address Range   | Notes
+# ----------------------|-----------------|-------------------------------------------------------
+# Pattern generator     | 00000h–017FFh   | 8×8 dots × 768 patterns (3 banks)
+# Name table            | 01800h–01AFFh   | 32×24 = 768 bytes
+# Color palette table   | 01B80h–01B9Fh   | 16 colors × 2 bytes (each R/G/B has 3 bits)
+# Sprite colors         | 01C00h–01DFFh   | 256 entries (1 byte each)
+# Sprite attributes     | 01E00h–01E7Fh   | 32 entries; terminates at Y = 216 (0xD8)
+# Pattern colors        | 02000h–037FFh   | 8×8 × 768 bytes; color data corresponding to patterns
+# Sprite patterns       | 03800h–03FFFh   | 8×8 × 256 bytes
+# Free space            | 04000h–0FFFFh/1FFFFh | Varies depending on 64KB/128KB VRAM
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -147,6 +171,12 @@ def resize_image(image: Image.Image, options: ConvertOptions) -> Image.Image:
 
 
 def nearest_palette_index(rgb: Color, palette: Sequence[Color]) -> int:
+    """
+    Return the palette entry closest to ``rgb`` using squared distance.
+    Iterates every palette entry and tracks the index with the smallest
+    Euclidean distance in RGB space. Squared distances are used to avoid an
+    unnecessary square root while preserving ordering.
+    """
     r, g, b = rgb
     best_idx = 0
     best_dist = float("inf")
