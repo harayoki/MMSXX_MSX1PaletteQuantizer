@@ -47,6 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Convert PNG files into MSX Screen 2 (.sc2) or Screen 4 (.sc4) binaries.\n"
             "Default palette: MSX1 basic colors. Use --msx2-palette for MSX2 palette (both are used in conversion calculations).\n"
             "Screen 4 output exists so MSX2+ users can load the data with an MSX1-style palette and avoid the vivid MSX2 default colors when viewing Screen 2 art.\n"
+            "Adjusting gamma, contrast, or hue before MSX1 mapping can better match the palette's color response; "
+            "posterizing the source can suppress color jitter and even help fine-tune how tones snap to palette colors.\n"
             f"MSX1 palette: {palette_text}\nMSX2 palette: {palette_text_msx2}"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
@@ -87,6 +89,38 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["FAST", "BASIC", "BEST"],
         default="BASIC",
         help="Strategy for limiting each 8-pixel block to two colors",
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        help=(
+            "Optional gamma curve applied before MSX1-style conversion. "
+            "Helps match the palette's tonal response when tuning source colors."
+        ),
+    )
+    parser.add_argument(
+        "--contrast",
+        type=float,
+        help=(
+            "Optional contrast multiplier applied ahead of MSX1 image mapping. "
+            "Use to better align the source with palette characteristics."
+        ),
+    )
+    parser.add_argument(
+        "--hue-shift",
+        type=float,
+        help=(
+            "Shift source hue in degrees (-180 to 180) before MSX1-style conversion. "
+            "Use to better align palette hues without altering brightness or saturation."
+        ),
+    )
+    parser.add_argument(
+        "--posterize-colors",
+        type=int,
+        help=(
+            "Posterize the source to the given color count before conversion to "
+            "suppress color jitter; can also fine-tune how colors snap to the palette."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -191,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
         options.include_header = not args.no_header
         options.palette_overrides = collect_overrides(args)
         options.eightdot_mode = args.eightdot
+        options.gamma = args.gamma
+        options.contrast = args.contrast
+        options.hue_shift = args.hue_shift
+        options.posterize_colors = args.posterize_colors
 
         inputs = iter_pngs(args.inputs)
         output_dir = Path(args.output_dir)
