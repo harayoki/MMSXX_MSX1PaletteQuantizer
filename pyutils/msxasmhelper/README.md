@@ -1,4 +1,4 @@
-# msxasmhelper
+# msxasmhelper （WIP)
 
 `msxasmhelper` is a tiny utility library that exposes MSX Z80 mnemonics as Python callables. It focuses on the instructions listed in [`techdocs/z80_assembly_byte_map.md`](../../techdocs/z80_assembly_byte_map.md) and returns the corresponding machine bytes so you can quickly build small programs or ROM snippets.
 
