@@ -669,8 +669,8 @@ def _encode_msx1_palette() -> bytes:
 
     The V9938 palette expects two bytes per color entry:
 
-    * Byte 0: ``0BBB0RRR`` (lower 3 bits = red, upper 3 bits = blue)
-    * Byte 1: ``0GGG0000`` (lower 3 bits = green)
+    * Byte 0: ``0RRR0BBB`` (lower 3 bits = blue, upper 3 bits = red)
+    * Byte 1: ``00000GGG`` (lower 3 bits = green)
 
     MSX1 colors are expressed in 0–255 RGB values. They are quantized to the
     3-bit-per-channel format by scaling into the 0–7 range.
@@ -680,9 +680,10 @@ def _encode_msx1_palette() -> bytes:
         return max(0, min(7, round(component * 7 / 255)))
 
     palette_bytes = bytearray()
-    for r, g, b in BASIC_COLORS_MSX1:
+    pallele_from0 = [(0,0,0)] + BASIC_COLORS_MSX1
+    for r, g, b in pallele_from0:
         r3, g3, b3 = to_3bit(r), to_3bit(g), to_3bit(b)
-        palette_bytes.append((b3 << 4) | r3)
+        palette_bytes.append((r3 << 4) | b3)
         palette_bytes.append(g3)
     return bytes(palette_bytes)
 

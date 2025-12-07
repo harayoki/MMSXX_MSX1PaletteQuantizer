@@ -1,6 +1,6 @@
 # Python Utilities
 
-This directory hosts Python (3.11 or later) based tools for the project. 
+This directory hosts Python (3.11 or later) based tools for the project.
 
 # パイソンユーティリティ
 
