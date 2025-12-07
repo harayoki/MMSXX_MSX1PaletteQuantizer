@@ -91,6 +91,7 @@ class ConvertOptions:
     hue_shift: float | None = None
     posterize_colors: int | None = None
     enable_dither: bool = True
+    skip_dither_application: bool = False
 
 
 class ConversionError(Exception):
@@ -448,6 +449,91 @@ def build_dither_pair_allowlist(palette: Sequence[Color]) -> List[List[bool]]:
     return allow
 
 
+@dataclass
+class DitherCandidate:
+    tag: str
+    primary: int
+    secondary: int
+    mix_color: Color
+    minority_is_primary: bool = False
+
+
+def _build_dither_candidates(
+    palette: Sequence[Color],
+    allow_pairs: Sequence[Sequence[bool]],
+    enable_dither: bool,
+) -> List[DitherCandidate]:
+    candidates = [
+        DitherCandidate(tag="single", primary=i, secondary=i, mix_color=color)
+        for i, color in enumerate(palette)
+    ]
+
+    if not enable_dither:
+        return candidates
+
+    size = len(palette)
+    for a in range(size):
+        for b in range(a + 1, size):
+            if not allow_pairs[a][b]:
+                continue
+
+            color_a = palette[a]
+            color_b = palette[b]
+
+            candidates.append(
+                DitherCandidate(
+                    tag="half_even",
+                    primary=a,
+                    secondary=b,
+                    mix_color=_blend(color_a, color_b, 0.5),
+                )
+            )
+            candidates.append(
+                DitherCandidate(
+                    tag="half_odd",
+                    primary=a,
+                    secondary=b,
+                    mix_color=_blend(color_a, color_b, 0.5),
+                )
+            )
+
+            candidates.append(
+                DitherCandidate(
+                    tag="quarter_primary",
+                    primary=a,
+                    secondary=b,
+                    mix_color=_blend(color_a, color_b, 0.25),
+                    minority_is_primary=True,
+                )
+            )
+            candidates.append(
+                DitherCandidate(
+                    tag="quarter_secondary",
+                    primary=a,
+                    secondary=b,
+                    mix_color=_blend(color_a, color_b, 0.75),
+                    minority_is_primary=False,
+                )
+            )
+
+    # Special 3:1 mixes with black as the majority color against every other entry.
+    black_index = 0
+    if black_index < len(palette):
+        black_color = palette[black_index]
+        for color_index in range(1, len(palette)):
+            candidates.append(
+                DitherCandidate(
+                    tag="black_three_one",
+                    primary=black_index,
+                    secondary=color_index,
+                    mix_color=_blend(black_color, palette[color_index], 0.75),
+                    minority_is_primary=False,
+                )
+            )
+
+    return candidates
+
+
 def _line_dither_index(
     x: int, y: int, primary: int, secondary: int, secondary_on_even_row: bool
 ) -> int:
@@ -469,57 +555,50 @@ def map_palette_with_dither(
     palette: Sequence[Color],
     allow_pairs: Sequence[Sequence[bool]],
     enable_dither: bool,
+    skip_dither_application: bool,
 ) -> List[int]:
-    if not enable_dither:
-        return [nearest_palette_index(rgb, palette) for rgb in rgb_values]
+    candidates = _build_dither_candidates(palette, allow_pairs, enable_dither)
 
-    size = len(palette)
+    candidate_indices: List[int] = []
+    for rgb in rgb_values:
+        best_idx = 0
+        best_error = _squared_distance(rgb, candidates[0].mix_color)
+        for idx, candidate in enumerate(candidates[1:], start=1):
+            error = _squared_distance(rgb, candidate.mix_color)
+            if error < best_error:
+                best_error = error
+                best_idx = idx
+        candidate_indices.append(best_idx)
+
     result: List[int] = []
-
     for y in range(TARGET_HEIGHT):
         row_offset = y * TARGET_WIDTH
         for x in range(TARGET_WIDTH):
-            rgb = rgb_values[row_offset + x]
-            best_idx = nearest_palette_index(rgb, palette)
-            best_error = _squared_distance(rgb, palette[best_idx])
-            best_choice = ("single", best_idx, best_idx, False)
+            candidate = candidates[candidate_indices[row_offset + x]]
 
-            for a in range(size):
-                for b in range(a + 1, size):
-                    if not allow_pairs[a][b]:
-                        continue
-
-                    color_a = palette[a]
-                    color_b = palette[b]
-
-                    candidates = [
-                        ("half_even", 0.5, False),
-                        ("half_odd", 0.5, True),
-                        ("quarter_a", 0.25, True),
-                        ("quarter_b", 0.25, False),
-                    ]
-
-                    for tag, weight_a, minority_is_a in candidates:
-                        if tag.startswith("half"):
-                            mix = _blend(color_a, color_b, 0.5)
-                        elif minority_is_a:
-                            mix = _blend(color_a, color_b, weight_a)
-                        else:
-                            mix = _blend(color_a, color_b, 1.0 - weight_a)
-
-                        error = _squared_distance(rgb, mix)
-                        if error < best_error:
-                            best_error = error
-                            best_choice = (tag, a, b, minority_is_a)
-
-            choice_tag, a_idx, b_idx, minority_is_a = best_choice
-            if choice_tag == "single":
-                chosen = a_idx
-            elif choice_tag in {"half_even", "half_odd"}:
-                secondary_on_even = choice_tag == "half_even"
-                chosen = _line_dither_index(x, y, a_idx, b_idx, secondary_on_even)
+            if candidate.tag == "single" or not enable_dither or skip_dither_application:
+                if candidate.tag == "single":
+                    chosen = candidate.primary
+                else:
+                    chosen = nearest_palette_index(candidate.mix_color, palette)
+            elif candidate.tag == "half_even":
+                chosen = _line_dither_index(
+                    x, y, candidate.primary, candidate.secondary, True
+                )
+            elif candidate.tag == "half_odd":
+                chosen = _line_dither_index(
+                    x, y, candidate.primary, candidate.secondary, False
+                )
+            elif candidate.tag in {"quarter_primary", "quarter_secondary", "black_three_one"}:
+                chosen = _sparse_dither_index(
+                    x,
+                    y,
+                    candidate.primary,
+                    candidate.secondary,
+                    minority_is_primary=candidate.minority_is_primary,
+                )
             else:
-                chosen = _sparse_dither_index(x, y, a_idx, b_idx, minority_is_a)
+                raise ConversionError(f"Unknown dither candidate tag: {candidate.tag}")
 
             result.append(chosen)
 
@@ -682,7 +761,11 @@ def _prepare_quantized_image(
     rgb_values = list(image.getdata())
     allow_pairs = build_dither_pair_allowlist(palette)
     palette_indices = map_palette_with_dither(
-        rgb_values, palette, allow_pairs, options.enable_dither
+        rgb_values,
+        palette,
+        allow_pairs,
+        options.enable_dither,
+        options.skip_dither_application,
     )
 
     return options, palette, palette_indices, rgb_values
@@ -787,6 +870,9 @@ def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = No
 
     options = options or ConvertOptions()
 
+    if options.skip_dither_application:
+        raise ConversionError("Debug dither skipping cannot be combined with SC2->SC4 conversion")
+
     sc2_options = ConvertOptions(
         oversize_mode=options.oversize_mode,
         undersize_mode=options.undersize_mode,
@@ -799,6 +885,7 @@ def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = No
         hue_shift=options.hue_shift,
         posterize_colors=options.posterize_colors,
         enable_dither=options.enable_dither,
+        skip_dither_application=False,
     )
 
     sc2_vram = convert_image_to_sc2(image, sc2_options)

@@ -101,6 +101,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable palette dithering before 8-dot color reduction",
     )
     parser.add_argument(
+        "--debug-skip-dither-stage",
+        action="store_true",
+        help=(
+            "Debug option: stop after intermediate color mapping and skip the final dithering stage "
+            "(incompatible with SC2->SC4 conversion)"
+        ),
+    )
+    parser.add_argument(
         "--gamma",
         type=float,
         help=(
@@ -246,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         options.hue_shift = args.hue_shift
         options.posterize_colors = args.posterize_colors
         options.enable_dither = not args.no_dither
+        options.skip_dither_application = args.debug_skip_dither_stage
 
         if options.eightdot_mode.upper() == "NONE" and args.format != "png":
             raise ConversionError(
