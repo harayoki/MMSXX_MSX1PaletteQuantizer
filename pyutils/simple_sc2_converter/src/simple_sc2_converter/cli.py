@@ -83,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Background color for padding (e.g., 0,0,0 or #000000)",
     )
     parser.add_argument(
+        "--eightdot",
+        choices=["FAST", "BASIC", "BEST"],
+        default="BASIC",
+        help="Strategy for limiting each 8-pixel block to two colors",
+    )
+    parser.add_argument(
         "--format",
         choices=["sc2", "sc4"],
         default="sc2",
@@ -184,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         options.use_msx2_palette = args.msx2_palette
         options.include_header = not args.no_header
         options.palette_overrides = collect_overrides(args)
+        options.eightdot_mode = args.eightdot
 
         inputs = iter_pngs(args.inputs)
         output_dir = Path(args.output_dir)
