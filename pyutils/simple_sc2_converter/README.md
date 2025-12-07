@@ -46,8 +46,12 @@ Key options:
 * `--background COLOR`: Background fill color for padding (e.g., `0,0,0` or `#000000`).
 * `--msx2-palette`: Use the MSX2 basic palette instead of MSX1 for conversion calculations.
 * `--paletteN R G B`: Override palette entry N (1–15). Example: `--palette2 62 184 73`.
+* `--gamma`, `--contrast`, `--hue-shift`: Optional pre-processing applied before the MSX1 mapping to help the palette's tonal response match the source.
+* `--posterize-colors`: Posterize the source image before conversion to reduce color jitter or fine-tune how colors adhere to the palette.
 
 Use `--help` to see the full list, including the palette values shown in the help text.
+
+Tip: Adjusting gamma, contrast, or hue *before* MSX1 mapping can better align the source material with the palette's tonal and color response, often yielding more faithful results. Posterization primarily reduces color jitter in the source but can also help fine-tune how tones snap to palette entries.
 
 ## Module usage
 

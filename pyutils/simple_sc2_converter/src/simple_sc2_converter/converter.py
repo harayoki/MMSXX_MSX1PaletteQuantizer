@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 Color = Tuple[int, int, int]
 PaletteOverride = Dict[int, Color]
@@ -86,6 +86,10 @@ class ConvertOptions:
     palette_overrides: PaletteOverride = field(default_factory=dict)
     include_header: bool = True
     eightdot_mode: str = "BASIC"  # FAST, BASIC, BEST
+    gamma: float | None = None
+    contrast: float | None = None
+    hue_shift: float | None = None
+    posterize_colors: int | None = None
 
 
 class ConversionError(Exception):
@@ -124,6 +128,45 @@ def build_palette(options: ConvertOptions) -> List[Color]:
         else:
             raise ConversionError(f"Palette index {index} is out of range")
     return palette
+
+
+def apply_preprocessing(image: Image.Image, options: ConvertOptions) -> Image.Image:
+    """Apply optional pre-processing before palette quantization."""
+
+    image = image.convert("RGB")
+
+    if options.hue_shift is not None:
+        if options.hue_shift < -180 or options.hue_shift > 180:
+            raise ConversionError("Hue shift must be between -180 and 180 degrees")
+        shift = int(round(options.hue_shift * 255.0 / 360.0))
+        h, s, v = image.convert("HSV").split()
+        lut = [((value + shift) % 256) for value in range(256)]
+        h = h.point(lut)
+        image = Image.merge("HSV", (h, s, v)).convert("RGB")
+
+    if options.gamma is not None:
+        if options.gamma <= 0:
+            raise ConversionError("Gamma must be greater than 0")
+        gamma = options.gamma
+        lut = [
+            max(0, min(255, int(round((value / 255.0) ** gamma * 255))))
+            for value in range(256)
+        ]
+        image = image.point(lut * len(image.getbands()))
+
+    if options.contrast is not None:
+        if options.contrast < 0:
+            raise ConversionError("Contrast must be zero or greater")
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(options.contrast)
+
+    if options.posterize_colors is not None:
+        if options.posterize_colors < 2:
+            raise ConversionError("Posterize colors must be at least 2")
+        image = image.quantize(colors=options.posterize_colors, method=Image.MEDIANCUT)
+        image = image.convert("RGB")
+
+    return image
 
 
 def format_palette_text(palette: Sequence[Color]) -> str:
@@ -332,8 +375,8 @@ def to_vram(
 
 def convert_image_to_sc2(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
     options = options or ConvertOptions()
+    image = apply_preprocessing(image, options)
     palette = build_palette(options)
-    image = image.convert("RGB")
     image = resize_image(image, options)
 
     rgb_values = list(image.getdata())
@@ -435,6 +478,10 @@ def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = No
         use_msx2_palette=options.use_msx2_palette,
         palette_overrides=dict(options.palette_overrides),
         include_header=False,
+        gamma=options.gamma,
+        contrast=options.contrast,
+        hue_shift=options.hue_shift,
+        posterize_colors=options.posterize_colors,
     )
 
     sc2_vram = convert_image_to_sc2(image, sc2_options)
