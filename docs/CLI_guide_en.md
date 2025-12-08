@@ -4,6 +4,8 @@ The CLI tool `msx1pq_cli` converts PNG images into MSX1/2-style graphics that fo
 
 ## Build
 
+### Windows
+
 Build the Visual Studio project with `msbuild`:
 
 ```bash
@@ -11,6 +13,22 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 ```
 
 The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
+
+### Linux (container-friendly, not yet fully verified)
+
+Install build tools (for example on Ubuntu-based images):
+
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential
+```
+
+Then build the CLI binary with `make`:
+
+```bash
+make -C platform/Linux
+```
+
+The compiled binary will be placed at `bin/msx1pq_cli`.
 
 ## Usage
 
