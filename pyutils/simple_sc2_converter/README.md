@@ -1,9 +1,6 @@
 # Simple SC2 Converter (WIP)
 
-(!) This tool is under development and may change in future releases.
-
 A small utility to convert PNG images into MSX Screen 2 (`.sc2`) binaries or palette-constrained PNG previews.
-Screen 4 (`.sc4`) support has been removed; use the C++ converter if you need that format.
 
 The dithering and pre-MSX1 image processing were reimplemented in Python based on the C++ version, but the Python
 implementation is slower and not planned to receive further updates. Use the C++ CLI for general-purpose conversion;
@@ -81,7 +78,7 @@ with open("output.sc2", "wb") as f:
 
 ## Simple SC2 Converter (日本語)
 
-開発中のツールであり、今後の更新予定はありません。Screen 4 (`.sc4`) の出力サポートは削除されているため、必要な場合はC++版をご利用ください。C++版を元にPythonへディザ処理とMSX1変換前の画像処理を移植しましたが、速度はC++より遅いため、通常の変換はC++版のCLIを使用してください。このPython版は、他のPythonユーティリティがディザ処理済みのPNGをSC2形式へ単純なRGB距離で変換する用途を想定しています。
+C++版を元にPythonへディザ処理とMSX1変換前の画像処理を移植しましたが、速度はC++より遅いため、通常の変換はC++版のCLIを使用してください。このPython版は、他のPythonユーティリティがディザ処理済みのPNGをSC2形式へ単純なRGB距離で変換する用途を想定しています。
 
 * 入力: PNGファイル、またはPNGを含むフォルダー（再帰しない）。
 * 既定で画像サイズを `256x192` に揃え、リサイズ・クロップ・パディングに対応。
