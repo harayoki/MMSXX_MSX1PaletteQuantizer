@@ -4,6 +4,8 @@ CLI ツール `msx1pq_cli` は、PNG 画像を MSX1/2 風の TMS9918 ルール�
 
 ## ビルド方法
 
+### Windows
+
 `msbuild` で Visual Studio プロジェクトをビルドします:
 
 ```bash
@@ -11,6 +13,22 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 ```
 
 ビルド後、実行ファイルは `platform\\Win\\x64\\msx1pq_cli.exe` に生成されます。
+
+### Linux（コンテナ向け・未完全検証）
+
+Ubuntu 系の場合、まずビルドツールをインストールします。
+
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential
+```
+
+その後、`make` で CLI バイナリをビルドします。
+
+```bash
+make -C platform/Linux
+```
+
+ビルド後、実行ファイルは `bin/msx1pq_cli` に生成されます。
 
 ## 使い方
 

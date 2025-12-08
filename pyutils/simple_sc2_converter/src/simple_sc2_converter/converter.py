@@ -688,72 +688,72 @@ def _encode_msx1_palette() -> bytes:
     return bytes(palette_bytes)
 
 
-def sc2_to_sc4(sc2_bytes: bytes, include_header: bool = True) -> bytes:
-    """Convert SC2 VRAM bytes into SC4 VRAM bytes.
-
-    Screen 2 and Screen 4 share the same pattern generator, pattern color, and
-    sprite pattern locations, but Screen 4 relocates sprite attributes and
-    inserts a dedicated color palette table plus a sprite color table. This
-    converter remaps each region according to the layout at the top of this
-    module, injects the fixed MSX1 palette into the color palette table, and
-    clears unused gaps to keep the VRAM image deterministic.
-    """
-
-    vram = _strip_header(sc2_bytes)
-
-    if len(vram) != VRAM_SIZE:
-        raise ConversionError("SC2 VRAM payload must be exactly 16 KiB.")
-
-    sc4 = bytearray(VRAM_SIZE)
-
-    # Pattern generator and name table align between SC2 and SC4.
-    sc4[0x0000:0x1800] = vram[0x0000:0x1800]
-    sc4[0x1800:0x1B00] = vram[0x1800:0x1B00]
-
-    # Insert MSX1 palette in the SC4 color palette table slot.
-    sc4[0x1B80:0x1BA0] = _encode_msx1_palette()
-
-    # Sprite attributes shift from 0x1B00 in SC2 to 0x1E00 in SC4. The gap
-    # between 0x1B00–0x1B7F and 0x1C00–0x1DFF is left zeroed (sprite colors are
-    # not part of SC2 and default to color 0 here).
-    sc4[0x1E00:0x1E80] = vram[0x1B00:0x1B80]
-
-    # Pattern colors and sprite patterns are aligned across both modes.
-    sc4[0x2000:0x3800] = vram[0x2000:0x3800]
-    sc4[0x3800:0x4000] = vram[0x3800:0x4000]
-
-    if not include_header:
-        return bytes(sc4)
-
-    header = bytes([0xFE, 0x00, 0x00, 0xFF, 0x3F, 0x00, 0x00])
-    return header + bytes(sc4)
-
-
-def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
-    """Convert an in-memory image to SC4 bytes via SC2 VRAM generation."""
-
-    options = options or ConvertOptions()
-
-    if options.skip_dither_application:
-        raise ConversionError("Debug dither skipping cannot be combined with SC2->SC4 conversion")
-
-    sc2_options = ConvertOptions(
-        oversize_mode=options.oversize_mode,
-        undersize_mode=options.undersize_mode,
-        background_color=options.background_color,
-        use_msx2_palette=options.use_msx2_palette,
-        palette_overrides=dict(options.palette_overrides),
-        include_header=False,
-        gamma=options.gamma,
-        contrast=options.contrast,
-        hue_shift=options.hue_shift,
-        posterize_colors=options.posterize_colors,
-        enable_dither=options.enable_dither,
-        skip_dither_application=False,
-    )
-
-    sc2_vram = convert_image_to_sc2(image, sc2_options)
-    return sc2_to_sc4(sc2_vram, include_header=options.include_header)
+# def sc2_to_sc4(sc2_bytes: bytes, include_header: bool = True) -> bytes:
+#     """Convert SC2 VRAM bytes into SC4 VRAM bytes.
+#
+#     Screen 2 and Screen 4 share the same pattern generator, pattern color, and
+#     sprite pattern locations, but Screen 4 relocates sprite attributes and
+#     inserts a dedicated color palette table plus a sprite color table. This
+#     converter remaps each region according to the layout at the top of this
+#     module, injects the fixed MSX1 palette into the color palette table, and
+#     clears unused gaps to keep the VRAM image deterministic.
+#     """
+#
+#     vram = _strip_header(sc2_bytes)
+#
+#     if len(vram) != VRAM_SIZE:
+#         raise ConversionError("SC2 VRAM payload must be exactly 16 KiB.")
+#
+#     sc4 = bytearray(VRAM_SIZE)
+#
+#     # Pattern generator and name table align between SC2 and SC4.
+#     sc4[0x0000:0x1800] = vram[0x0000:0x1800]
+#     sc4[0x1800:0x1B00] = vram[0x1800:0x1B00]
+#
+#     # Insert MSX1 palette in the SC4 color palette table slot.
+#     sc4[0x1B80:0x1BA0] = _encode_msx1_palette()
+#
+#     # Sprite attributes shift from 0x1B00 in SC2 to 0x1E00 in SC4. The gap
+#     # between 0x1B00–0x1B7F and 0x1C00–0x1DFF is left zeroed (sprite colors are
+#     # not part of SC2 and default to color 0 here).
+#     sc4[0x1E00:0x1E80] = vram[0x1B00:0x1B80]
+#
+#     # Pattern colors and sprite patterns are aligned across both modes.
+#     sc4[0x2000:0x3800] = vram[0x2000:0x3800]
+#     sc4[0x3800:0x4000] = vram[0x3800:0x4000]
+#
+#     if not include_header:
+#         return bytes(sc4)
+#
+#     header = bytes([0xFE, 0x00, 0x00, 0xFF, 0x3F, 0x00, 0x00])
+#     return header + bytes(sc4)
+#
+#
+# def convert_image_to_sc4(image: Image.Image, options: ConvertOptions | None = None) -> bytes:
+#     """Convert an in-memory image to SC4 bytes via SC2 VRAM generation."""
+#
+#     options = options or ConvertOptions()
+#
+#     if options.skip_dither_application:
+#         raise ConversionError("Debug dither skipping cannot be combined with SC2->SC4 conversion")
+#
+#     sc2_options = ConvertOptions(
+#         oversize_mode=options.oversize_mode,
+#         undersize_mode=options.undersize_mode,
+#         background_color=options.background_color,
+#         use_msx2_palette=options.use_msx2_palette,
+#         palette_overrides=dict(options.palette_overrides),
+#         include_header=False,
+#         gamma=options.gamma,
+#         contrast=options.contrast,
+#         hue_shift=options.hue_shift,
+#         posterize_colors=options.posterize_colors,
+#         enable_dither=options.enable_dither,
+#         skip_dither_application=False,
+#     )
+#
+#     sc2_vram = convert_image_to_sc2(image, sc2_options)
+#     return sc2_to_sc4(sc2_vram, include_header=options.include_header)
 
 
 def convert_image_to_msx_png(
@@ -814,15 +814,15 @@ def convert_png_to_sc2(path: str | Path, options: ConvertOptions | None = None) 
         raise ConversionError(f"Failed to read PNG: {path}") from exc
 
 
-def convert_png_to_sc4(path: str | Path, options: ConvertOptions | None = None) -> bytes:
-    path = Path(path)
-    try:
-        with Image.open(path) as img:
-            return convert_image_to_sc4(img, options)
-    except FileNotFoundError as exc:
-        raise ConversionError(f"Input file not found: {path}") from exc
-    except OSError as exc:
-        raise ConversionError(f"Failed to read PNG: {path}") from exc
+# def convert_png_to_sc4(path: str | Path, options: ConvertOptions | None = None) -> bytes:
+#     path = Path(path)
+#     try:
+#         with Image.open(path) as img:
+#             return convert_image_to_sc4(img, options)
+#     except FileNotFoundError as exc:
+#         raise ConversionError(f"Input file not found: {path}") from exc
+#     except OSError as exc:
+#         raise ConversionError(f"Failed to read PNG: {path}") from exc
 
 
 def convert_png_to_msx_png(

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
 [project]
-name = "msxasmhelper"
+name = "mmsxxxasmhelper"
 version = "0.1.0"
 description = "Lightweight helper to convert common MSX Z80 mnemonics into machine bytes"
 readme = "README.md"
@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/pyutils/msxasmhelper"
+Homepage = "https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/pyutils/mmsxxxasmhelper"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/msxasmhelper"]
+packages = ["src/mmsxxxasmhelper"]
