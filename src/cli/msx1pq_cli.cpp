@@ -36,7 +36,7 @@ struct CliOptions {
     float weight_s{0.5f};
     float weight_b{0.75f};
     int pre_posterize{16};
-    float pre_sat{1.0f};
+    float pre_sat{0.0f};
     float pre_gamma{1.0f};
     float pre_contrast{1.0f};
     float pre_hue{0.0f};
@@ -115,7 +115,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
-                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 1.0)\n"
+                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 0.0)\n"
                   << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
                   << "  --pre-contrast <0-10>        処理前にコントラストを調整 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
@@ -147,7 +147,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"
-              << "  --pre-sat <0-10>             Increase saturation before processing (default: 1.0)\n"
+              << "  --pre-sat <0-10>             Increase saturation before processing (default: 0.0)\n"
               << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
               << "  --pre-contrast <0-10>        Adjust contrast before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
