@@ -13,7 +13,7 @@ from simple_sc2_converter.converter import (
     ConvertOptions,
     ConversionError,
     convert_png_to_sc2,
-    convert_png_to_sc4,
+    # convert_png_to_sc4,
     convert_png_to_msx_png,
     format_palette_text,
     parse_color,
@@ -45,8 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Convert PNG files into MSX Screen 2 (.sc2), Screen 4 (.sc4), or "
-            "palette-constrained PNG previews.\n"
+            "Convert PNG files into MSX Screen 2 (.sc2)"
+            # ", Screen 4 (.sc4), 
+            "or palette-constrained PNG previews.\n"
             "Default palette: MSX1 basic colors. Use --msx2-palette for MSX2 palette (both are used in conversion calculations).\n"
             "Screen 4 output exists so MSX2+ users can load the data with an MSX1-style palette and avoid the vivid MSX2 default colors when viewing Screen 2 art.\n"
             "Adjusting gamma, contrast, or hue before MSX1 mapping can better match the palette's color response; "
@@ -65,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-o",
         "--output-dir",
         required=True,
-        help="Destination directory for .sc2/.sc4/.png files",
+        help="Destination directory for .sc2/.png files",
     )
     parser.add_argument("--prefix", default="", help="Optional prefix for output filenames")
     parser.add_argument("--suffix", default="", help="Optional suffix for output filenames")
@@ -142,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["png", "sc2", "sc4"],
+        choices=["png", "sc2"],  # , "sc4"
         default="sc2",
         help="Output format (Screen 2/Screen 4 binaries or PNG preview)",
     )
@@ -223,10 +224,11 @@ def write_outputs(
     for src, name in zip(inputs, names):
         target = output_dir / name
 
-        if output_format == "sc4":
-            data = convert_png_to_sc4(src, options)
-            target.write_bytes(data)
-        elif output_format == "sc2":
+        # if output_format == "sc4":
+        #     data = convert_png_to_sc4(src, options)
+        #     target.write_bytes(data)
+        # el
+        if output_format == "sc2":
             data = convert_png_to_sc2(src, options)
             target.write_bytes(data)
         else:
