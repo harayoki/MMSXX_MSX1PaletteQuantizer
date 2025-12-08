@@ -319,7 +319,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 3: Gamma (darker)",
+        "Pre 3: Gamma",
         0,
         10,
         0,
@@ -333,7 +333,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 4: Highlight adjust",
+        "Pre 4: Contrast adjust",
         0,
         10,
         0,
@@ -342,7 +342,7 @@ ParamsSetup (
         2,
         0,
         0,
-        MSX1PQ_PARAM_PRE_HIGHLIGHT
+        MSX1PQ_PARAM_PRE_CONTRAST
     );
 
     AEFX_CLR_STRUCT(def);
@@ -668,7 +668,7 @@ Render (
         255);
     qi.pre_sat       = static_cast<float>(params[MSX1PQ_PARAM_PRE_SAT]->u.fs_d.value);
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
-    qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
+    qi.pre_contrast  = static_cast<float>(params[MSX1PQ_PARAM_PRE_CONTRAST]->u.fs_d.value);
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
@@ -983,7 +983,7 @@ SmartRender(
             255);
         ERR( CheckinParam(in_dataP, param) );
 
-        // PRE_SAT / GAMMA / HIGHLIGHT / HUE
+        // PRE_SAT / GAMMA / CONTRAST / HUE
         ERR( CheckoutParam(
                 in_dataP,
                 MSX1PQ_PARAM_PRE_SAT,
@@ -1000,9 +1000,9 @@ SmartRender(
 
         ERR( CheckoutParam(
                 in_dataP,
-                MSX1PQ_PARAM_PRE_HIGHLIGHT,
+                MSX1PQ_PARAM_PRE_CONTRAST,
                 param) );
-        qi.pre_highlight = static_cast<float>(param.u.fs_d.value);
+        qi.pre_contrast = static_cast<float>(param.u.fs_d.value);
         ERR( CheckinParam(in_dataP, param) );
 
         ERR( CheckoutParam(

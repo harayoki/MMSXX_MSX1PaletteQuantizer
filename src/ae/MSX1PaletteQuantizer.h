@@ -35,7 +35,7 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_PRE_POSTERIZE,   // Posterize before preprocessing
     MSX1PQ_PARAM_PRE_SAT,         // Saturation boost
     MSX1PQ_PARAM_PRE_GAMMA,       // Gamma to enhance shadows
-    MSX1PQ_PARAM_PRE_HIGHLIGHT,   // Highlight correction
+    MSX1PQ_PARAM_PRE_CONTRAST,    // Contrast correction
     MSX1PQ_PARAM_PRE_HUE,         // Hue rotation
 
     MSX1PQ_PARAM_USE_PALETTE_COLOR, // Use 92-color palette directly

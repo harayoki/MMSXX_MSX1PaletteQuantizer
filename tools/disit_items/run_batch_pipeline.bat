@@ -3,11 +3,11 @@ setlocal enabledelayedexpansion
 
 :: Batch runner for chaining multiple msx1pq_cli.exe calls against a dropped file or folder.
 if "%~1"=="" (
-    echo 使用法: このバッチファイルにファイルまたはフォルダーをドラッグ＆ドロップしてください。
-    echo 入力ファイル（フォルダ）に対して異なるパラメーターで 10回の msxエフェクトを適用します。
-    echo Usage: Drag and drop a file or folder onto this batch file.
-    echo The script will run 10 msx1pq_cli.exe commands with varied parameters against the input.
-    exit /b 1
+msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "01_fast_" --pre-sat 1.35 --pre-contrast 1.15 --force
+msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "02_msx2_" --color-system msx2 --pre-contrast 1.3 --force
+msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "04_rgb_" --distance rgb --pre-contrast 1.5 --pre-sat 1.2 --force
+msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "06_best_" --8dot best --pre-sat 1.7 --pre-contrast 1.25 --force
+msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "08_moody_" --pre-gamma 1.4 --pre-sat 0.75 --pre-contrast 0.6 --force
 )
 
 set "INPUT_PATH=%~f1"
