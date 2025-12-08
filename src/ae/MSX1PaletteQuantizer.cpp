@@ -310,7 +310,7 @@ ParamsSetup (
         10,
         0,
         10,
-        1,
+        0,
         2,
         0,
         0,
@@ -353,7 +353,7 @@ ParamsSetup (
         -180,
         180,
         0,
-        0,
+        2,
         0,
         0,
         MSX1PQ_PARAM_PRE_HUE
