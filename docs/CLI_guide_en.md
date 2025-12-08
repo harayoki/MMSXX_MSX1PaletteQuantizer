@@ -14,7 +14,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 
-### Linux (container-friendly, not yet fully verified)
+### Linux (not yet verified)
 
 Install build tools (for example on Ubuntu-based images):
 

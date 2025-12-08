@@ -14,7 +14,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 ビルド後、実行ファイルは `platform\\Win\\x64\\msx1pq_cli.exe` に生成されます。
 
-### Linux（コンテナ向け・未完全検証）
+### Linux（未検証）
 
 Ubuntu 系の場合、まずビルドツールをインストールします。
 
