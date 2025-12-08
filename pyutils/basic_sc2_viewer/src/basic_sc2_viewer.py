@@ -15,11 +15,12 @@ viewer_template = """10 DEFINT A-Z:COLOR 15,0,0:CLS:KEY 6,"AUTOEXEC.BAS"
 20 PRINT "MMSXX MSX1 IMAGE VIEWER v1.0"
 30 PRINT "ESC TO EXIT, SPACE/DOWN NEXT, UP PREV"
 # データ数を埋め込み
-40 GOSUB 1000 
-50 LASTI=-1:NIMG={{num_images}}:SC2MSX2={{allow_sc2_in_msx2|default(0)}}
+40 GOSUB 1000
+50 LASTI=-1:NIMG={{num_images}}
 60 GOSUB 2000
-70 IF NING=0 THEN PRINT "NO SC2/SC4 IMAGES FOUND":END
-80 SC=0:K$=" ":GOTO 120
+70 IF NING=0 THEN PRINT "NO SC2 IMAGES FOUND":END
+80 GOSUB 1200: IF MSXV<>1 THEN GOSUB 1600
+90 SC=0:K$=" ":GOTO 120
 100 ' ____ MAIN LOOP ____
 110 K$=INKEY$
 120 IF K$="" THEN 110
@@ -37,9 +38,9 @@ viewer_template = """10 DEFINT A-Z:COLOR 15,0,0:CLS:KEY 6,"AUTOEXEC.BAS"
 530 IF LASTI=I THEN RETURN
 540 LASTI=I
 550 PRINT "IMG ";I+1;"/";NIMG;": ";F$(I)
-560 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1200 ELSE GOSUB 1300
+# 560 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1200 ELSE GOSUB 1300
 570 BLOAD F$(I), S
-580 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1600 ELSE GOSUB 1500 
+# 580 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1600 ELSE GOSUB 1500 
 990 RETURN
 1000 ' ____ MSX1/MSX2- CHECK ____
 1010 MSXV=1
@@ -47,35 +48,35 @@ viewer_template = """10 DEFINT A-Z:COLOR 15,0,0:CLS:KEY 6,"AUTOEXEC.BAS"
 1030 A=VDP(10)
 1040 MSXV=2
 1050 PRINT "MSX2~ DETECTED"
-1060 RETURN
-1070 PRINT "MSX1 DETECTED"
+1070 ON ERROR GOTO 0
 1080 RETURN
-1100 ON ERROR GOTO 0
+1100 PRINT "MSX1 DETECTED"
 1110 RESUME 1070
 1200 '____ SETUP SCREEN 2 ____
 1210 IF SC=2 THEN RETURN
 1220 SC=2:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 2 SET"
 1230 SCREEN 2
 1290 RETURN
-1300 '____ SETUP SCREEN 4 ____
-1310 IF SC=4 THEN RETURN
-1320 SC=4:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 4 SET"
-1320 SCREEN 4
-1330 RETURN
-1500 '____ SET PALETTE ____
-1510 FOR C = 0 TO 15
-1520  D1 = VPEEK(&H1B80 + C*2)
-1530  D2 = VPEEK(&H1B80 + C*2 + 1)
-# R2R1R0 = bit6-4
-1540  R = (D1 AND &H70) / 16
-# B2B1B0 = bit2-0
-1550  B = (D1 AND &H07)
-# G2G1G0 = bit2-0
-1560  G = (D2 AND &H07)
-1570  COLOR=(C,R,G,B)
-1580 NEXT C
-1590 RETURN
-# 手動でパレットを背艇する場合は以下を実行
+# 1300 '____ SETUP SCREEN 4 ____
+# 1310 IF SC=4 THEN RETURN
+# 1320 SC=4:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 4 SET"
+# 1320 SCREEN 4
+# 1330 RETURN
+# 1500 '____ SET PALETTE ____
+# 1510 FOR C = 0 TO 15
+# 1520  D1 = VPEEK(&H1B80 + C*2)
+# 1530  D2 = VPEEK(&H1B80 + C*2 + 1)
+# # R2R1R0 = bit6-4
+# 1540  R = (D1 AND &H70) / 16
+# # B2B1B0 = bit2-0
+# 1550  B = (D1 AND &H07)
+# # G2G1G0 = bit2-0
+# 1560  G = (D2 AND &H07)
+# 1570  COLOR=(C,R,G,B)
+# 1580 NEXT C
+# 1590 RETURN
+# 手動でパレットを設定する場合は以下を実行
+# SCREEN 2でもMSX2以降ならパレット設定可能だった
 1600 '____ MANUAL PALETTE SET ____
 1630 COLOR=(0,0,0,0)
 1640 COLOR=(1,0,0,0)
@@ -98,8 +99,8 @@ viewer_template = """10 DEFINT A-Z:COLOR 15,0,0:CLS:KEY 6,"AUTOEXEC.BAS"
 2020 DIM F$(NIMG-1):I = 0
 2030 READ D$
 2040 IF D$="END" THEN NING=I:RETURN
-2050 IF RIGHT$(D$,3)="SC4" AND MSXV=1 THEN GOTO 2030
-2060 IF RIGHT$(D$,3)="SC2" AND MSXV=2 AND SC2MSX2=0 THEN GOTO 2030
+# 2050 IF RIGHT$(D$,3)="SC4" AND MSXV=1 THEN GOTO 2030
+# 2060 IF RIGHT$(D$,3)="SC2" AND MSXV=2 AND SC2MSX2=0 THEN GOTO 2030
 2070 PRINT "FOUND IMG: "; D$
 2080 F$(I)=D$
 2090 I=I+1:GOTO 2030
@@ -151,13 +152,6 @@ def main():
         type=str,
         help="Output Diskimage(*.dsk) path",
     )
-    parser.add_argument(
-        "-s2m2",
-        "--allow-sc2-in-msx2",
-        default=1,
-        type=int,
-        help="allow sc2 files to be viewed on MSX2 machines.",
-    )
 
     args = parser.parse_args()
     input_paths = args.input_files_or_dirs
@@ -178,7 +172,6 @@ def main():
     template = jinja2.Template(viewer_template)
     output_lines = template.render(
         num_images=len(flatten_paths),
-        allow_sc2_in_msx2=1 if args.allow_sc2_in_msx2 == 1 else 0,
         my_list=[str(p.name) for p in files_in_temp]
     ).splitlines()
     output_lines = [line for line in output_lines if not line.strip().startswith('#')] # #で始まる行を削除
