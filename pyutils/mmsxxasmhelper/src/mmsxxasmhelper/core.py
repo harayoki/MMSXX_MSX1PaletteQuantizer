@@ -56,7 +56,7 @@ __all__ = [
     "str_bytes", "const_string",
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
-    "jp", "call", "Func",
+    "jp", "jz", "jnz", "call", "Func",
     "db", "dw", "set_debug", "debug_trap",
     "LD", "INC", "DEC",
 ]
@@ -314,6 +314,24 @@ def jp(b: Block, target: str) -> None:
 
     # JP nn  (opcode 0xC3, nn = 16bit)
     pos = b.emit(0xC3, 0x00, 0x00)
+    # 下位バイト位置を fixup.pos として登録
+    b.add_abs16_fixup(pos + 1, target)
+
+
+def jz(b: Block, target: str) -> None:
+    """JP Z,target (絶対ジャンプ)。"""
+
+    # JP Z,nn  (opcode 0xCA, nn = 16bit)
+    pos = b.emit(0xCA, 0x00, 0x00)
+    # 下位バイト位置を fixup.pos として登録
+    b.add_abs16_fixup(pos + 1, target)
+
+
+def jnz(b: Block, target: str) -> None:
+    """JP NZ,target (絶対ジャンプ)。"""
+
+    # JP NZ,nn  (opcode 0xC2, nn = 16bit)
+    pos = b.emit(0xC2, 0x00, 0x00)
     # 下位バイト位置を fixup.pos として登録
     b.add_abs16_fixup(pos + 1, target)
 
