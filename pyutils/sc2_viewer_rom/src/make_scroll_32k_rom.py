@@ -57,6 +57,7 @@ ROW_TILE_BYTES   = 16                  # pattern[8] + color[8]
 ROW_PACKAGE_SIZE = ROW_NAME_SIZE + ROW_TILE_COUNT * ROW_TILE_BYTES  # 544
 TOTAL_ROWS       = 48                  # 2画面 × 24行
 
+MSXVER   = 0x002D   # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 
 # --- ROM ヘッダ定義（msxrom_boot と同じ形） -------------------------------
 
@@ -258,43 +259,50 @@ def macro_set_black_screen_colors(b: Block) -> None:
 # --- マクロ：MSX2 以上ならパレットを設定 -----------------------------------
 
 
+MSXVER = 0x002D  # すでにどこかに書いてあるならそれを使う
+
 def macro_set_msx2_palette_default(b: Block) -> None:
     """
-    MSX2 以上ならパレットを設定するマクロ。
+    MSX2 以上なら MSX2_PALETTE_DEFAULT を設定するマクロ。
+    インライン展開前提なので RET は絶対に使わない。
     """
 
+    # --- MSX バージョン確認 ---
     # A = (MSXVER)
     LD.A_mn16(b, MSXVER)
-    b.emit(0xFE, 0x00)              # CP 0
-    pos = b.emit(0xCA, 0x00, 0x00)  # JP Z, SkipPalette_MSX2
-    b.add_abs16_fixup(pos + 1, "SkipPalette_MSX2")
+    b.emit(0xFE, 0x00)   # CP 0
+
+    # Z(=MSX1) のときはパレット処理を丸ごと飛ばす
+    jz(b, "MSX2_PAL_SKIP")
 
     # --- ここから MSX2 以上用のパレット書き込み ---
 
-    # R#16 = &H40: パレット0 + オートインクリメント=1
-    # OUT 99h,&H40
-    LD.A_n8(b, 0x40)     # ★ここを 0x00 → 0x40 に戻す
+    # R#16 に color index 0 をセット
+    # OUT 99h,0
+    LD.A_n8(b, 0x00)
     b.emit(0xD3, 0x99)
 
-    # OUT 99h,&H90  ; 0x80 + 16 = 0x90 (レジスタ16)
-    LD.A_n8(b, 0x90)
+    # OUT 99h,80h+16  ; レジスタ16指定
+    LD.A_n8(b, 0x80 + 16)
     b.emit(0xD3, 0x99)
 
     # HL = PALETTE_DATA
-    pos_hl = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
-    b.add_abs16_fixup(pos_hl + 1, "PALETTE_DATA")
+    pos2 = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
+    b.add_abs16_fixup(pos2 + 1, "PALETTE_DATA")
 
-    # B = 32 (16色 × 2バイト)
+    # B = 32 (16色×2バイト)
     LD.B_n8(b, 32)
 
-    b.label("SetPaletteLoop_MSX2")
+    b.label("MSX2_PAL_LOOP")
     b.emit(0x7E)        # LD A,(HL)
-    b.emit(0xD3, 0x9A)  # OUT 9Ah,A
+    b.emit(0xD3, 0x9A)  # OUT (9Ah),A
     b.emit(0x23)        # INC HL
-    disp = (b.labels["SetPaletteLoop_MSX2"] - (b.pc + 1)) & 0xFF
-    b.emit(0x10, disp)  # DJNZ SetPaletteLoop_MSX2
+    disp = (b.labels["MSX2_PAL_LOOP"] - (b.pc + 1)) & 0xFF
+    b.emit(0x10, disp)  # DJNZ MSX2_PAL_LOOP
 
-    b.label("SkipPalette_MSX2")
+    # --- スキップ先ラベル ---
+    b.label("MSX2_PAL_SKIP")
+
 
 
 # --- Z80 コード（1枚目を表示するエンジン） --------------------------------
@@ -325,7 +333,7 @@ def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
     macro_set_black_screen_colors(b)
 
     # MSX2 以上ならパレット設定
-    # macro_set_msx2_palette_default(b)
+    # macro_set_msx2_palette_default(b)  #B 現状真っ黒になってしまうバグあり
 
     # VRAM 全体に 1枚目の画像を転送:
     #   HL = SC2_IMAGE0
@@ -334,6 +342,7 @@ def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
     #   CALL LDIRVM
     #
     # LD HL,SC2_IMAGE0
+    # LD.HL_n8(b, 0x00, 0x00)  # ダミー、fixup 後で埋める
     pos = b.emit(0x21, 0x00, 0x00)          # LD HL,nn
     b.add_abs16_fixup(pos + 1, "SC2_IMAGE0")
 
