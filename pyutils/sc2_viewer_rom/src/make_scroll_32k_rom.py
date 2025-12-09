@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-MSX1 用・2画面縦スクロールエンジン ROM ビルダー
+MSX1 用・2画面縦スクロールエンジン ROM ビルダー（1枚目表示版）
 
 現状:
-- .sc2 から RowPackage[48] まで 仕様通り生成
-- Z80 側は SCREEN2 に切り替えて無限ループするだけ
-  （スクロール処理・RowPackage 参照は後で実装）
+- .sc2 2枚を読み込む
+- 1枚目 .sc2 を SCREEN2 用 VRAM 0x4000 バイトに復元して ROM に埋め込む
+- Z80 側は:
+    - SCREEN2 に切り替え (CHGMOD 2)
+    - SC2_IMAGE0 → VRAM へ 16KB コピー (LDIRVM)
+    - 無限ループ
+
+RowPackage 仕様はこのファイル内に残しておくが、
+今のステップではまだ使っていない（後でスクロール実装に使う前提）。
 
 usage:
     python make_scroll_rom.py imageA.sc2 imageB.sc2 -o out.rom
@@ -14,9 +20,9 @@ usage:
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import List
+
 from mmsxxasmhelper.core import *
 
 
@@ -27,22 +33,23 @@ ROM_BASE = 0x4000
 
 VRAM_SIZE = 0x4000
 SC2_HEADER_SIZE = 7
-IMAGE_LENGTH = 0x3780  # トリム後
+IMAGE_LENGTH = 0x3780  # トリム後 (0000–1AFF + 1B80–37FF)
 
 # BIOS コールアドレス（MSX1 標準）
 CHGMOD = 0x005F
+LDIRVM = 0x005C
 
 # SCREEN2 VRAM レイアウト
 PATTERN_BASE = 0x0000
 NAME_BASE    = 0x1800
 COLOR_BASE   = 0x2000
 
-# RowPackage レイアウト
-ROW_NAME_SIZE   = 32
-ROW_TILE_COUNT  = 32
-ROW_TILE_BYTES  = 16                  # pattern[8] + color[8]
+# RowPackage レイアウト（仕様として保持しておく）
+ROW_NAME_SIZE    = 32
+ROW_TILE_COUNT   = 32
+ROW_TILE_BYTES   = 16                  # pattern[8] + color[8]
 ROW_PACKAGE_SIZE = ROW_NAME_SIZE + ROW_TILE_COUNT * ROW_TILE_BYTES  # 544
-TOTAL_ROWS       = 48                 # 2画面 × 24行
+TOTAL_ROWS       = 48                  # 2画面 × 24行
 
 
 # --- ROM ヘッダ定義（msxrom_boot と同じ形） -------------------------------
@@ -92,10 +99,33 @@ def sc2_to_trimmed(sc2_bytes: bytes) -> bytes:
     )
 
 
+def trimmed_to_full_vram(trimmed: bytes) -> bytes:
+    """
+    トリム済み 0x3780 バイトから、フル VRAM 0x4000 バイトに戻す。
+
+    トリム形式:
+        0000–1AFF   → VRAM 0000–1AFF
+        1B00–377F   → VRAM 1B80–37FF
+    それ以外の VRAM 領域は 0 クリア。
+    """
+    if len(trimmed) != IMAGE_LENGTH:
+        raise ValueError("trimmed image must be 0x3780 bytes")
+
+    vram = bytearray([0x00] * VRAM_SIZE)
+
+    # 0000–1AFF
+    vram[0x0000:0x1B00] = trimmed[0x0000:0x1B00]
+    # 1B80–37FF
+    vram[0x1B80:0x3800] = trimmed[0x1B00:0x3780]
+
+    return bytes(vram)
+
+
 def vram_to_trimmed_offset(addr: int) -> int:
     """
     VRAM アドレス 0x0000–0x37FF を、
     トリム済み 0x3780 バッファ上のオフセットに変換。
+    （RowPackage 用に残しておく）
     """
     if addr < 0x1B00:
         return addr
@@ -103,7 +133,7 @@ def vram_to_trimmed_offset(addr: int) -> int:
     return addr - 0x80
 
 
-# --- RowPackage 生成 ------------------------------------------------------
+# --- RowPackage 生成（将来のスクロール用にそのまま保持） -------------------
 
 def build_row_packages(image_bytes: bytes) -> List[bytes]:
     """
@@ -163,21 +193,15 @@ def build_row_packages(image_bytes: bytes) -> List[bytes]:
     return rows
 
 
-# --- Z80 コード（ダミーエンジン） ----------------------------------------
+# --- Z80 コード（1枚目を表示するだけのエンジン） --------------------------
 
-def build_dummy_engine(row_packages: List[bytes], debug_mode: bool = True) -> bytes:
+def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
     """
-    RowPackage を ROM に置くだけで、コードはダミー動作:
-
-      - SCREEN2 に切り替え
-      - 無限ループで停止
-
-    後からここを本物のスクロールエンジンに差し替えればOK。
+    1枚目のフル VRAM 画像を ROM に埋め込み、
+    起動時にそれを VRAM にコピーして表示するコードを組み立てる。
     """
-    set_debug(debug_mode)
-
-    if len(row_packages) != TOTAL_ROWS:
-        raise ValueError(f"row_packages must contain {TOTAL_ROWS} rows")
+    if len(sc2_full_vram) != VRAM_SIZE:
+        raise ValueError("sc2_full_vram must be 0x4000 bytes")
 
     b = Block()
 
@@ -189,27 +213,38 @@ def build_dummy_engine(row_packages: List[bytes], debug_mode: bool = True) -> by
 
     # ----- ここから 0x4010: 実際に実行されるコード -----
 
-    # SCREEN 2 に変更: LD A,2 / CALL 005Fh
+    # SCREEN 2 に変更: LD A,2 / CALL 005Fh (CHGMOD)
     LD.A_n8(b, 2)
-    # CALL 005Fh (CHGMOD)
-    # ヘルパの call() はラベル前提なので、ここは生オペコード直書き
-    b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
+    b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)  # CALL CHGMOD
 
-    debug_trap(b)  # デバッグ用 HALT
+    # VRAM 全体に 1枚目の画像を転送:
+    #   HL = SC2_IMAGE0
+    #   DE = 0000h
+    #   BC = 4000h
+    #   CALL LDIRVM
+    #
+    # LD HL,SC2_IMAGE0
+    pos = b.emit(0x21, 0x00, 0x00)          # LD HL,nn
+    b.add_abs16_fixup(pos + 1, "SC2_IMAGE0")
 
-    # TODO ここに初期描画処理を足していく
+    # LD DE,0000h
+    LD.DE_n16(b, 0x0000)
 
-    # 無限ループ
-    b.label("DummyLoop")
-    # JP DummyLoop
-    jp(b, "DummyLoop")
+    # LD BC,4000h
+    LD.BC_n16(b, 0x4000)
 
-    # ----- RowPackage をそのまま ROM に並べる -----
+    # CALL 005Ch (LDIRVM)
+    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
 
-    b.label("RowData")
-    for i, pkg in enumerate(row_packages):
-        b.label(f"Row_{i:02d}")
-        db(b, *pkg)
+    # 以降は無限ループ
+    b.label("MainLoop")
+    debug_trap(b)  # DEBUG=True なら HALT が入る
+    jp(b, "MainLoop")
+
+    # ----- VRAM イメージデータ本体 -----
+
+    b.label("SC2_IMAGE0")
+    db(b, *sc2_full_vram)
 
     # origin=0x4000 で fixup 解決
     return b.finalize(origin=ROM_BASE)
@@ -218,22 +253,30 @@ def build_dummy_engine(row_packages: List[bytes], debug_mode: bool = True) -> by
 # --- ROM 全体構築 ---------------------------------------------------------
 
 def build_rom(
-    image0_bytes: bytes,
-    image1_bytes: bytes,
+    image0_trimmed: bytes,
+    image1_trimmed: bytes,
     fill_byte: int = 0xFF,
 ) -> bytes:
+    """
+    1枚目: フル VRAM に復元して ROM に埋め込み、起動時に表示。
+    2枚目: 今は未使用（将来 RowPackage 等で使う前提で残してある引数）。
+    """
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
 
-    img0_rows = build_row_packages(image0_bytes)
-    img1_rows = build_row_packages(image1_bytes)
-    all_rows = img0_rows + img1_rows  # 48行
+    # 今は 1枚目だけ使う
+    sc2_full0 = trimmed_to_full_vram(image0_trimmed)
 
-    engine = build_dummy_engine(all_rows)
+    # （将来用）RowPackage 生成したければここで呼べる:
+    # rows0 = build_row_packages(image0_trimmed)
+    # rows1 = build_row_packages(image1_trimmed)
+    # all_rows = rows0 + rows1
+
+    engine = build_engine_show_image0(sc2_full0)
 
     if len(engine) > ROM_SIZE:
         raise ValueError(
-            f"engine+RowData too large ({len(engine)} bytes) for 32KB ROM"
+            f"engine+data too large ({len(engine)} bytes) for 32KB ROM"
         )
 
     rom = bytearray([fill_byte] * ROM_SIZE)
@@ -249,10 +292,10 @@ def int_from_str(v: str) -> int:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="MSX1 SCREEN2 2画面 8dot 縦スクロール ROM ビルダー（ダミー版）"
+        description="MSX1 SCREEN2 1枚目表示 ROM ビルダー（スクロール前段階）"
     )
-    p.add_argument("image0", type=Path, help="1枚目 .sc2 (上側)")
-    p.add_argument("image1", type=Path, help="2枚目 .sc2 (下側)")
+    p.add_argument("image0", type=Path, help="1枚目 .sc2 (上側 / まず表示する画像)")
+    p.add_argument("image1", type=Path, help="2枚目 .sc2 (今は未使用)")
     p.add_argument(
         "-o", "--output", type=Path,
         help="出力 ROM ファイル名（未指定なら自動命名）",
