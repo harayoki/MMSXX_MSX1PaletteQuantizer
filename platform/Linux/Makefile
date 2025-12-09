@@ -11,7 +11,7 @@ SRC_DIR := $(REPO_ROOT)/src
 CLI_DIR := $(SRC_DIR)/cli
 CORE_DIR := $(SRC_DIR)/core
 
-OUT_DIR ?= $(REPO_ROOT)/bin
+OUT_DIR ?= $(REPO_ROOT)/platform/Linux/bin
 TARGET := $(OUT_DIR)/msx1pq_cli
 
 SOURCES := \
