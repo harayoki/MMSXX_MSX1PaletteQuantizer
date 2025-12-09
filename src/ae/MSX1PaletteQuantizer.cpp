@@ -307,7 +307,7 @@ ParamsSetup (
     PF_ADD_FLOAT_SLIDERX(
         "Pre 2: Saturation boost",
         0,
-        10,
+        2,
         0,
         10,
         0,
@@ -320,8 +320,8 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
         "Pre 3: Gamma",
-        0,
-        10,
+        0.2,
+        5,
         0,
         10,
         1,
@@ -334,8 +334,8 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
         "Pre 4: Contrast adjust",
-        0,
-        10,
+        0.2,
+        5,
         0,
         10,
         1,
@@ -348,8 +348,8 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
         "Pre 5: Hue rotate",
-        -180,
-        180,
+        -90,
+        90,
         -180,
         180,
         0,
