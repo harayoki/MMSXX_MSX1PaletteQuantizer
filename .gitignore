@@ -46,6 +46,7 @@ Debug/
 CLI_Release/
 CLI_Debug/
 dist/
+bin/
 *.rc
 *.res
 *.aex

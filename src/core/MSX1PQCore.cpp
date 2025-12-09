@@ -374,12 +374,38 @@ void apply_preprocess(const QuantInfo *qi,
 
     const int posterize_levels = clamp_value(qi->pre_posterize, 0, 255);
     const bool do_posterize = (posterize_levels > 1);
+    const bool do_gamma = (qi->pre_gamma > 0.0f) && (qi->pre_gamma != 1.0f);
+    const bool do_contrast = (qi->pre_contrast >= 0.0f) && (qi->pre_contrast != 1.0f);
     const bool do_hsv_adjust =
-        (qi->pre_sat > 0.0f) || (qi->pre_gamma > 0.0f) ||
-        (qi->pre_highlight > 0.0f) || (qi->pre_hue != 0.0f);
+        (qi->pre_sat > 0.0f) || (qi->pre_hue != 0.0f);
 
-    if (!do_posterize && !do_hsv_adjust) {
+    if (!do_posterize && !do_hsv_adjust && !do_gamma && !do_contrast) {
         return;
+    }
+
+    if (do_gamma) {
+        auto apply_gamma = [gamma = qi->pre_gamma](std::uint8_t v) -> std::uint8_t {
+            float normalized = static_cast<float>(v) / 255.0f;
+            float corrected  = powf(normalized, gamma);
+            return static_cast<std::uint8_t>(
+                clamp_value(corrected * 255.0f + 0.5f, 0.0f, 255.0f));
+        };
+
+        r8 = apply_gamma(r8);
+        g8 = apply_gamma(g8);
+        b8 = apply_gamma(b8);
+    }
+
+    if (do_contrast) {
+        auto apply_contrast = [contrast = qi->pre_contrast](std::uint8_t v) -> std::uint8_t {
+            float centered = static_cast<float>(v) - 128.0f;
+            float adjusted = centered * contrast + 128.0f;
+            return static_cast<std::uint8_t>(clamp_value(adjusted + 0.5f, 0.0f, 255.0f));
+        };
+
+        r8 = apply_contrast(r8);
+        g8 = apply_contrast(g8);
+        b8 = apply_contrast(b8);
     }
 
     if (do_posterize) {
@@ -412,21 +438,6 @@ void apply_preprocess(const QuantInfo *qi,
     if (qi->pre_sat > 0.0f) {
         const float sat_scale = 1.0f + (1.25f - 1.0f) * qi->pre_sat;
         s *= sat_scale;
-    }
-
-    if (qi->pre_gamma > 0.0f) {
-        const float gamma = 1.0f + (1.2f - 1.0f) * qi->pre_gamma;
-        v = powf(v, gamma);
-    }
-
-    if (qi->pre_highlight > 0.0f) {
-        if (v > 0.5f) {
-            float t = (v - 0.5f) / 0.5f;
-            const float highlight_scale = 1.0f + (1.3f - 1.0f) * qi->pre_highlight;
-            t *= highlight_scale;
-            t  = clamp01f(t);
-            v  = 0.5f + t * 0.5f;
-        }
     }
 
     hsb_to_rgb(h, s, v, r8, g8, b8);

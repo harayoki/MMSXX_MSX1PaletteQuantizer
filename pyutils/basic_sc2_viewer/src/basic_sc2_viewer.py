@@ -6,18 +6,21 @@ from typing import List, Set
 import tempfile
 import msxdisk
 
+# NOTE: SCREEN5 対応を廃止し、SCREEN4 対応を追加しました。
+
 autoexec_bas = """10 RUN "V.BAS"
 """
 
-viewer_template = """10 DEFINT A-Z:CLS:KEY 6,"AUTOEXEC.BAS"
+viewer_template = """10 DEFINT A-Z:COLOR 15,0,0:CLS:KEY 6,"AUTOEXEC.BAS"
 20 PRINT "MMSXX MSX1 IMAGE VIEWER v1.0"
 30 PRINT "ESC TO EXIT, SPACE/DOWN NEXT, UP PREV"
 # データ数を埋め込み
-40 GOSUB 1000 
-50 LASTI=-1:NIMG={{num_images}}:SC2MSX2={{allow_sc2_in_msx2|default(0)}}
+40 GOSUB 1000
+50 LASTI=-1:NIMG={{num_images}}
 60 GOSUB 2000
 70 IF NING=0 THEN PRINT "NO SC2 IMAGES FOUND":END
-80 SC=0:K$=" ":GOTO 120
+80 GOSUB 1200: IF MSXV<>1 THEN GOSUB 1600
+90 SC=0:K$=" ":GOTO 120
 100 ' ____ MAIN LOOP ____
 110 K$=INKEY$
 120 IF K$="" THEN 110
@@ -35,50 +38,69 @@ viewer_template = """10 DEFINT A-Z:CLS:KEY 6,"AUTOEXEC.BAS"
 530 IF LASTI=I THEN RETURN
 540 LASTI=I
 550 PRINT "IMG ";I+1;"/";NIMG;": ";F$(I)
-560 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1200 ELSE GOSUB 1300
+# 560 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1200 ELSE GOSUB 1300
 570 BLOAD F$(I), S
-580 RETURN
+# 580 IF RIGHT$(F$(I),3)="SC2" THEN GOSUB 1600 ELSE GOSUB 1500 
+990 RETURN
 1000 ' ____ MSX1/MSX2- CHECK ____
 1010 MSXV=1
 1020 ON ERROR GOTO 1100
 1030 A=VDP(10)
 1040 MSXV=2
 1050 PRINT "MSX2~ DETECTED"
-1060 RETURN
-1070 PRINT "MSX1 DETECTED"
+1070 ON ERROR GOTO 0
 1080 RETURN
-1100 RESUME 1070
+1100 PRINT "MSX1 DETECTED"
+1110 RESUME 1070
 1200 '____ SETUP SCREEN 2 ____
 1210 IF SC=2 THEN RETURN
 1220 SC=2:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 2 SET"
 1230 SCREEN 2
 1290 RETURN
-1300 '____ SETUP SCREEN 5 ____
-1310 IF SC=5 THEN RETURN ELSE SC=5:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 5 SET"
-1320 SCREEN 5
-1330 COLOR=(0,0,0,0)
-1340 COLOR=(1,0,0,0)
-1350 COLOR=(2,2,5,2)
-1360 COLOR=(3,3,5,3)
-1370 COLOR=(4,2,2,6)
-1380 COLOR=(5,3,3,6)
-1390 COLOR=(6,5,2,2)
-1400 COLOR=(7,2,6,6)
-1410 COLOR=(8,6,2,2)
-1420 COLOR=(9,7,3,3)
-1430 COLOR=(10,5,5,2)
-1440 COLOR=(11,6,5,3)
-1450 COLOR=(12,1,4,1)
-1460 COLOR=(13,5,3,5)
-1470 COLOR=(14,5,5,5)
-1480 COLOR=(15,7,7,7)
+# 1300 '____ SETUP SCREEN 4 ____
+# 1310 IF SC=4 THEN RETURN
+# 1320 SC=4:COLOR 15,0,0:KEY OFF:PRINT "SCREEN 4 SET"
+# 1320 SCREEN 4
+# 1330 RETURN
+# 1500 '____ SET PALETTE ____
+# 1510 FOR C = 0 TO 15
+# 1520  D1 = VPEEK(&H1B80 + C*2)
+# 1530  D2 = VPEEK(&H1B80 + C*2 + 1)
+# # R2R1R0 = bit6-4
+# 1540  R = (D1 AND &H70) / 16
+# # B2B1B0 = bit2-0
+# 1550  B = (D1 AND &H07)
+# # G2G1G0 = bit2-0
+# 1560  G = (D2 AND &H07)
+# 1570  COLOR=(C,R,G,B)
+# 1580 NEXT C
+# 1590 RETURN
+# 手動でパレットを設定する場合は以下を実行
+# SCREEN 2でもMSX2以降ならパレット設定可能だった
+1600 '____ MANUAL PALETTE SET ____
+1630 COLOR=(0,0,0,0)
+1640 COLOR=(1,0,0,0)
+1650 COLOR=(2,2,5,2)
+1660 COLOR=(3,3,5,3)
+1670 COLOR=(4,2,2,6)
+1680 COLOR=(5,3,3,6)
+1690 COLOR=(6,5,2,2)
+1700 COLOR=(7,2,6,6)
+1710 COLOR=(8,6,2,2)
+1720 COLOR=(9,7,3,3)
+1730 COLOR=(10,5,5,2)
+1740 COLOR=(11,6,5,3)
+1750 COLOR=(12,1,4,1)
+1760 COLOR=(13,5,3,5)
+1770 COLOR=(14,5,5,5)
+1780 COLOR=(15,7,7,7)
 1990 RETURN
 2000 '____ LOAD DATA ____
 2020 DIM F$(NIMG-1):I = 0
 2030 READ D$
 2040 IF D$="END" THEN NING=I:RETURN
-2050 IF RIGHT$(D$,3)="SC5" AND MSXV=1 THEN GOTO 2030
-2060 IF RIGHT$(D$,3)="SC2" AND MSXV=2 AND SC2MSX2=0 THEN GOTO 2030
+# 2050 IF RIGHT$(D$,3)="SC4" AND MSXV=1 THEN GOTO 2030
+# 2060 IF RIGHT$(D$,3)="SC2" AND MSXV=2 AND SC2MSX2=0 THEN GOTO 2030
 2070 PRINT "FOUND IMG: "; D$
 2080 F$(I)=D$
 2090 I=I+1:GOTO 2030
@@ -113,7 +135,10 @@ def get_file_list(input_paths: List[str], target_exts: Set[str]) -> List[Path]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a MSX disk image with sc2/sc5 viewer.")
+        description=(
+            "Create a MSX disk image with sc2/sc4 viewer. "
+            "SCREEN5 support has been removed; SCREEN4 support is available."
+        ))
     parser.add_argument(
         "input_files_or_dirs",
         nargs="+",
@@ -127,19 +152,12 @@ def main():
         type=str,
         help="Output Diskimage(*.dsk) path",
     )
-    parser.add_argument(
-        "-s2m2",
-        "--allow-sc2-in-msx2",
-        default=1,
-        type=int,
-        help="allow sc2 files to be viewed on MSX2 machines.",
-    )
 
     args = parser.parse_args()
     input_paths = args.input_files_or_dirs
-    flatten_paths = get_file_list(input_paths, target_exts={'sc2', 'sc5'})
+    flatten_paths = get_file_list(input_paths, target_exts={'sc2', 'sc4'})
     if not flatten_paths:
-        sys.exit("No .sc2 files found in the provided paths.")
+        sys.exit("No .sc2 or .sc4 files found in the provided paths.")
 
     temp_dir = tempfile.TemporaryDirectory()
     for i, p in enumerate(flatten_paths):
@@ -154,7 +172,6 @@ def main():
     template = jinja2.Template(viewer_template)
     output_lines = template.render(
         num_images=len(flatten_paths),
-        allow_sc2_in_msx2=1 if args.allow_sc2_in_msx2 == 1 else 0,
         my_list=[str(p.name) for p in files_in_temp]
     ).splitlines()
     output_lines = [line for line in output_lines if not line.strip().startswith('#')] # #で始まる行を削除

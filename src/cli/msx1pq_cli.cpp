@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -11,6 +10,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <array>
 
 #include "../core/MSX1PQCore.h"
 #include "../core/MSX1PQPalettes.h"
@@ -30,7 +30,6 @@ struct CliOptions {
         true, true, true, true, true, true, true, true}};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
-    bool out_sc5{false};
     bool out_sc2{false};
     bool use_dither{true};
     bool use_palette_color{false};
@@ -42,9 +41,9 @@ struct CliOptions {
     float weight_s{0.5f};
     float weight_b{0.75f};
     int pre_posterize{16};
-    float pre_sat{1.0f};
+    float pre_sat{0.0f};
     float pre_gamma{1.0f};
-    float pre_highlight{1.0f};
+    float pre_contrast{1.0f};
     float pre_hue{0.0f};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
@@ -112,7 +111,6 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
                   << "  --out-prefix <文字列>          出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --out-suffix <文字列>          出力ファイル名の末尾（拡張子の前）に付与する接尾辞を指定\n"
-                  << "  --out-sc5                   PNGではなくSCREEN5 .sc5バイナリで出力\n"
                   << "  --out-sc2                   SCREEN2 .sc2バイナリで出力\n"
                   << "  --color-system <msx1|msx2>   (デフォルト: msx1)\n"
                   << "  --dither / --no-dither       (デフォルト: dither)\n"
@@ -122,9 +120,9 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
-                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 1.0)\n"
-                  << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
-                  << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
+                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 0.0)\n"
+                  << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
+                  << "  --pre-contrast <0-10>        処理前にコントラストを調整 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
                   << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
@@ -140,13 +138,12 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
     std::cout << "MMSXX - MSX1 Palette Quantizer\n"
               << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
               << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
-                  << "Options:\n"
-                  << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
-                  << "  --output, -o <dir>           Specify the output directory\n"
-                  << "  --out-prefix <string>       Prefix to add to output file names\n"
-                  << "  --out-suffix <string>       Suffix to add before the output file extension\n"
-                  << "  --out-sc5                   Output SCREEN5 .sc5 binary instead of PNG\n"
-                  << "  --out-sc2                   Output SCREEN2 .sc2 binary\n"
+              << "Options:\n"
+              << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
+              << "  --output, -o <dir>           Specify the output directory\n"
+              << "  --out-prefix <string>       Prefix to add to output file names\n"
+              << "  --out-suffix <string>       Suffix to add before the output file extension\n"
+              << "  --out-sc2                   Output SCREEN2 .sc2 binary\n"
               << "  --color-system <msx1|msx2>   (default: msx1)\n"
               << "  --dither / --no-dither       (default: dither)\n"
               << "  --palette92                  (for dev) Output 92 color palette without dithering\n"
@@ -156,9 +153,9 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"
-              << "  --pre-sat <0-10>             Increase saturation before processing (default: 1.0)\n"
-              << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
-              << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
+              << "  --pre-sat <0-10>             Increase saturation before processing (default: 0.0)\n"
+              << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
+              << "  --pre-contrast <0-10>        Adjust contrast before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
               << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
@@ -244,8 +241,6 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.output_prefix = require_value(arg);
         } else if (arg == "--out-suffix") {
             opts.output_suffix = require_value(arg);
-        } else if (arg == "--out-sc5") {
-            opts.out_sc5 = true;
         } else if (arg == "--out-sc2") {
             opts.out_sc2 = true;
         } else if (arg == "--color-system") {
@@ -315,8 +310,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_sat = std::stof(require_value(arg));
         } else if (arg == "--pre-gamma") {
             opts.pre_gamma = std::stof(require_value(arg));
-        } else if (arg == "--pre-highlight") {
-            opts.pre_highlight = std::stof(require_value(arg));
+        } else if (arg == "--pre-contrast") {
+            opts.pre_contrast = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
         } else if (arg == "--pre-lut") {
@@ -348,10 +343,6 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         opts.palette_enabled.begin(), opts.palette_enabled.end(), true));
     if (enabled_colors < 2) {
         throw std::runtime_error("At least two palette colors must remain enabled");
-    }
-
-    if (opts.out_sc2 && opts.out_sc5) {
-        throw std::runtime_error("--out-sc2 and --out-sc5 cannot be used together");
     }
 
     if (opts.out_sc2 &&
@@ -397,7 +388,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
     qi.pre_sat         = opts.pre_sat;
     qi.pre_gamma       = opts.pre_gamma;
-    qi.pre_highlight   = opts.pre_highlight;
+    qi.pre_contrast    = opts.pre_contrast;
     qi.pre_hue         = opts.pre_hue;
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
@@ -475,107 +466,8 @@ bool write_png(const fs::path& output_path, const std::vector<RgbaPixel>& pixels
     return true;
 }
 
-constexpr int kSc5Width = 256;
-constexpr int kSc5Height = 212;
 constexpr int kSc2Width = 256;
 constexpr int kSc2Height = 192;
-
-std::array<MSX1PQ::QuantColor, 16> make_sc5_palette(int color_system) {
-    std::array<MSX1PQ::QuantColor, 16> palette{};
-    palette[0] = {0, 0, 0};
-
-    const MSX1PQ::QuantColor* base = MSX1PQCore::get_basic_palette(color_system);
-    for (int i = 0; i < MSX1PQ::kNumBasicColors && (i + 1) < static_cast<int>(palette.size()); ++i) {
-        palette[static_cast<size_t>(i + 1)] = base[i];
-    }
-
-    return palette;
-}
-
-int nearest_palette_index(const std::array<MSX1PQ::QuantColor, 16>& palette, const RgbaPixel& px) {
-    long best_dist = 0x7fffffffL;
-    int best_idx = 0;
-
-    for (size_t i = 0; i < palette.size(); ++i) {
-        long dr = static_cast<long>(px.red) - static_cast<long>(palette[i].r);
-        long dg = static_cast<long>(px.green) - static_cast<long>(palette[i].g);
-        long db = static_cast<long>(px.blue) - static_cast<long>(palette[i].b);
-
-        long d2 = dr * dr + dg * dg + db * db;
-        if (d2 < best_dist) {
-            best_dist = d2;
-            best_idx = static_cast<int>(i);
-        }
-    }
-
-    return best_idx;
-}
-
-bool write_sc5(const fs::path& output_path, const std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, int color_system) {
-    const auto palette = make_sc5_palette(color_system);
-
-    std::vector<std::uint8_t> color_codes(static_cast<size_t>(kSc5Width * kSc5Height), 0);
-
-    const int copy_width = static_cast<int>(std::min<unsigned>(kSc5Width, width));
-    const int copy_height = static_cast<int>(std::min<unsigned>(kSc5Height, height));
-
-    const int src_offset_x = 0;
-    const int src_offset_y = 0;
-    const int dst_offset_x = 0;
-    const int dst_offset_y = 0;
-
-    for (int y = 0; y < copy_height; ++y) {
-        const unsigned src_y = static_cast<unsigned>(src_offset_y + y);
-        const unsigned dst_y = static_cast<unsigned>(dst_offset_y + y);
-        for (int x = 0; x < copy_width; ++x) {
-            const unsigned src_x = static_cast<unsigned>(src_offset_x + x);
-            const unsigned dst_x = static_cast<unsigned>(dst_offset_x + x);
-            const RgbaPixel& px = pixels[static_cast<size_t>(src_y * width + src_x)];
-            color_codes[static_cast<size_t>(dst_y * kSc5Width + dst_x)] = static_cast<std::uint8_t>(nearest_palette_index(palette, px));
-        }
-    }
-
-    std::vector<std::uint8_t> packed;
-    packed.reserve(static_cast<size_t>(kSc5Width * kSc5Height / 2));
-    for (int y = 0; y < kSc5Height; ++y) {
-        for (int x = 0; x < kSc5Width; x += 2) {
-            const std::uint8_t left = static_cast<std::uint8_t>(color_codes[static_cast<size_t>(y * kSc5Width + x)] & 0x0F);
-            const std::uint8_t right = static_cast<std::uint8_t>(color_codes[static_cast<size_t>(y * kSc5Width + x + 1)] & 0x0F);
-            packed.push_back(static_cast<std::uint8_t>((left << 4) | right));
-        }
-    }
-
-    std::ofstream ofs(output_path, std::ios::binary);
-    if (!ofs) {
-        std::cerr << "Failed to open output file: " << output_path << "\n";
-        return false;
-    }
-
-    // SC5ヘッダ
-    unsigned char header[7];
-    header[0] = 0xFE;      // BSAVE signature
-    header[1] = 0x00;      // Start low
-    header[2] = 0x00;      // Start high
-    header[3] = 0x00;      // End low   (0x6B00)
-    header[4] = 0x6B;      // End high
-    header[5] = 0x00;      // Exec low
-    header[6] = 0x00;      // Exec high
-
-    ofs.write(reinterpret_cast<const char*>(header), 7);
-    if (!ofs) {
-        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
-        return false;
-    }
-
-    ofs.write(reinterpret_cast<const char*>(packed.data()), static_cast<std::streamsize>(packed.size()));
-    if (!ofs) {
-        std::cerr << "Failed to write SC5 data: " << output_path << "\n";
-        return false;
-    }
-
-    return true;
-}
-
 bool write_sc2(const fs::path& output_path,
                const std::vector<RgbaPixel>& pixels,
                unsigned width,
@@ -708,9 +600,6 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
     }
 
     quantize_image(pixels, width, height, opts);
-    if (opts.out_sc5) {
-        return write_sc5(output, pixels, width, height, opts.color_system);
-    }
     if (opts.out_sc2) {
         return write_sc2(output, pixels, width, height, opts.color_system);
     }
@@ -783,9 +672,7 @@ int main(int argc, char** argv) {
             output_filename = fs::path(stem_with_suffix + ext.string());
         }
 
-        if (opts.out_sc5) {
-            output_filename.replace_extension(".sc5");
-        } else if (opts.out_sc2) {
+        if (opts.out_sc2) {
             output_filename.replace_extension(".sc2");
         }
 
