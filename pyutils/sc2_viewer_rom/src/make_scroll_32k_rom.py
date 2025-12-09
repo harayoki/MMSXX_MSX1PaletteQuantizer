@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-MSX1 用・2画面縦スクロールエンジン ROM ビルダー（ダミー動作版）
+MSX1 用・2画面縦スクロールエンジン ROM ビルダー
 
 現状:
-- .sc2 から RowPackage[48] までは仕様通り生成
+- .sc2 から RowPackage[48] まで 仕様通り生成
 - Z80 側は SCREEN2 に切り替えて無限ループするだけ
-  （スクロール処理・RowPackage 参照は後で実装する前提）
+  （スクロール処理・RowPackage 参照は後で実装）
 
 usage:
     python make_scroll_rom.py imageA.sc2 imageB.sc2 -o out.rom
@@ -17,7 +17,7 @@ import argparse
 import sys
 from pathlib import Path
 from typing import List
-from mmsxxasmhelper.core import *  # type: ignore
+from mmsxxasmhelper.core import *
 
 
 # --- ROM / SCREEN2 関連定数 -----------------------------------------------
@@ -165,7 +165,7 @@ def build_row_packages(image_bytes: bytes) -> List[bytes]:
 
 # --- Z80 コード（ダミーエンジン） ----------------------------------------
 
-def build_dummy_engine(row_packages: List[bytes]) -> bytes:
+def build_dummy_engine(row_packages: List[bytes], debug_mode: bool = True) -> bytes:
     """
     RowPackage を ROM に置くだけで、コードはダミー動作:
 
@@ -174,6 +174,8 @@ def build_dummy_engine(row_packages: List[bytes]) -> bytes:
 
     後からここを本物のスクロールエンジンに差し替えればOK。
     """
+    set_debug(debug_mode)
+
     if len(row_packages) != TOTAL_ROWS:
         raise ValueError(f"row_packages must contain {TOTAL_ROWS} rows")
 
@@ -193,16 +195,16 @@ def build_dummy_engine(row_packages: List[bytes]) -> bytes:
     # ヘルパの call() はラベル前提なので、ここは生オペコード直書き
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
 
-    # 何かやりたければこのへんに初期描画処理を足していく
+    debug_trap(b)  # デバッグ用 HALT
 
-    # 無限ループ: JP $
-    # ラベル付けて JP してもいいが、分かりやすくここに自ループ
-    loop_pos = b.pc
+    # TODO ここに初期描画処理を足していく
+
+    # 無限ループ
     b.label("DummyLoop")
     # JP DummyLoop
     jp(b, "DummyLoop")
 
-    # ----- RowData: RowPackage をそのまま ROM に並べる -----
+    # ----- RowPackage をそのまま ROM に並べる -----
 
     b.label("RowData")
     for i, pkg in enumerate(row_packages):

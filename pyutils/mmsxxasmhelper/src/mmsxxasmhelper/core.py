@@ -56,7 +56,7 @@ __all__ = [
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
     "jp", "call", "Func",
-    "db", "dw", "DEBUG", "debug_trap",
+    "db", "dw", "set_debug", "debug_trap",
     "LD", "INC", "DEC",
 ]
 
@@ -832,6 +832,12 @@ def dw(b: Block, *values: int) -> None:
 # ---------------------------------------------------------------------------
 
 DEBUG: bool = True
+
+
+def set_debug(flag: bool) -> None:
+    """DEBUG フラグを設定する。"""
+    global DEBUG
+    DEBUG = flag
 
 
 def debug_trap(b: Block) -> None:
