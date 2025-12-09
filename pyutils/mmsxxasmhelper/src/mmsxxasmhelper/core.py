@@ -46,12 +46,13 @@ v0で入っている機能:
 """
 
 from __future__ import annotations
+from collections.abc import Iterable
 
 __all__ = [
     "Block", "Fixup", "const", "CONST",
     "DATA8", "DATA16",
     "const_bytes", "const_words",
-    "db_const", "dw_const",
+    "db_const", "dw_const", "db_from_bytes",
     "str_bytes", "const_string",
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
@@ -218,6 +219,38 @@ def dw_const(b: Block, name: str) -> None:
     except KeyError as exc:
         raise ValueError(f"unknown word data name: {name}") from exc
     dw(b, *data)
+
+
+def db_from_bytes(b: Block, data):
+    """
+    Block に大量のバイト列を突っ込むユーティリティ。
+
+    data:
+        - bytes / bytearray
+        - list[int] / tuple[int, ...]
+        - str なら DATA8[name] を引く
+    """
+    # 名前で指定された場合は DATA8 から探す
+    if isinstance(data, str):
+        if data not in DATA8:
+            raise KeyError(f"db_from_bytes: const '{data}' not found in DATA8")
+        db(b, *DATA8[data])
+        return
+
+    # 素のバイト列
+    if isinstance(data, (bytes, bytearray)):
+        db(b, *data)
+        return
+
+    # int の並び（list, tuple 等）
+    if isinstance(data, Iterable):
+        vals = list(data)
+        if not all(isinstance(v, int) for v in vals):
+            raise TypeError("db_from_bytes: iterable must contain ints")
+        db(b, *vals)
+        return
+
+    raise TypeError("db_from_bytes: unsupported data type")
 
 
 # ---------------------------------------------------------------------------

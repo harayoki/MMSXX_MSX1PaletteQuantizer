@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-MSX1 用・2画面縦スクロールエンジン ROM ビルダー（1枚目表示版）
+MSX1 用・2画面縦スクロールエンジン ROM ビルダー（1枚目表示＋色＆パレットマクロ付き）
 
 現状:
 - .sc2 2枚を読み込む
-- 1枚目 .sc2 を SCREEN2 用 VRAM 0x4000 バイトに復元して ROM に埋め込む
-- Z80 側は:
+- 1枚目 .sc2 を SCREEN2 用 VRAM 0x4000 バイトに復元して ROM に埋め込み
+- 起動時:
     - SCREEN2 に切り替え (CHGMOD 2)
+    - 前景=白 / 背景=黒 / 枠=黒 に設定（MSX1/2 共通）  ← マクロ
+    - MSX2 以上ならパレットを設定                       ← マクロ
     - SC2_IMAGE0 → VRAM へ 16KB コピー (LDIRVM)
     - 無限ループ
-
-RowPackage 仕様はこのファイル内に残しておくが、
-今のステップではまだ使っていない（後でスクロール実装に使う前提）。
-
-usage:
-    python make_scroll_rom.py imageA.sc2 imageB.sc2 -o out.rom
 """
 
 from __future__ import annotations
@@ -26,7 +22,7 @@ from typing import List
 from mmsxxasmhelper.core import *
 
 
-# --- ROM / SCREEN2 関連定数 -----------------------------------------------
+# --- ROM / SCREEN2 / BIOS 定数 --------------------------------------------
 
 ROM_SIZE = 0x8000      # 32KB
 ROM_BASE = 0x4000
@@ -35,16 +31,26 @@ VRAM_SIZE = 0x4000
 SC2_HEADER_SIZE = 7
 IMAGE_LENGTH = 0x3780  # トリム後 (0000–1AFF + 1B80–37FF)
 
-# BIOS コールアドレス（MSX1 標準）
+# BIOS コールアドレス
 CHGMOD = 0x005F
+CHGCLR = 0x0062
 LDIRVM = 0x005C
 
-# SCREEN2 VRAM レイアウト
+# カラー関連システム変数 (MSX1/2 共通)
+FORCLR = 0xF3E9  # 前景色
+BAKCLR = 0xF3EA  # 背景色
+BDRCLR = 0xF3EB  # 枠色
+
+# MSX バージョン (メインROM 002Dh)
+# 0=MSX1 / 1=MSX2 / 2=MSX2+ / 3=turboR
+MSXVER = 0x002D  # :contentReference[oaicite:1]{index=1}
+
+# VDP / SCREEN2 VRAM レイアウト
 PATTERN_BASE = 0x0000
 NAME_BASE    = 0x1800
 COLOR_BASE   = 0x2000
 
-# RowPackage レイアウト（仕様として保持しておく）
+# RowPackage レイアウト（将来のスクロール用に保持）
 ROW_NAME_SIZE    = 32
 ROW_TILE_COUNT   = 32
 ROW_TILE_BYTES   = 16                  # pattern[8] + color[8]
@@ -61,6 +67,39 @@ const_bytes(
     "MSX_ROM_HEADER",
     *pad_bytes(str_bytes("AB") + [0x10, 0x40], 16, 0x00),
 )
+
+
+# --- MSX2 用デフォルトパレット定義 ---------------------------------------
+
+# COLOR=(n,R,G,B)
+# 1バイト目: 0R2 R1 R0 B2 B1 B0
+# 2バイト目: 0000 G2 G1 G0
+# R,G,B は 0–7
+_MSX2_PALETTE_BYTES: List[int] = []
+for idx, (R, G, B) in enumerate([
+    (0, 0, 0),  # 0
+    (0, 0, 0),  # 1
+    (2, 5, 2),  # 2
+    (3, 5, 3),  # 3
+    (2, 2, 6),  # 4
+    (3, 3, 6),  # 5
+    (5, 2, 2),  # 6
+    (2, 6, 6),  # 7
+    (6, 2, 2),  # 8
+    (7, 3, 3),  # 9
+    (5, 5, 2),  # 10
+    (6, 5, 3),  # 11
+    (1, 4, 1),  # 12
+    (5, 3, 5),  # 13
+    (5, 5, 5),  # 14
+    (7, 7, 7),  # 15
+]):
+    b1 = ((R & 7) << 4) | (B & 7)
+    b2 = (G & 7)
+    _MSX2_PALETTE_BYTES.extend([b1, b2])
+
+# 他ファイルでもコピペで使いやすいように const_bytes にも登録しておく
+const_bytes("MSX2_PALETTE_DEFAULT", *_MSX2_PALETTE_BYTES)
 
 
 # --- .sc2 トリム処理 ------------------------------------------------------
@@ -193,7 +232,72 @@ def build_row_packages(image_bytes: bytes) -> List[bytes]:
     return rows
 
 
-# --- Z80 コード（1枚目を表示するだけのエンジン） --------------------------
+# --- マクロ：背景＆周辺を黒にする（MSX1/2 共通） ---------------------------
+
+def macro_set_black_screen_colors(b: Block) -> None:
+    """
+    前景=白(15), 背景=黒(0), 枠=黒(0) にして CHGCLR を呼ぶ。
+    他の ROM でもコピペしやすいよう、ラベルは使わずインラインのみ。
+    """
+    # FORCLR = 15 (白)
+    LD.A_n8(b, 0x0F)
+    LD.mn16_A(b, FORCLR)
+
+    # BAKCLR = 0 (黒)
+    LD.A_n8(b, 0x00)
+    LD.mn16_A(b, BAKCLR)
+
+    # BDRCLR = 0 (黒)
+    LD.A_n8(b, 0x00)
+    LD.mn16_A(b, BDRCLR)
+
+    # CALL CHGCLR
+    b.emit(0xCD, CHGCLR & 0xFF, (CHGCLR >> 8) & 0xFF)
+
+
+# --- マクロ：MSX2 以上ならパレットを設定 -----------------------------------
+
+
+def macro_set_msx2_palette_default(b: Block) -> None:
+    """
+    MSX2 以上ならパレットを設定するマクロ。
+    """
+
+    # A = (MSXVER)
+    LD.A_mn16(b, MSXVER)
+    b.emit(0xFE, 0x00)              # CP 0
+    pos = b.emit(0xCA, 0x00, 0x00)  # JP Z, SkipPalette_MSX2
+    b.add_abs16_fixup(pos + 1, "SkipPalette_MSX2")
+
+    # --- ここから MSX2 以上用のパレット書き込み ---
+
+    # R#16 = &H40: パレット0 + オートインクリメント=1
+    # OUT 99h,&H40
+    LD.A_n8(b, 0x40)     # ★ここを 0x00 → 0x40 に戻す
+    b.emit(0xD3, 0x99)
+
+    # OUT 99h,&H90  ; 0x80 + 16 = 0x90 (レジスタ16)
+    LD.A_n8(b, 0x90)
+    b.emit(0xD3, 0x99)
+
+    # HL = PALETTE_DATA
+    pos_hl = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
+    b.add_abs16_fixup(pos_hl + 1, "PALETTE_DATA")
+
+    # B = 32 (16色 × 2バイト)
+    LD.B_n8(b, 32)
+
+    b.label("SetPaletteLoop_MSX2")
+    b.emit(0x7E)        # LD A,(HL)
+    b.emit(0xD3, 0x9A)  # OUT 9Ah,A
+    b.emit(0x23)        # INC HL
+    disp = (b.labels["SetPaletteLoop_MSX2"] - (b.pc + 1)) & 0xFF
+    b.emit(0x10, disp)  # DJNZ SetPaletteLoop_MSX2
+
+    b.label("SkipPalette_MSX2")
+
+
+# --- Z80 コード（1枚目を表示するエンジン） --------------------------------
 
 def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
     """
@@ -217,6 +321,12 @@ def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
     LD.A_n8(b, 2)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)  # CALL CHGMOD
 
+    # 色: 前景=白 / 背景=黒 / 枠=黒
+    macro_set_black_screen_colors(b)
+
+    # MSX2 以上ならパレット設定
+    # macro_set_msx2_palette_default(b)
+
     # VRAM 全体に 1枚目の画像を転送:
     #   HL = SC2_IMAGE0
     #   DE = 0000h
@@ -238,8 +348,12 @@ def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
 
     # 以降は無限ループ
     b.label("MainLoop")
-    debug_trap(b)  # DEBUG=True なら HALT が入る
+    debug_trap(b)  # DEBUG=True なら HALT
     jp(b, "MainLoop")
+
+    # ----- パレットデータ本体 (MSX2 用) -----
+    b.label("PALETTE_DATA")
+    db_from_bytes(b, "MSX2_PALETTE_DEFAULT")
 
     # ----- VRAM イメージデータ本体 -----
 
@@ -264,13 +378,7 @@ def build_rom(
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
 
-    # 今は 1枚目だけ使う
     sc2_full0 = trimmed_to_full_vram(image0_trimmed)
-
-    # （将来用）RowPackage 生成したければここで呼べる:
-    # rows0 = build_row_packages(image0_trimmed)
-    # rows1 = build_row_packages(image1_trimmed)
-    # all_rows = rows0 + rows1
 
     engine = build_engine_show_image0(sc2_full0)
 
@@ -292,7 +400,7 @@ def int_from_str(v: str) -> int:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="MSX1 SCREEN2 1枚目表示 ROM ビルダー（スクロール前段階）"
+        description="MSX1 SCREEN2 1枚目表示 ROM ビルダー（スクロール前段階＋色＆パレット）"
     )
     p.add_argument("image0", type=Path, help="1枚目 .sc2 (上側 / まず表示する画像)")
     p.add_argument("image1", type=Path, help="2枚目 .sc2 (今は未使用)")
@@ -316,7 +424,7 @@ def main() -> None:
         raise SystemExit(f"not found: {args.image1}")
 
     img0 = sc2_to_trimmed(args.image0.read_bytes())
-    img1 = sc2_to_trimmed(args.image1.read_bytes())
+    img1 = sc2_to_trimmed(args.image1.read_bytes())  # 今は読むだけ
 
     rom = build_rom(img0, img1, fill_byte=args.fill_byte)
 
