@@ -50,7 +50,7 @@ NEXT I
 - オートインクリメントを使っているため、色番号を意識せず 32 バイトを
   そのままストリームで出力するだけで完了します。
 
-### マシン語で高速に適用する
+### マシン語で高速に適用する(間違い？)
 
 ```asm
 ; IN  : なし (BLOAD 済みで VRAM &H1B80 に 32 バイトのパレットデータがある)
@@ -77,6 +77,54 @@ CopyLoop:
 - VRAM 読み出しアドレスはポート `&H99` へ下位→上位(+&H40)の順で設定します。
 - パレットデータポート `&H9A` へ 32 バイトを流し込むだけで全色が更新されます。
 - ループは Z80 の `DJNZ` を用いて最短で回しているので、BASIC 版より高速です。
+
+参照 Example https://www.msx.org/wiki/VDP_Color_Palette_Registers
+
+```
+; Routine to set color palette to MSX1 like
+ 
+VDP_DW	equ	00007h
+RG16SAV	equ	0FFEFh
+ 
+MSX1palette:
+	ld	a,(VDP_DW)	; A= CPU writing port connected to the VDP writing port #0
+	inc	a
+	ld	c,a		; C= CPU writing port connected to the VDP writing port #1
+ 
+	xor	a		; Set color 0 ...
+	di
+	out	(c),a
+	ld	(RG16SAV),a
+	ld	a,80h+16	; ...into register 16 (+80h)
+	out	(c),a
+	ei
+ 
+	inc	c		; C= CPU port connected to the VDP writing port #2
+	ld	b,31
+	ld	hl,MSX1paletteData
+	otir
+	ret
+ 
+MSX1paletteData:
+	db	00h,0	; Color 0
+	db	00h,0	; Color 1
+	db	11h,5	; Color 2
+	db	33h,6	; Color 3
+	db	26h,2	; Color 4
+	db	37h,3	; Color 5
+	db	52h,2	; Color 6
+	db	27h,6	; Color 7
+	db	62h,2	; Color 8
+	db	63h,3	; Color 9
+	db	52h,5	; Color A
+	db	63h,6	; Color B
+	db	11h,4	; Color C
+	db	55h,2	; Color D
+	db	55h,5	; Color E
+	db	77h,7	; Color F
+```
+
+
 
 ## 応用メモ
 
