@@ -36,9 +36,9 @@ struct CliOptions {
     float weight_s{0.5f};
     float weight_b{0.75f};
     int pre_posterize{16};
-    float pre_sat{1.0f};
+    float pre_sat{0.0f};
     float pre_gamma{1.0f};
-    float pre_highlight{1.0f};
+    float pre_contrast{1.0f};
     float pre_hue{0.0f};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
@@ -115,9 +115,9 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
-                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 1.0)\n"
-                  << "  --pre-gamma <0-10>           処理前にガンマを暗く補正 (デフォルト: 1.0)\n"
-                  << "  --pre-highlight <0-10>       処理前にハイライトを明るく補正 (デフォルト: 1.0)\n"
+                  << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 0.0)\n"
+                  << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
+                  << "  --pre-contrast <0-10>        処理前にコントラストを調整 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
@@ -147,9 +147,9 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"
-              << "  --pre-sat <0-10>             Increase saturation before processing (default: 1.0)\n"
-              << "  --pre-gamma <0-10>           Darken gamma before processing (default: 1.0)\n"
-              << "  --pre-highlight <0-10>       Brighten highlights before processing (default: 1.0)\n"
+              << "  --pre-sat <0-10>             Increase saturation before processing (default: 0.0)\n"
+              << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
+              << "  --pre-contrast <0-10>        Adjust contrast before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
@@ -253,8 +253,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_sat = std::stof(require_value(arg));
         } else if (arg == "--pre-gamma") {
             opts.pre_gamma = std::stof(require_value(arg));
-        } else if (arg == "--pre-highlight") {
-            opts.pre_highlight = std::stof(require_value(arg));
+        } else if (arg == "--pre-contrast") {
+            opts.pre_contrast = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
         } else if (arg == "--pre-lut") {
@@ -325,7 +325,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
     qi.pre_sat         = opts.pre_sat;
     qi.pre_gamma       = opts.pre_gamma;
-    qi.pre_highlight   = opts.pre_highlight;
+    qi.pre_contrast    = opts.pre_contrast;
     qi.pre_hue         = opts.pre_hue;
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;

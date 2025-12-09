@@ -14,7 +14,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 ビルド後、実行ファイルは `platform\\Win\\x64\\msx1pq_cli.exe` に生成されます。
 
-### Linux（コンテナ向け・未完全検証）
+### Linux（未検証）
 
 Ubuntu 系の場合、まずビルドツールをインストールします。
 
@@ -53,14 +53,14 @@ make -C platform/Linux
 | `--color-system <msx1\|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
-| `--no-preprocess` | すべての前処理（ポスタリゼーション、彩度、ガンマ、ハイライト、色相、LUT）をスキップ。 |
+| `--no-preprocess` | すべての前処理（ポスタリゼーション、彩度、ガンマ、コントラスト、色相、LUT）をスキップ。 |
 | `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
 | `--distance <rgb|hsb>` | パレット選択時の色距離計算方法。既定: `hsb`。 |
 | `--weight-h`, `--weight-s`, `--weight-b` | `hsb` 距離使用時の色相・彩度・明度の重み（0〜1）。 |
 | `--pre-posterize <0-255>` | 前処理でポスタリゼーションを適用（既定: `16`。`<=1` で無効）。 |
 | `--pre-sat <0-10>` | 量子化前に彩度を上げる。既定: `1.0`。 |
-| `--pre-gamma <0-10>` | 量子化前にガンマを暗くする。既定: `1.0`。 |
-| `--pre-highlight <0-10>` | 量子化前にハイライトを明るくする。既定: `1.0`。 |
+| `--pre-gamma <0-10>` | 量子化前にガンマを適用する。既定: `1.0`。 |
+| `--pre-contrast <0-10>` | 量子化前にコントラストを調整する。既定: `1.0`。 |
 | `--pre-hue <-180-180>` | 量子化前に色相を回転。既定: `0.0`。 |
 | `--pre-lut <ファイル>` | 256行の RGB LUT または `.cube` 形式の 3D LUT を前処理として適用。 |
 | `--palette92` | (開発用) ディザ処理を行わず92色パレットで出力。 |

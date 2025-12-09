@@ -73,7 +73,7 @@ Build the project using Visual Studio (Windows).
 
 `MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `platform\Win\x64` folder.
 
-## Build Instructions for CLI on Linux (container-friendly, not yet fully verified)
+## Build Instructions for CLI on Linux (not yet verified)
 
 These steps build only the `msx1pq_cli` tool for environments without the Adobe SDK (e.g., containerized Linux deployments). They were prepared for container environments but have not been fully verified across distributions.
 

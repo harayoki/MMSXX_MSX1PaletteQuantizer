@@ -1,5 +1,6 @@
 """
 Z80用ミニアセンブラ v0
+mmsxxasmhelper/core.py
 
 v0で入っている機能:
 
