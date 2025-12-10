@@ -290,10 +290,16 @@ def macro_set_msx2_palette_default(b: Block) -> None:
 
     b.label("MSX2_PAL_SET_END")
 
-def func_show_image(b: Block, row_package_arrs_addr: int, top_row: int) -> None:
-    start_addr = row_package_arrs_addr + top_row * ROW_PACKAGE_SIZE
+def draw_page_call(b: Block, row_package_addr: int, top_row: int) -> None:
+    """
+    1ページ分の RowPackage データを VRAM に転送する関数
+    """
+    start_addr = row_package_addr + top_row * ROW_PACKAGE_SIZE
     # CODEX: ROW_PACKAGE_SIZE バイト分を VRAM に転送するコードをここに書く
-    pass
+    # TODO COEX: 実装
+
+# Funcとしてラップ
+DRAW_PAGE_CALL = Func("draw_page_call", draw_page_call)
 
 
 def build_rom(packed_data: bytes) -> bytes:
@@ -323,15 +329,8 @@ def build_rom(packed_data: bytes) -> bytes:
     macro_set_msx2_palette_default(b)
 
     # 1枚目の絵を出す
-
-    # LD HL,PACKED_DATA
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "PACKED_DATA")
-
-    # CALL LDIRVM TODO: mmsxxasmhelper にマクロ追加
-    LD.DE_n16(b, 0x0000)
-    LD.BC_n16(b, 0x4000)
-    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+    # TODO COEX: PACKED_DATAアドレスをrow_package_arrs_addrに渡す
+    DRAW_PAGE_CALL.call(b, row_package_addr=????, top_row=0)
 
     # DEBUG=True なら HALT
     debug_trap(b)
@@ -340,12 +339,14 @@ def build_rom(packed_data: bytes) -> bytes:
     b.label("MainLoop")
     jp(b, "MainLoop")
 
+    # ----- DRAW_PAGE_CALL の定義 -----
+    DRAW_PAGE_CALL.define(b)
+
     # ----- パレットデータ本体 (MSX2 用) -----
     b.label("PALETTE_DATA")
     db_from_bytes(b, "MSX2_PALETTE_DEFAULT")
 
     # ----- VRAM イメージデータ本体 -----
-
     b.label("PACKED_DATA")
     db(b, *packed_data)
 
