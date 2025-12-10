@@ -96,8 +96,8 @@ COLOR_BASE   = 0x2000
 # RowPackage レイアウト（将来のスクロール用に保持）
 ROW_NAME_SIZE    = 32
 ROW_TILE_COUNT   = 32
-ROW_TILE_BYTES   = 16                  # pattern[8] + color[8]
-ROW_PACKAGE_SIZE = ROW_TILE_COUNT * ROW_TILE_BYTES  # 512
+ROW_TILE_BYTES   = 2                   # pattern[1] + color[1]
+ROW_PACKAGE_SIZE = ROW_TILE_COUNT * ROW_TILE_BYTES  # 64
 TOTAL_ROWS       = 48                  # 2画面 × 24行
 
 MSXVER   = 0x002D   # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
@@ -290,13 +290,49 @@ def macro_set_msx2_palette_default(b: Block) -> None:
 
     b.label("MSX2_PAL_SET_END")
 
-def draw_page_call(b: Block, row_package_addr: int, top_row: int) -> None:
+def draw_page_call(b: Block) -> None:
     """
     1ページ分の RowPackage データを VRAM に転送する関数
     """
-    start_addr = row_package_addr + top_row * ROW_PACKAGE_SIZE
-    # CODEX: ROW_PACKAGE_SIZE バイト分を VRAM に転送するコードをここに書く
-    # TODO COEX: 実装
+    start_addr = "PACKED_DATA"
+
+    # HL = RowPackage 先頭
+    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,start_addr
+    b.add_abs16_fixup(pos + 1, start_addr)
+
+    # DE = PATTERN_BASE / IY = COLOR_BASE
+    LD.DE_n16(b, PATTERN_BASE)
+    LD.IY_n16(b, COLOR_BASE)
+
+    # A = 24 行分処理
+    LD.A_n8(b, 24)
+
+    b.label("DRAW_PAGE_LOOP")
+
+    # パターン 32バイトコピー
+    LD.BC_n16(b, 32)
+    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+
+    # 次のパターン出力先を退避
+    b.emit(0xD5)  # PUSH DE
+
+    # カラーの出力先 (IY) を DE にセット
+    b.emit(0xFD, 0xE5)  # PUSH IY
+    b.emit(0xD1)        # POP DE
+
+    LD.BC_n16(b, 32)
+    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+
+    # IY += 32 (次行のカラー位置)
+    LD.BC_n16(b, 32)
+    b.emit(0xFD, 0x09)  # ADD IY,BC
+
+    # 次行のパターン出力先を復帰
+    b.emit(0xD1)  # POP DE
+
+    # 24行処理するまでループ
+    b.emit(0x3D)  # DEC A
+    jnz(b, "DRAW_PAGE_LOOP")
 
 # Funcとしてラップ
 DRAW_PAGE_CALL = Func("draw_page_call", draw_page_call)
@@ -329,8 +365,8 @@ def build_rom(packed_data: bytes) -> bytes:
     macro_set_msx2_palette_default(b)
 
     # 1枚目の絵を出す
-    # TODO COEX: PACKED_DATAアドレスをrow_package_arrs_addrに渡す
-    DRAW_PAGE_CALL.call(b, row_package_addr=????, top_row=0)
+    # PACKED_DATA の先頭 (1 枚目) を描画
+    DRAW_PAGE_CALL.call(b)
 
     # DEBUG=True なら HALT
     debug_trap(b)
