@@ -93,15 +93,7 @@ PATTERN_BASE = 0x0000
 NAME_BASE    = 0x1800
 COLOR_BASE   = 0x2000
 
-# RowPackage レイアウト（将来のスクロール用に保持）
-ROW_NAME_SIZE    = 32
-ROW_TILE_COUNT   = 32
-ROW_TILE_BYTES   = 2                   # pattern[1] + color[1]
-ROW_PACKAGE_SIZE = ROW_TILE_COUNT * ROW_TILE_BYTES  # 64
-TOTAL_ROWS       = 48                  # 2画面 × 24行
-
 MSXVER   = 0x002D   # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
-
 
 # 0x4000 に配置されるヘッダ:
 #   "AB" + [entry_lo, entry_hi] + padding ... (合計16バイト)
