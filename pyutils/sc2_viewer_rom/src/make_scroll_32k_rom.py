@@ -1,16 +1,62 @@
 #!/usr/bin/env python3
 """
-MSX1 用・2画面縦スクロールエンジン ROM ビルダー（1枚目表示＋色＆パレットマクロ付き）
+MSX1 用・2画面縦スクロールエンジン（8ドット単位）ROM ビルダー仕様
+MSX1 で 2枚の SCREEN2 画像を持ち、 カーソル上下で 8ドット＝1キャラ行単位でスクロール
+ネームテーブル パターンジェネレータ カラーテーブル を ROM から VRAM に反映する
+8ドットスクロールエンジンを構築する
 
-現状:
-- .sc2 2枚を読み込む
-- 1枚目 .sc2 を SCREEN2 用 VRAM 0x4000 バイトに復元して ROM に埋め込み
-- 起動時:
-    - SCREEN2 に切り替え (CHGMOD 2)
-    - 前景=白 / 背景=黒 / 枠=黒 に設定（MSX1/2 共通）  ← マクロ
-    - MSX2 以上ならパレットを設定                       ← マクロ
-    - SC2_IMAGE0 → VRAM へ 16KB コピー (LDIRVM)
-    - 無限ループ
+ROM 内部構造
+スクロール処理で1行にアクセスしやすいデータ構造をあらかじめ作っておく。
+RowPackage:
+1 logical 行（SCREEN2 の 1行）を以下の構造で ROM に保存する：
+    pattern[8] ; パターンジェネレータ（8バイト）x 32文字
+    color[8] ; カラーテーブル（8バイト）x 32文字
+    32 バイト + (8 + 8) バイト × 32 = 512
+    合計 512 バイト
+必要ない物
+    ネームテーブル（1行 32文字）… 動的に決定できる
+    スプライト属性テーブル
+    スプライトパターンジェネレータ
+
+画像は 2 枚（各 24 行）なので：
+image1 RowPackage[ 0] ~ RowPackage[23]
+image1 RowPackage[24] ~ RowPackage[47]
+512 × 48 = 21504 バイト（21KB） → 32KB ROM に 11kB余裕をもって収まる。
+
+＊SCREEN2 VRAM 仕様
+Pattern Generator : 0000h–17FFh
+Name Table : 1800h–1AFFh
+Color Table : 2000h–37FFh
+
+＊スクロール位置を指定した全面書き換え
+top_row(0~24)の値を見て2画面分のRowPackage全体必要な部分を決定。
+ネームテーブルは機械的に埋めて、パターンジェネレータとカラーテーブルは
+RowPackageから該当部分を取り出してVRAMに書き込む。
+
+＊手抜きなスクロール処理
+
+差分は考えずスクロール位置を指定した全面書き換えを行う。
+まずはこれで実装を行い画面のみだれやパフォーマンスが許容できるか確認する。
+
+＊まじめなスクロール処理
+
+まずVRAM領域が3分割で荒れている事は考えずに知世を記す。
+
+＞カラーテーブル・パターンジェネレータ
+▼ 下スクロール top_row++（最大 24）
+現在の一番上の行に対応するテーブルを次にスクロールして出てくる内容[top_row+23]で書き換える
+
+▲ 上スクロール top_row--（最小 0）
+現在の一番下の行に対応するテーブルを次にスクロールして出てくる内容[top_row]で書き換える
+
+＞ネームテーブル
+▼ 下スクロール ネームテーブル行を上へ1行詰める
+ 見えなくなる一番上の行内容をを一番下の行に移動する
+▲ 上スクロール（scroll up）  ネームテーブル行を下へ1行詰める
+　見えなくなる一番下の行内容をを一番↑の行に移動する
+
+以上で基本的な考え方はいいのだが、実際には VRAM 領域が縦に3分割して
+8行ずつになっているため、8行単位で処理を行う必要がある。
 """
 
 from __future__ import annotations
@@ -22,19 +68,16 @@ from typing import List
 from mmsxxasmhelper.core import *
 
 
-# --- ROM / SCREEN2 / BIOS 定数 --------------------------------------------
-
 ROM_SIZE = 0x8000      # 32KB
 ROM_BASE = 0x4000
 
 VRAM_SIZE = 0x4000
 SC2_HEADER_SIZE = 7
-IMAGE_LENGTH = 0x3780  # トリム後 (0000–1AFF + 1B80–37FF)
 
 # BIOS コールアドレス
-CHGMOD = 0x005F
-CHGCLR = 0x0062
-LDIRVM = 0x005C
+CHGMOD = 0x005F  # 画面モード変更
+CHGCLR = 0x0062  # 画面色変更
+LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 
 # カラー関連システム変数 (MSX1/2 共通)
 FORCLR = 0xF3E9  # 前景色
@@ -54,12 +97,11 @@ COLOR_BASE   = 0x2000
 ROW_NAME_SIZE    = 32
 ROW_TILE_COUNT   = 32
 ROW_TILE_BYTES   = 16                  # pattern[8] + color[8]
-ROW_PACKAGE_SIZE = ROW_NAME_SIZE + ROW_TILE_COUNT * ROW_TILE_BYTES  # 544
+ROW_PACKAGE_SIZE = ROW_TILE_COUNT * ROW_TILE_BYTES  # 512
 TOTAL_ROWS       = 48                  # 2画面 × 24行
 
 MSXVER   = 0x002D   # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 
-# --- ROM ヘッダ定義（msxrom_boot と同じ形） -------------------------------
 
 # 0x4000 に配置されるヘッダ:
 #   "AB" + [entry_lo, entry_hi] + padding ... (合計16バイト)
@@ -69,10 +111,7 @@ const_bytes(
     *pad_bytes(str_bytes("AB") + [0x10, 0x40], 16, 0x00),
 )
 
-
-# --- MSX2 用デフォルトパレット定義 ---------------------------------------
-
-# COLOR=(n,R,G,B)
+# MSX2環境向けMSX1色パレットデータ
 # 1バイト目: 0R2 R1 R0 B2 B1 B0
 # 2バイト目: 0000 G2 G1 G0
 # R,G,B は 0–7
@@ -99,73 +138,49 @@ for idx, (R, G, B) in enumerate([
     b2 = (G & 7)
     _MSX2_PALETTE_BYTES.extend([b1, b2])
 
-# 他ファイルでもコピペで使いやすいように const_bytes にも登録しておく
 const_bytes("MSX2_PALETTE_DEFAULT", *_MSX2_PALETTE_BYTES)
 
 
-# --- .sc2 トリム処理 ------------------------------------------------------
-
-def sc2_to_trimmed(sc2_bytes: bytes) -> bytes:
+def validate_sc2_bytes(sc2_bytes: bytes) -> bytes:
     """
-    SCREEN2 VRAM ダンプを 0x3780 バイトにトリム。
-
-    元 VRAM:
-        0000h–37FFh (16KB)
-
-    トリム形式:
-        0000h–1AFFh + 1B80h–37FFh  → 合計 0x3780
+    SCREEN2 VRAM データの正規化
     """
     length = len(sc2_bytes)
-
-    # すでにトリム済み
-    if length == IMAGE_LENGTH:
-        return sc2_bytes
-
     # 7バイトヘッダ付き 0x4000 + 7
     if length == VRAM_SIZE + SC2_HEADER_SIZE:
         sc2_bytes = sc2_bytes[SC2_HEADER_SIZE:]
         length = len(sc2_bytes)
-
-    # 素の 0x4000
-    if length == VRAM_SIZE:
-        # 0000–1AFF
-        part1 = sc2_bytes[:0x1B00]
-        # 1B80–37FF
-        part2 = sc2_bytes[0x1B80:0x3800]
-        return part1 + part2
-
-    raise ValueError(
-        f"Invalid SC2 size: {length:#x}, expected 0x3780 or 0x4000(+7)"
-    )
-
-
-def trimmed_to_full_vram(trimmed: bytes) -> bytes:
-    """
-    トリム済み 0x3780 バイトから、フル VRAM 0x4000 バイトに戻す。
-
-    トリム形式:
-        0000–1AFF   → VRAM 0000–1AFF
-        1B00–377F   → VRAM 1B80–37FF
-    それ以外の VRAM 領域は 0 クリア。
-    """
-    if len(trimmed) != IMAGE_LENGTH:
-        raise ValueError("trimmed image must be 0x3780 bytes")
-
-    vram = bytearray([0x00] * VRAM_SIZE)
-
-    # 0000–1AFF
-    vram[0x0000:0x1B00] = trimmed[0x0000:0x1B00]
-    # 1B80–37FF
-    vram[0x1B80:0x3800] = trimmed[0x1B00:0x3780]
-
+    assert length == VRAM_SIZE, f"Invalid SC2 size: {length:#x}"  # must be 16k
+    # ねんのためスプライト定義と属性テーブルを0クリア
+    vram = bytearray(sc2_bytes)
+    for addr in range(0x3800, 0x4000):
+        vram[addr] = 0x00
     return bytes(vram)
 
+
+# def trimmed_to_full_vram(trimmed: bytes) -> bytes:
+#     """
+#     トリム済み 0x3780 バイトから、フル VRAM 0x4000 バイトに戻す。
+#     → この関数は開発時以外必要ない
+#     トリム形式:
+#         0000–1AFF   → VRAM 0000–1AFF
+#         1B00–377F   → VRAM 1B80–37FF
+#     それ以外の VRAM 領域は 0 クリア。
+#     """
+#     if len(trimmed) != IMAGE_LENGTH:
+#         raise ValueError("trimmed image must be 0x3780 bytes")
+#     vram = bytearray([0x00] * VRAM_SIZE)
+#     # 0000–1AFF
+#     vram[0x0000:0x1B00] = trimmed[0x0000:0x1B00]
+#     # 1B80–37FF
+#     vram[0x1B80:0x3800] = trimmed[0x1B00:0x3780]
+#     return bytes(vram)
 
 def vram_to_trimmed_offset(addr: int) -> int:
     """
     VRAM アドレス 0x0000–0x37FF を、
     トリム済み 0x3780 バッファ上のオフセットに変換。
-    （RowPackage 用に残しておく）
+    → この関数は最終的に使わなくなる？
     """
     if addr < 0x1B00:
         return addr
@@ -173,72 +188,48 @@ def vram_to_trimmed_offset(addr: int) -> int:
     return addr - 0x80
 
 
-# --- RowPackage 生成（将来のスクロール用にそのまま保持） -------------------
-
-def build_row_packages(image_bytes: bytes) -> List[bytes]:
+def build_row_packages(image_bytes: bytes) -> bytes:
     """
-    トリム済み 1画面 (0x3780) から RowPackage[24] を生成。
-
+    1画面のバイト列から RowPackage[24] を生成。@
     RowPackage:
-        name[32]
-        tiles[32] each { pattern[8], color[8] }
+        pattern * 32
+        color   * 32
     """
-    if len(image_bytes) != IMAGE_LENGTH:
+    if len(image_bytes) != VRAM_SIZE:
         raise ValueError("trimmed image must be 0x3780 bytes")
 
-    rows: List[bytes] = []
+    """
+    ＊SCREEN2 VRAM 仕様
+    Pattern Generator : 0000h–17FFh
+    Name Table : 1800h–1AFFh
+    Color Table : 2000h–37FFh
+    """
+    pattern_gen = image_bytes[:0x1800]
+    color_table = image_bytes[0x2000:0x3800]  # カラーテーブル
 
+    rows: List[bytes] = []
     for row in range(24):
         bank = row // 8  # 0,1,2 (SCREEN2 の 8行単位バンク)
 
-        # NameTable 1行分（パターン番号32個）
-        name_vram = NAME_BASE + row * 32
-        name_off = vram_to_trimmed_offset(name_vram)
-        name_row = image_bytes[name_off:name_off + 32]
-        if len(name_row) != 32:
-            raise ValueError("unexpected name row slice length")
+        pattern_line = pattern_gen[row * 32:(row + 1) * 32]
+        pattern_line_as_str = " ".join(f"{b:02X}" for b in pattern_line)
+        print(f"#{row} pattern_line({((bank * 0x800) + (row % 8) * 32):04X}) {pattern_line_as_str}")
+        color_line   = color_table[row * 32:(row + 1) * 32]
+        color_line_as_str = " ".join(f"{b:02X}" for b in color_line)
+        print(f"#{row} color_line({((bank * 0x800) + (row % 8) * 32):04X}) {color_line_as_str}")
 
-        tile_bytes = bytearray()
+        pkg: bytes = pattern_line + color_line  # 64 bytes
+        rows.append(pkg)
 
-        for col in range(32):
-            p = name_row[col]
+    return b"".join(rows)
 
-            pat_base_bank = PATTERN_BASE + bank * 0x800
-            col_base_bank = COLOR_BASE + bank * 0x800
-
-            pat_addr = pat_base_bank + p * 8
-            col_addr = col_base_bank + p * 8
-
-            pat_off = vram_to_trimmed_offset(pat_addr)
-            col_off = vram_to_trimmed_offset(col_addr)
-
-            pattern = image_bytes[pat_off:pat_off + 8]
-            color   = image_bytes[col_off:col_off + 8]
-
-            if len(pattern) != 8 or len(color) != 8:
-                raise ValueError("unexpected pattern/color slice length")
-
-            tile_bytes.extend(pattern)
-            tile_bytes.extend(color)
-
-        if len(tile_bytes) != ROW_TILE_COUNT * ROW_TILE_BYTES:
-            raise ValueError("tile_bytes size mismatch")
-
-        row_pkg = bytes(name_row) + bytes(tile_bytes)
-        if len(row_pkg) != ROW_PACKAGE_SIZE:
-            raise ValueError("RowPackage size mismatch")
-
-        rows.append(row_pkg)
-
-    return rows
-
-
-# --- マクロ：背景＆周辺を黒にする（MSX1/2 共通） ---------------------------
 
 def macro_set_black_screen_colors(b: Block) -> None:
     """
+    マクロ関数
+    背景＆周辺を黒にする（MSX1/2 共通）
     前景=白(15), 背景=黒(0), 枠=黒(0) にして CHGCLR を呼ぶ。
-    他の ROM でもコピペしやすいよう、ラベルは使わずインラインのみ。
+    TODO: mmsxxasmhelper にマクロ追加
     """
     # FORCLR = 15 (白)
     LD.A_n8(b, 0x0F)
@@ -256,26 +247,23 @@ def macro_set_black_screen_colors(b: Block) -> None:
     b.emit(0xCD, CHGCLR & 0xFF, (CHGCLR >> 8) & 0xFF)
 
 
-# --- マクロ：MSX2 以上ならパレットを設定 -----------------------------------
-
-
 MSXVER = 0x002D  # すでにどこかに書いてあるならそれを使う
 
 def macro_set_msx2_palette_default(b: Block) -> None:
     """
-    MSX2 以上なら MSX2_PALETTE_DEFAULT を設定するマクロ。
-    インライン展開前提なので RET は絶対に使わない。
+    マクロ関数
+    MSX2 以上ならパレットを設定
+    TODO: mmsxxasmhelper にマクロ追加
     """
 
+    return
+    # TODO : 以下 現状画面が真っ黒になってしまうバグあり 仕様確認
+
     # --- MSX バージョン確認 ---
-    # A = (MSXVER)
     LD.A_mn16(b, MSXVER)
     b.emit(0xFE, 0x00)   # CP 0
-
-    # Z(=MSX1) のときはパレット処理を丸ごと飛ばす
-    jz(b, "MSX2_PAL_SKIP")
-
-    # --- ここから MSX2 以上用のパレット書き込み ---
+    # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
+    jz(b, "MSX2_PAL_SET_END")
 
     # R#16 に color index 0 をセット
     # OUT 99h,0
@@ -300,20 +288,18 @@ def macro_set_msx2_palette_default(b: Block) -> None:
     disp = (b.labels["MSX2_PAL_LOOP"] - (b.pc + 1)) & 0xFF
     b.emit(0x10, disp)  # DJNZ MSX2_PAL_LOOP
 
-    # --- スキップ先ラベル ---
-    b.label("MSX2_PAL_SKIP")
+    b.label("MSX2_PAL_SET_END")
+
+def func_show_image(b: Block, row_package_arrs_addr: int, top_row: int) -> None:
+    start_addr = row_package_arrs_addr + top_row * ROW_PACKAGE_SIZE
+    # CODEX: ROW_PACKAGE_SIZE バイト分を VRAM に転送するコードをここに書く
+    pass
 
 
-
-# --- Z80 コード（1枚目を表示するエンジン） --------------------------------
-
-def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
+def build_rom(packed_data: bytes) -> bytes:
     """
-    1枚目のフル VRAM 画像を ROM に埋め込み、
-    起動時にそれを VRAM にコピーして表示するコードを組み立てる。
+    ROMに書き込むコードを組み立てる。
     """
-    if len(sc2_full_vram) != VRAM_SIZE:
-        raise ValueError("sc2_full_vram must be 0x4000 bytes")
 
     b = Block()
 
@@ -333,31 +319,25 @@ def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
     macro_set_black_screen_colors(b)
 
     # MSX2 以上ならパレット設定
-    # macro_set_msx2_palette_default(b)  #B 現状真っ黒になってしまうバグあり
+    # 真っ黒になってしまうバグがあるので現状何もしないコードになっている
+    macro_set_msx2_palette_default(b)
 
-    # VRAM 全体に 1枚目の画像を転送:
-    #   HL = SC2_IMAGE0
-    #   DE = 0000h
-    #   BC = 4000h
-    #   CALL LDIRVM
-    #
-    # LD HL,SC2_IMAGE0
-    # LD.HL_n8(b, 0x00, 0x00)  # ダミー、fixup 後で埋める
-    pos = b.emit(0x21, 0x00, 0x00)          # LD HL,nn
-    b.add_abs16_fixup(pos + 1, "SC2_IMAGE0")
+    # 1枚目の絵を出す
 
-    # LD DE,0000h
+    # LD HL,PACKED_DATA
+    pos = b.emit(0x21, 0x00, 0x00)
+    b.add_abs16_fixup(pos + 1, "PACKED_DATA")
+
+    # CALL LDIRVM TODO: mmsxxasmhelper にマクロ追加
     LD.DE_n16(b, 0x0000)
-
-    # LD BC,4000h
     LD.BC_n16(b, 0x4000)
-
-    # CALL 005Ch (LDIRVM)
     b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+
+    # DEBUG=True なら HALT
+    debug_trap(b)
 
     # 以降は無限ループ
     b.label("MainLoop")
-    debug_trap(b)  # DEBUG=True なら HALT
     jp(b, "MainLoop")
 
     # ----- パレットデータ本体 (MSX2 用) -----
@@ -366,16 +346,14 @@ def build_engine_show_image0(sc2_full_vram: bytes) -> bytes:
 
     # ----- VRAM イメージデータ本体 -----
 
-    b.label("SC2_IMAGE0")
-    db(b, *sc2_full_vram)
+    b.label("PACKED_DATA")
+    db(b, *packed_data)
 
     # origin=0x4000 で fixup 解決
     return b.finalize(origin=ROM_BASE)
 
 
-# --- ROM 全体構築 ---------------------------------------------------------
-
-def build_rom(
+def build(
     image0_trimmed: bytes,
     image1_trimmed: bytes,
     fill_byte: int = 0xFF,
@@ -387,9 +365,10 @@ def build_rom(
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
 
-    sc2_full0 = trimmed_to_full_vram(image0_trimmed)
+    pack1 = build_row_packages(image0_trimmed)
+    pack2 = build_row_packages(image1_trimmed)
 
-    engine = build_engine_show_image0(sc2_full0)
+    engine = build_rom(pack1 + pack2)
 
     if len(engine) > ROM_SIZE:
         raise ValueError(
@@ -432,10 +411,10 @@ def main() -> None:
     if not args.image1.is_file():
         raise SystemExit(f"not found: {args.image1}")
 
-    img0 = sc2_to_trimmed(args.image0.read_bytes())
-    img1 = sc2_to_trimmed(args.image1.read_bytes())  # 今は読むだけ
+    img0 = validate_sc2_bytes(args.image0.read_bytes())
+    img1 = validate_sc2_bytes(args.image1.read_bytes())
 
-    rom = build_rom(img0, img1, fill_byte=args.fill_byte)
+    rom = build(img0, img1, fill_byte=args.fill_byte)
 
     out = args.output
     if out is None:
