@@ -187,10 +187,10 @@ def init_name_table_call(b: Block) -> None:
     INC.A(b)
     b.emit(0x3C)  # INC A
     # A != 0 ? ループ
-    jnz(b, "INIT_NAME_TABLE_LOOP_INNER")
+    JP_NZ(b, "INIT_NAME_TABLE_LOOP_INNER")
     # 3回繰り返し
     DEC.B(b)
-    jnz(b, "INIT_NAME_TABLE_LOOP_OUTER")
+    JP_NZ(b, "INIT_NAME_TABLE_LOOP_OUTER")
 
 
 INIT_NAME_TABLE_CALL = Func("init_name_table_call", init_name_table_call)
@@ -237,7 +237,7 @@ def draw_page_call(b: Block) -> None:
 
     # 24行処理するまでループ
     b.emit(0x3D)  # DEC A
-    jnz(b, "DRAW_PAGE_LOOP")
+    JP_NZ(b, "DRAW_PAGE_LOOP")
 
 
 DRAW_PAGE_CALL = Func("draw_page_call", draw_page_call)
@@ -282,7 +282,7 @@ def build_rom(packed_data: bytes) -> bytes:
 
     # 以降は無限ループ
     b.label("MainLoop")
-    jp(b, "MainLoop")
+    JP(b, "MainLoop")
 
     # ----- サブルーチンの定義 -----
     INIT_NAME_TABLE_CALL.define(b)

@@ -7,7 +7,7 @@ from __future__ import annotations
 from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
-from mmsxxasmhelper.core import Block, LD, db, jp, jz
+from mmsxxasmhelper.core import Block, DJNZ, JP, JP_Z, LD, db
 
 __all__ = [
     "place_msx_rom_header_macro",
@@ -170,7 +170,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     get_msxver_macro(b)
     b.emit(0xFE, 0x00)   # CP 0
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
-    jz(b, "__MSX2_PAL_SET_END__")
+    JP_Z(b, "__MSX2_PAL_SET_END__")
 
     # R#16 に color index 0 をセット
     # OUT 99h,0
@@ -192,12 +192,11 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     b.emit(0x7E)        # LD A,(HL)
     b.emit(0xD3, 0x9A)  # OUT (9Ah),A
     b.emit(0x23)        # INC HL
-    disp = (b.labels["__MSX2_PAL_LOOP__"] - (b.pc + 1)) & 0xFF
-    b.emit(0x10, disp)  # DJNZ __MSX2_PAL_LOOP__
+    DJNZ(b, "__MSX2_PAL_LOOP__")
 
     b.label("__MSX2_PAL_SET_END__")
     # パレットデータ本体（実行されない領域）
-    jp(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
+    JP(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
     b.label("__PALETTE_DATA__")
     db(b, *_MSX2_PALETTE_BYTES)
     b.label("__MSX2_PAL_DATA_END__")
