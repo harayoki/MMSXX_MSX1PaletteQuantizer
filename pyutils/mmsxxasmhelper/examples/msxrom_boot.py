@@ -46,10 +46,10 @@ def build_example() -> bytes:
     b.label("start")
 
     # ROM HEADER の配置
-    DB(b, *DATA8["MSX_ROM_HEADER"])
+    DB(b, *Data8["MSX_ROM_HEADER"])
 
     # LD A, INIT_VALUE
-    LD.A_n8(b, CONST["INIT_VALUE"])
+    LD.A_n8(b, Const["INIT_VALUE"])
 
     # デバッグ用 HALT を差し込む(後で消したければ DEBUG=False にする)
     debug_trap(b)
