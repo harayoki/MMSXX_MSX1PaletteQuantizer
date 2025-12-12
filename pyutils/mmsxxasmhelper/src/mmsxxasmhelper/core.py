@@ -33,7 +33,8 @@ v0で入っている機能:
   - .call(b): CALL 命令を出力(アドレスはfixupで解決)
 
 - 命令ラッパ:
-  - jp(b, label): JP label
+  - JP 系: 無条件/条件付き絶対ジャンプ (JP, JP_Z, JP_NZ, JP_NC, JP_C, JP_PO, JP_PE, JP_P, JP_M, JP_mHL)
+  - JR 系: 無条件/条件付き相対ジャンプ (JR, JR_Z, JR_NZ, JR_NC, JR_C) および DJNZ
   - call(b, label): CALL label
 
 - データ配置:
@@ -56,10 +57,12 @@ __all__ = [
     "str_bytes", "const_string",
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
-    "jp", "jz", "jnz", "call", "Func",
+    "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
+    "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
+    "call", "Func",
     "db", "dw",
-    "HALT", "set_debug", "debug_trap",
     "LD", "INC", "DEC",
+    "HALT",
 ]
 
 from dataclasses import dataclass
@@ -70,7 +73,7 @@ from typing import Callable, Dict, List, Literal
 # Block: コード構築の基本単位
 # ---------------------------------------------------------------------------
 
-FixupKind = Literal["abs16"]  # v0では絶対16bitアドレスのみ扱う
+FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 
 
 @dataclass
@@ -124,6 +127,14 @@ class Block:
 
         self.fixups.append(Fixup(kind="abs16", pos=pos, target=target))
 
+    def add_rel8_fixup(self, pos: int, target: str) -> None:
+        """8bit相対オフセットを書き込むためのfixupを登録。
+
+        pos: オフセットを書き込む位置（この1バイトの直後が基準アドレス）。
+        """
+
+        self.fixups.append(Fixup(kind="rel8", pos=pos, target=target))
+
     # --- 出力確定 ---
 
     def finalize(self, origin: int = 0) -> bytes:
@@ -141,6 +152,14 @@ class Block:
                 hi = (addr >> 8) & 0xFF
                 self.code[fx.pos] = lo
                 self.code[fx.pos + 1] = hi
+            elif fx.kind == "rel8":
+                base = origin + fx.pos + 1  # 相対オフセットの基準 (次命令のアドレス)
+                target = origin + self._get_label_addr(fx.target)
+                offset = target - base
+                if not -128 <= offset <= 127:
+                    raise ValueError(
+                        f"relative jump out of range: target={fx.target}, offset={offset}")
+                self.code[fx.pos] = offset & 0xFF
             else:
                 raise ValueError(f"unknown fixup kind: {fx.kind}")
 
@@ -307,34 +326,114 @@ def const_bytes_padded(name: str, size: int, fill: int = 0x00, *values: int) -> 
 
 
 # ---------------------------------------------------------------------------
-# 命令ラッパ (v0: JP / CALL のみ)
+# 命令ラッパ (v0: ジャンプ / コール)
 # ---------------------------------------------------------------------------
 
-def jp(b: Block, target: str) -> None:
-    """JP target (絶対ジャンプ)。"""
 
-    # JP nn  (opcode 0xC3, nn = 16bit)
-    pos = b.emit(0xC3, 0x00, 0x00)
-    # 下位バイト位置を fixup.pos として登録
+def _jp_abs16(b: Block, opcode: int, target: str) -> None:
+    pos = b.emit(opcode, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, target)
 
 
-def jz(b: Block, target: str) -> None:
-    """JP Z,target (絶対ジャンプ)。"""
-
-    # JP Z,nn  (opcode 0xCA, nn = 16bit)
-    pos = b.emit(0xCA, 0x00, 0x00)
-    # 下位バイト位置を fixup.pos として登録
-    b.add_abs16_fixup(pos + 1, target)
+def _jr_rel8(b: Block, opcode: int, target: str) -> None:
+    pos = b.emit(opcode, 0x00)
+    b.add_rel8_fixup(pos + 1, target)
 
 
-def jnz(b: Block, target: str) -> None:
-    """JP NZ,target (絶対ジャンプ)。"""
+def JP(b: Block, target: str) -> None:
+    """JP target (無条件絶対ジャンプ)。"""
 
-    # JP NZ,nn  (opcode 0xC2, nn = 16bit)
-    pos = b.emit(0xC2, 0x00, 0x00)
-    # 下位バイト位置を fixup.pos として登録
-    b.add_abs16_fixup(pos + 1, target)
+    _jp_abs16(b, 0xC3, target)
+
+
+def JP_NZ(b: Block, target: str) -> None:
+    """JP NZ,target (Z=0)。"""
+
+    _jp_abs16(b, 0xC2, target)
+
+
+def JP_Z(b: Block, target: str) -> None:
+    """JP Z,target (Z=1)。"""
+
+    _jp_abs16(b, 0xCA, target)
+
+
+def JP_NC(b: Block, target: str) -> None:
+    """JP NC,target (C=0)。"""
+
+    _jp_abs16(b, 0xD2, target)
+
+
+def JP_C(b: Block, target: str) -> None:
+    """JP C,target (C=1)。"""
+
+    _jp_abs16(b, 0xDA, target)
+
+
+def JP_PO(b: Block, target: str) -> None:
+    """JP PO,target (パリティオーバーフロー=0)。"""
+
+    _jp_abs16(b, 0xE2, target)
+
+
+def JP_PE(b: Block, target: str) -> None:
+    """JP PE,target (パリティオーバーフロー=1)。"""
+
+    _jp_abs16(b, 0xEA, target)
+
+
+def JP_P(b: Block, target: str) -> None:
+    """JP P,target (符号フラグ=0)。"""
+
+    _jp_abs16(b, 0xF2, target)
+
+
+def JP_M(b: Block, target: str) -> None:
+    """JP M,target (符号フラグ=1)。"""
+
+    _jp_abs16(b, 0xFA, target)
+
+
+def JP_mHL(b: Block) -> None:
+    """JP (HL) (HLが指すアドレスへジャンプ)。"""
+
+    b.emit(0xE9)
+
+
+def JR(b: Block, target: str) -> None:
+    """JR target (無条件相対ジャンプ)。"""
+
+    _jr_rel8(b, 0x18, target)
+
+
+def JR_NZ(b: Block, target: str) -> None:
+    """JR NZ,target (Z=0)。"""
+
+    _jr_rel8(b, 0x20, target)
+
+
+def JR_Z(b: Block, target: str) -> None:
+    """JR Z,target (Z=1)。"""
+
+    _jr_rel8(b, 0x28, target)
+
+
+def JR_NC(b: Block, target: str) -> None:
+    """JR NC,target (C=0)。"""
+
+    _jr_rel8(b, 0x30, target)
+
+
+def JR_C(b: Block, target: str) -> None:
+    """JR C,target (C=1)。"""
+
+    _jr_rel8(b, 0x38, target)
+
+
+def DJNZ(b: Block, target: str) -> None:
+    """DJNZ target (Bをデクリメントし非ゼロなら相対ジャンプ)。"""
+
+    _jr_rel8(b, 0x10, target)
 
 
 def call(b: Block, target: str) -> None:
@@ -880,25 +979,10 @@ def dw(b: Block, *values: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# DEBUG 用フラグと簡易トラップ
+# HALT
 # ---------------------------------------------------------------------------
-
-DEBUG: bool = True
-
 
 def HALT(b: Block) -> None:
     """HALT 命令を挿入する。"""
     b.emit(0x76)
 
-
-def set_debug(flag: bool) -> None:
-    """DEBUG フラグを設定する。"""
-    global DEBUG
-    DEBUG = flag
-
-
-def debug_trap(b: Block) -> None:
-    """DEBUG が True のときだけデバッグ用命令を挿入する。"""
-    if not DEBUG:
-        return
-    HALT(b)

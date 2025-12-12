@@ -73,7 +73,9 @@ from mmsxxasmhelper.msxutils import (
     set_screen_mode_macro,
     set_screen_colors_macro,
 )
-
+from mmsxxasmhelper.utils import (
+    loop_infinite_macro, debug_trap, set_debug
+)
 
 ROM_SIZE = 0x8000      # 32KB
 ROM_BASE = 0x4000
@@ -85,6 +87,10 @@ SC2_HEADER_SIZE = 7
 PATTERN_BASE = 0x0000
 NAME_BASE    = 0x1800
 COLOR_BASE   = 0x2000
+
+# MSX RAM での作業領域
+WORK_RAM_BASE = 0xC000
+
 
 def validate_sc2_bytes(sc2_bytes: bytes) -> bytes:
     """
@@ -170,27 +176,26 @@ def build_row_packages(image_bytes: bytes) -> bytes:
 
 
 def init_name_table_call(b: Block) -> None:
-    # ネームテーブルの初期化 0~255を3回書き込む
-    # HL = NAME_BASE
-    LD.HL_n16(b, NAME_BASE)
+
+    # 最初に 0~255 のパターンをRAMに用意
+    # HL = WORK_RAM_BASE
+    LD.HL_n16(b, WORK_RAM_BASE)
     # A = 0~255
     LD.A_n8(b, 0)
-    # B = 3
-    LD.B_n8(b, 3)
-    b.label("INIT_NAME_TABLE_LOOP_OUTER")
-    b.label("INIT_NAME_TABLE_LOOP_INNER")
+    b.label("CREATE_NAME_TABLE_LOOP")
     # (HL) = A
     LD.mHL_A(b)
     # HL++
     INC.HL(b)
     # A++
     INC.A(b)
-    b.emit(0x3C)  # INC A
-    # A != 0 ? ループ
-    jnz(b, "INIT_NAME_TABLE_LOOP_INNER")
-    # 3回繰り返し
-    DEC.B(b)
-    jnz(b, "INIT_NAME_TABLE_LOOP_OUTER")
+    # 256回ループ
+    JP_Z(b, "CREATE_NAME_TABLE_LOOP")
+
+    # ネームテーブルの初期化x3
+    ldirvm_macro(b, source=WORK_RAM_BASE, dest=NAME_BASE        , length=0x0200)
+    ldirvm_macro(b, source=WORK_RAM_BASE, dest=NAME_BASE + 0x100, length=0x0200)
+    ldirvm_macro(b, source=WORK_RAM_BASE, dest=NAME_BASE + 0x200, length=0x0200)
 
 
 INIT_NAME_TABLE_CALL = Func("init_name_table_call", init_name_table_call)
@@ -237,7 +242,7 @@ def draw_page_call(b: Block) -> None:
 
     # 24行処理するまでループ
     b.emit(0x3D)  # DEC A
-    jnz(b, "DRAW_PAGE_LOOP")
+    JP_Z(b, "DRAW_PAGE_LOOP")
 
 
 DRAW_PAGE_CALL = Func("draw_page_call", draw_page_call)
@@ -268,21 +273,26 @@ def build_rom(packed_data: bytes) -> bytes:
 
     # MSX2 以上ならパレット設定
     # 真っ黒になってしまうバグがあるので現状何もしないコードになっている
-    set_msx2_palette_default_macro(b)
+    # set_msx2_palette_default_macro(b)
 
     # ネームテーブル初期化
     INIT_NAME_TABLE_CALL.call(b)
 
+    # DEBUG=True なら HALT
+    debug_trap(b)
+
     # 1枚目の絵を出す
     # PACKED_DATA の先頭 (1 枚目) を描画
-    DRAW_PAGE_CALL.call(b)
+    # DRAW_PAGE_CALL.call(b)
+
+    loop_infinite_macro(b)
 
     # DEBUG=True なら HALT
     debug_trap(b)
 
     # 以降は無限ループ
-    b.label("MainLoop")
-    jp(b, "MainLoop")
+    b.label("FinalLoop")
+    JP(b, "FinalLoop")
 
     # ----- サブルーチンの定義 -----
     INIT_NAME_TABLE_CALL.define(b)
@@ -322,8 +332,6 @@ def build(
     rom[: len(engine)] = engine
     return bytes(rom)
 
-
-# --- CLI ------------------------------------------------------------------
 
 def int_from_str(v: str) -> int:
     return int(v, 0)

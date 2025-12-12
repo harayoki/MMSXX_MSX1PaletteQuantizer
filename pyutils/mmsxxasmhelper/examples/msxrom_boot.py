@@ -61,7 +61,7 @@ def build_example() -> bytes:
     debug_trap(b)
 
     # 無限ループ用ジャンプ (startに戻る)
-    jp(b, "start")
+    JP(b, "start")
 
     # --- 関数定義 ---
     INC_A_TIMES.define(b)

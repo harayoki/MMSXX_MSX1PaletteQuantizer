@@ -1,5 +1,5 @@
 """
-MSX BIOS 関連マクロ。
+MSX 関連マクロ & 関数 他
 """
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from __future__ import annotations
 from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
-from mmsxxasmhelper.core import Block, LD, db, jp, jz
+from mmsxxasmhelper.core import Block, LD, db, JP, JP_Z
 
 __all__ = [
     "place_msx_rom_header_macro",
@@ -112,6 +112,7 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_
     ]
     db(b, *header)
 
+
 def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
     """MSX2 パレットの 2 バイト表現を作る。
 
@@ -170,7 +171,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     get_msxver_macro(b)
     b.emit(0xFE, 0x00)   # CP 0
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
-    jz(b, "__MSX2_PAL_SET_END__")
+    JP_Z(b, "__MSX2_PAL_SET_END__")
 
     # R#16 に color index 0 をセット
     # OUT 99h,0
@@ -197,7 +198,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 
     b.label("__MSX2_PAL_SET_END__")
     # パレットデータ本体（実行されない領域）
-    jp(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
+    JP(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
     b.label("__PALETTE_DATA__")
     db(b, *_MSX2_PALETTE_BYTES)
     b.label("__MSX2_PAL_DATA_END__")
