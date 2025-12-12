@@ -1,0 +1,282 @@
+"""
+MSX BIOS 関連マクロ。
+"""
+
+from __future__ import annotations
+
+from functools import wraps
+from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
+
+from mmsxxasmhelper.core import Block, LD, db, jp, jz
+
+__all__ = [
+    "place_msx_rom_header_macro",
+    "get_msxver_macro",
+    "set_msx2_palette_default_macro",
+    "set_screen_mode_macro",
+    "set_screen_colors_macro",
+    "ldirvm_macro",
+    "with_register_preserve",
+]
+
+RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
+P = ParamSpec("P")
+
+
+_PUSH_OPCODES: dict[RegisterName, tuple[int, ...]] = {
+    "AF": (0xF5,),
+    "BC": (0xC5,),
+    "DE": (0xD5,),
+    "HL": (0xE5,),
+    "IX": (0xDD, 0xE5),
+    "IY": (0xFD, 0xE5),
+}
+
+_POP_OPCODES: dict[RegisterName, tuple[int, ...]] = {
+    "AF": (0xF1,),
+    "BC": (0xC1,),
+    "DE": (0xD1,),
+    "HL": (0xE1,),
+    "IX": (0xDD, 0xE1),
+    "IY": (0xFD, 0xE1),
+}
+
+
+def _emit_push(b: Block, reg: RegisterName) -> None:
+    b.emit(*_PUSH_OPCODES[reg])
+
+
+def _emit_pop(b: Block, reg: RegisterName) -> None:
+    b.emit(*_POP_OPCODES[reg])
+
+
+def with_register_preserve(
+    macro: Callable[Concatenate[Block, P], None]
+) -> Callable[Concatenate[Block, P], None]:
+    """マクロ呼び出しの前後に PUSH/POP を挿入するデコレータ。
+
+    ``preserve_regs`` キーワード引数で退避するレジスタを指定できる。
+    何も指定しなければ PUSH/POP は行われない。
+    """
+
+    @wraps(macro)
+    def wrapper(
+        b: Block,
+        *args: P.args,
+        preserve_regs: Sequence[RegisterName] = (),
+        **kwargs: P.kwargs,
+    ) -> None:
+        regs = tuple(preserve_regs)
+        for reg in regs:
+            _emit_push(b, reg)
+
+        macro(b, *args, **kwargs)
+
+        for reg in reversed(regs):
+            _emit_pop(b, reg)
+
+    return wrapper
+
+# BIOS コールアドレス
+LDIRVM = 0x005C  # メモリ→VRAMの連続書込
+CHGMOD = 0x005F  # 画面モード変更
+CHGCLR = 0x0062  # 画面色変更
+
+# カラー関連システム変数 (MSX1/2 共通)
+FORCLR = 0xF3E9  # 前景色
+BAKCLR = 0xF3EA  # 背景色
+BDRCLR = 0xF3EB  # 枠色
+MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
+
+
+@with_register_preserve
+def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+    """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
+
+    "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
+    パディングする。エントリポイントは 0x4010 をデフォルトとし、必要に応じて
+    引数で変更できる。
+
+    レジスタ変更: なし（ヘッダデータのみを配置する）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
+    """
+
+    header = [
+        ord("A"),
+        ord("B"),
+        entry_point & 0xFF,
+        (entry_point >> 8) & 0xFF,
+        *([0x00] * (16 - 4)),
+    ]
+    db(b, *header)
+
+def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
+    """MSX2 パレットの 2 バイト表現を作る。
+
+    - 1 バイト目: 0R2 R1 R0 B2 B1 B0 0 (R/B はビット 4–6 / 1–3)
+    - 2 バイト目: 0000 G2 G1 G0
+    """
+
+    return ((r & 0b111) << 4) | ((b & 0b111) << 1), g & 0b111
+
+
+# MSX2 環境向け MSX1 カラーパレット (R,G,B: 0–7)
+_MSX2_PALETTE_BYTES = [
+    *palette_bytes(0, 0, 0),
+    *palette_bytes(0, 0, 0),
+    *palette_bytes(2, 5, 2),
+    *palette_bytes(3, 5, 3),
+    *palette_bytes(2, 2, 6),
+    *palette_bytes(3, 3, 6),
+    *palette_bytes(5, 2, 2),
+    *palette_bytes(2, 6, 6),
+    *palette_bytes(6, 2, 2),
+    *palette_bytes(7, 3, 3),
+    *palette_bytes(5, 5, 2),
+    *palette_bytes(6, 5, 3),
+    *palette_bytes(1, 4, 1),
+    *palette_bytes(5, 3, 5),
+    *palette_bytes(5, 5, 5),
+    *palette_bytes(7, 7, 7),
+]
+
+
+@with_register_preserve
+def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+    """MSX バージョンを A レジスタに読み出す。
+
+    レジスタ変更: A
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
+    """
+
+    LD.A_mn16(b, MSXVER)
+
+
+@with_register_preserve
+def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+    """MSX2 以上でデフォルトパレットを設定するマクロ。
+
+    レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
+    """
+
+    # --- MSX バージョン確認 ---
+    get_msxver_macro(b)
+    b.emit(0xFE, 0x00)   # CP 0
+    # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
+    jz(b, "__MSX2_PAL_SET_END__")
+
+    # R#16 に color index 0 をセット
+    # OUT 99h,0
+    LD.A_n8(b, 0x00)
+    b.emit(0xD3, 0x99)
+
+    # OUT 99h,80h+16  ; レジスタ16指定
+    LD.A_n8(b, 0x80 + 16)
+    b.emit(0xD3, 0x99)
+
+    # HL = PALETTE_DATA
+    pos2 = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
+    b.add_abs16_fixup(pos2 + 1, "__PALETTE_DATA__")
+
+    # B = 32 (16色×2バイト)
+    LD.B_n8(b, 32)
+
+    b.label("__MSX2_PAL_LOOP__")
+    b.emit(0x7E)        # LD A,(HL)
+    b.emit(0xD3, 0x9A)  # OUT (9Ah),A
+    b.emit(0x23)        # INC HL
+    disp = (b.labels["__MSX2_PAL_LOOP__"] - (b.pc + 1)) & 0xFF
+    b.emit(0x10, disp)  # DJNZ __MSX2_PAL_LOOP__
+
+    b.label("__MSX2_PAL_SET_END__")
+    # パレットデータ本体（実行されない領域）
+    jp(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
+    b.label("__PALETTE_DATA__")
+    db(b, *_MSX2_PALETTE_BYTES)
+    b.label("__MSX2_PAL_DATA_END__")
+
+
+@with_register_preserve
+def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+    """CHGMOD を呼び出して画面モードを設定する。
+
+    レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
+    """
+
+    LD.A_n8(b, mode & 0xFF)
+    b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
+
+
+@with_register_preserve
+def set_screen_colors_macro(
+    b: Block, foreground: int, background: int, border: int, *, preserve_regs: Sequence[RegisterName] = ()
+) -> None:
+    """MSX1/2 共通の画面色設定マクロ。
+
+    FORCLR/BAKCLR/BDRCLR を指定した値に設定して CHGCLR を呼び出す。
+    色は 0–15 の範囲に丸めて書き込む。
+
+    レジスタ変更: A（CHGCLR 呼び出しにより AF なども破壊される可能性あり）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
+    """
+
+    # FORCLR
+    LD.A_n8(b, foreground & 0x0F)
+    LD.mn16_A(b, FORCLR)
+
+    # BAKCLR
+    LD.A_n8(b, background & 0x0F)
+    LD.mn16_A(b, BAKCLR)
+
+    # BDRCLR
+    LD.A_n8(b, border & 0x0F)
+    LD.mn16_A(b, BDRCLR)
+
+    # CALL CHGCLR
+    b.emit(0xCD, CHGCLR & 0xFF, (CHGCLR >> 8) & 0xFF)
+
+
+@with_register_preserve
+def ldirvm_macro(
+    b: Block,
+    *,
+    source: int | None = None,
+    dest: int | None = None,
+    length: int | None = None,
+    preserve_regs: Sequence[RegisterName] = (),
+) -> None:
+    """LDIRVM (#005C) を呼び出すマクロ。
+
+    HL:元アドレス, DE:VRAM先頭, BC:バイト数 を引数で上書きできる。
+    いずれも ``None`` の場合は呼び出し元でレジスタが適切にセットされて
+    いる前提で、そのまま BIOS コールだけを行う。
+
+    レジスタ変更: HL, DE, BC（引数指定時に上書き）。BIOS 呼び出しによって
+    AF/BC/DE/HL が破壊される前提で使用する。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
+    """
+
+    if source is not None:
+        LD.HL_n16(b, source & 0xFFFF)
+
+    if dest is not None:
+        LD.DE_n16(b, dest & 0xFFFF)
+
+    if length is not None:
+        LD.BC_n16(b, length & 0xFFFF)
+
+    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
