@@ -66,6 +66,13 @@ from pathlib import Path
 from typing import List
 
 from mmsxxasmhelper.core import *
+from mmsxxasmhelper.msxutils import (
+    ldirvm_macro,
+    place_msx_rom_header_macro,
+    set_msx2_palette_default_macro,
+    set_screen_mode_macro,
+    set_screen_colors_macro,
+)
 
 
 ROM_SIZE = 0x8000      # 32KB
@@ -74,64 +81,10 @@ ROM_BASE = 0x4000
 VRAM_SIZE = 0x4000
 SC2_HEADER_SIZE = 7
 
-# BIOS コールアドレス
-CHGMOD = 0x005F  # 画面モード変更
-CHGCLR = 0x0062  # 画面色変更
-LDIRVM = 0x005C  # メモリ→VRAMの連続書込
-
-# カラー関連システム変数 (MSX1/2 共通)
-FORCLR = 0xF3E9  # 前景色
-BAKCLR = 0xF3EA  # 背景色
-BDRCLR = 0xF3EB  # 枠色
-
-# MSX バージョン (メインROM 002Dh)
-# 0=MSX1 / 1=MSX2 / 2=MSX2+ / 3=turboR
-MSXVER = 0x002D  # :contentReference[oaicite:1]{index=1}
-
 # VDP / SCREEN2 VRAM レイアウト
 PATTERN_BASE = 0x0000
 NAME_BASE    = 0x1800
 COLOR_BASE   = 0x2000
-
-MSXVER   = 0x002D   # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
-
-# 0x4000 に配置されるヘッダ:
-#   "AB" + [entry_lo, entry_hi] + padding ... (合計16バイト)
-# entry = 0x4010 → [0x10,0x40]
-const_bytes(
-    "MSX_ROM_HEADER",
-    *pad_bytes(str_bytes("AB") + [0x10, 0x40], 16, 0x00),
-)
-
-# MSX2環境向けMSX1色パレットデータ
-# 1バイト目: 0R2 R1 R0 B2 B1 B0
-# 2バイト目: 0000 G2 G1 G0
-# R,G,B は 0–7
-_MSX2_PALETTE_BYTES: List[int] = []
-for idx, (R, G, B) in enumerate([
-    (0, 0, 0),  # 0
-    (0, 0, 0),  # 1
-    (2, 5, 2),  # 2
-    (3, 5, 3),  # 3
-    (2, 2, 6),  # 4
-    (3, 3, 6),  # 5
-    (5, 2, 2),  # 6
-    (2, 6, 6),  # 7
-    (6, 2, 2),  # 8
-    (7, 3, 3),  # 9
-    (5, 5, 2),  # 10
-    (6, 5, 3),  # 11
-    (1, 4, 1),  # 12
-    (5, 3, 5),  # 13
-    (5, 5, 5),  # 14
-    (7, 7, 7),  # 15
-]):
-    b1 = ((R & 7) << 4) | (B & 7)
-    b2 = (G & 7)
-    _MSX2_PALETTE_BYTES.extend([b1, b2])
-
-const_bytes("MSX2_PALETTE_DEFAULT", *_MSX2_PALETTE_BYTES)
-
 
 def validate_sc2_bytes(sc2_bytes: bytes) -> bytes:
     """
@@ -214,74 +167,6 @@ def build_row_packages(image_bytes: bytes) -> bytes:
         rows.append(pkg)
 
     return b"".join(rows)
-
-
-def macro_set_black_screen_colors(b: Block) -> None:
-    """
-    マクロ関数
-    背景＆周辺を黒にする（MSX1/2 共通）
-    前景=白(15), 背景=黒(0), 枠=黒(0) にして CHGCLR を呼ぶ。
-    TODO: mmsxxasmhelper にマクロ追加
-    """
-    # FORCLR = 15 (白)
-    LD.A_n8(b, 0x0F)
-    LD.mn16_A(b, FORCLR)
-
-    # BAKCLR = 0 (黒)
-    LD.A_n8(b, 0x00)
-    LD.mn16_A(b, BAKCLR)
-
-    # BDRCLR = 0 (黒)
-    LD.A_n8(b, 0x00)
-    LD.mn16_A(b, BDRCLR)
-
-    # CALL CHGCLR
-    b.emit(0xCD, CHGCLR & 0xFF, (CHGCLR >> 8) & 0xFF)
-
-
-MSXVER = 0x002D  # すでにどこかに書いてあるならそれを使う
-
-def macro_set_msx2_palette_default(b: Block) -> None:
-    """
-    マクロ関数
-    MSX2 以上ならパレットを設定
-    TODO: mmsxxasmhelper にマクロ追加
-    """
-
-    return
-    # TODO : 以下 現状画面が真っ黒になってしまうバグあり 仕様確認
-
-    # --- MSX バージョン確認 ---
-    LD.A_mn16(b, MSXVER)
-    b.emit(0xFE, 0x00)   # CP 0
-    # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
-    jz(b, "MSX2_PAL_SET_END")
-
-    # R#16 に color index 0 をセット
-    # OUT 99h,0
-    LD.A_n8(b, 0x00)
-    b.emit(0xD3, 0x99)
-
-    # OUT 99h,80h+16  ; レジスタ16指定
-    LD.A_n8(b, 0x80 + 16)
-    b.emit(0xD3, 0x99)
-
-    # HL = PALETTE_DATA
-    pos2 = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
-    b.add_abs16_fixup(pos2 + 1, "PALETTE_DATA")
-
-    # B = 32 (16色×2バイト)
-    LD.B_n8(b, 32)
-
-    b.label("MSX2_PAL_LOOP")
-    b.emit(0x7E)        # LD A,(HL)
-    b.emit(0xD3, 0x9A)  # OUT (9Ah),A
-    b.emit(0x23)        # INC HL
-    disp = (b.labels["MSX2_PAL_LOOP"] - (b.pc + 1)) & 0xFF
-    b.emit(0x10, disp)  # DJNZ MSX2_PAL_LOOP
-
-    b.label("MSX2_PAL_SET_END")
-
 def draw_page_call(b: Block) -> None:
     """
     1ページ分の RowPackage データを VRAM に転送する関数
@@ -303,7 +188,7 @@ def draw_page_call(b: Block) -> None:
 
     # パターン 32バイトコピー
     LD.BC_n16(b, 32)
-    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+    ldirvm_macro(b)
 
     # 次のパターン出力先を退避
     b.emit(0xD5)  # PUSH DE
@@ -313,7 +198,7 @@ def draw_page_call(b: Block) -> None:
     b.emit(0xD1)        # POP DE
 
     LD.BC_n16(b, 32)
-    b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+    ldirvm_macro(b)
 
     # IY += 32 (次行のカラー位置)
     LD.BC_n16(b, 32)
@@ -341,20 +226,19 @@ def build_rom(packed_data: bytes) -> bytes:
     b.label("start")
 
     # ROM ヘッダ配置（MSX がここを 0x4000 とみなす）
-    db(b, *DATA8["MSX_ROM_HEADER"])
+    place_msx_rom_header_macro(b)
 
     # ----- ここから 0x4010: 実際に実行されるコード -----
 
     # SCREEN 2 に変更: LD A,2 / CALL 005Fh (CHGMOD)
-    LD.A_n8(b, 2)
-    b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)  # CALL CHGMOD
+    set_screen_mode_macro(b, 2)
 
     # 色: 前景=白 / 背景=黒 / 枠=黒
-    macro_set_black_screen_colors(b)
+    set_screen_colors_macro(b, 0x0F, 0x00, 0x00)
 
     # MSX2 以上ならパレット設定
     # 真っ黒になってしまうバグがあるので現状何もしないコードになっている
-    macro_set_msx2_palette_default(b)
+    set_msx2_palette_default_macro(b)
 
     # 1枚目の絵を出す
     # PACKED_DATA の先頭 (1 枚目) を描画
@@ -369,10 +253,6 @@ def build_rom(packed_data: bytes) -> bytes:
 
     # ----- DRAW_PAGE_CALL の定義 -----
     DRAW_PAGE_CALL.define(b)
-
-    # ----- パレットデータ本体 (MSX2 用) -----
-    b.label("PALETTE_DATA")
-    db_from_bytes(b, "MSX2_PALETTE_DEFAULT")
 
     # ----- VRAM イメージデータ本体 -----
     b.label("PACKED_DATA")
