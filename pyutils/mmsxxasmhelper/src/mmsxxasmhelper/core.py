@@ -13,7 +13,7 @@ v0で入っている機能:
 
 - 定数テーブル:
   - const(name, value): 定数登録
-  - CONST[name] で参照
+  - Const[name] で参照
 
 - 定数データ列 (バイト列 / ワード列)
     - TBW
@@ -50,8 +50,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 __all__ = [
-    "Block", "Fixup", "const", "CONST",
-    "DATA8", "DATA16",
+    "Block", "Fixup", "const", "Const",
+    "Data8", "Data16",
     "const_bytes", "const_words",
     "db_const", "dw_const", "db_from_bytes",
     "str_bytes", "const_string",
@@ -176,23 +176,23 @@ class Block:
 # 定数テーブル
 # ---------------------------------------------------------------------------
 
-CONST: Dict[str, int] = {}
+Const: Dict[str, int] = {}
 
 
 def const(name: str, value: int) -> None:
     """定数を登録する。再定義はエラー。"""
 
-    if name in CONST:
+    if name in Const:
         raise ValueError(f"const redefined: {name}")
-    CONST[name] = value
+    Const[name] = value
 
 # ---------------------------------------------------------------------------
 # 定数データ列 (バイト列 / ワード列)
 # ---------------------------------------------------------------------------
 
 
-DATA8: Dict[str, List[int]] = {}
-DATA16: Dict[str, List[int]] = {}
+Data8: Dict[str, List[int]] = {}
+Data16: Dict[str, List[int]] = {}
 
 
 def const_bytes(name: str, *values: int) -> None:
@@ -202,9 +202,9 @@ def const_bytes(name: str, *values: int) -> None:
     例:
         const_bytes("LOGO", 0x01, 0x02, 0x03)
     """
-    if name in DATA8:
+    if name in Data8:
         raise ValueError(f"byte data redefined: {name}")
-    DATA8[name] = [v & 0xFF for v in values]
+    Data8[name] = [v & 0xFF for v in values]
 
 
 def const_words(name: str, *values: int) -> None:
@@ -214,9 +214,9 @@ def const_words(name: str, *values: int) -> None:
     例:
         const_words("PALETTE", 0x1234, 0xABCD)
     """
-    if name in DATA16:
+    if name in Data16:
         raise ValueError(f"word data redefined: {name}")
-    DATA16[name] = [v & 0xFFFF for v in values]
+    Data16[name] = [v & 0xFFFF for v in values]
 
 
 def db_const(b: Block, name: str) -> None:
@@ -224,7 +224,7 @@ def db_const(b: Block, name: str) -> None:
     const_bytes で登録したデータをそのまま db で吐く。
     """
     try:
-        data = DATA8[name]
+        data = Data8[name]
     except KeyError as exc:
         raise ValueError(f"unknown byte data name: {name}") from exc
     DB(b, *data)
@@ -235,7 +235,7 @@ def dw_const(b: Block, name: str) -> None:
     const_words で登録したデータをそのまま dw で吐く。
     """
     try:
-        data = DATA16[name]
+        data = Data16[name]
     except KeyError as exc:
         raise ValueError(f"unknown word data name: {name}") from exc
     DW(b, *data)
@@ -248,13 +248,13 @@ def db_from_bytes(b: Block, data):
     data:
         - bytes / bytearray
         - list[int] / tuple[int, ...]
-        - str なら DATA8[name] を引く
+        - str なら Data8[name] を引く
     """
-    # 名前で指定された場合は DATA8 から探す
+    # 名前で指定された場合は Data8 から探す
     if isinstance(data, str):
-        if data not in DATA8:
-            raise KeyError(f"db_from_bytes: const '{data}' not found in DATA8")
-        DB(b, *DATA8[data])
+        if data not in Data8:
+            raise KeyError(f"db_from_bytes: const '{data}' not found in Data8")
+        DB(b, *Data8[data])
         return
 
     # 素のバイト列
