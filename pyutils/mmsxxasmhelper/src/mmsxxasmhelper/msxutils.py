@@ -4,6 +4,9 @@ MSX BIOS 関連マクロ。
 
 from __future__ import annotations
 
+from functools import wraps
+from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
+
 from mmsxxasmhelper.core import Block, LD, db, jp, jz
 
 __all__ = [
@@ -13,7 +16,66 @@ __all__ = [
     "set_screen_mode_macro",
     "set_screen_colors_macro",
     "ldirvm_macro",
+    "with_register_preserve",
 ]
+
+RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
+P = ParamSpec("P")
+
+
+_PUSH_OPCODES: dict[RegisterName, tuple[int, ...]] = {
+    "AF": (0xF5,),
+    "BC": (0xC5,),
+    "DE": (0xD5,),
+    "HL": (0xE5,),
+    "IX": (0xDD, 0xE5),
+    "IY": (0xFD, 0xE5),
+}
+
+_POP_OPCODES: dict[RegisterName, tuple[int, ...]] = {
+    "AF": (0xF1,),
+    "BC": (0xC1,),
+    "DE": (0xD1,),
+    "HL": (0xE1,),
+    "IX": (0xDD, 0xE1),
+    "IY": (0xFD, 0xE1),
+}
+
+
+def _emit_push(b: Block, reg: RegisterName) -> None:
+    b.emit(*_PUSH_OPCODES[reg])
+
+
+def _emit_pop(b: Block, reg: RegisterName) -> None:
+    b.emit(*_POP_OPCODES[reg])
+
+
+def with_register_preserve(
+    macro: Callable[Concatenate[Block, P], None]
+) -> Callable[Concatenate[Block, P], None]:
+    """マクロ呼び出しの前後に PUSH/POP を挿入するデコレータ。
+
+    ``preserve_regs`` キーワード引数で退避するレジスタを指定できる。
+    何も指定しなければ PUSH/POP は行われない。
+    """
+
+    @wraps(macro)
+    def wrapper(
+        b: Block,
+        *args: P.args,
+        preserve_regs: Sequence[RegisterName] = (),
+        **kwargs: P.kwargs,
+    ) -> None:
+        regs = tuple(preserve_regs)
+        for reg in regs:
+            _emit_push(b, reg)
+
+        macro(b, *args, **kwargs)
+
+        for reg in reversed(regs):
+            _emit_pop(b, reg)
+
+    return wrapper
 
 # BIOS コールアドレス
 LDIRVM = 0x005C  # メモリ→VRAMの連続書込
@@ -27,14 +89,18 @@ BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 
 
-def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
+@with_register_preserve
+def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
 
     "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
     パディングする。エントリポイントは 0x4010 をデフォルトとし、必要に応じて
     引数で変更できる。
 
-    レジスタ変更: なし（ヘッダデータのみを配置する）
+    レジスタ変更: なし（ヘッダデータのみを配置する）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
     """
 
     header = [
@@ -77,19 +143,27 @@ _MSX2_PALETTE_BYTES = [
 ]
 
 
-def get_msxver_macro(b: Block) -> None:
+@with_register_preserve
+def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """MSX バージョンを A レジスタに読み出す。
 
     レジスタ変更: A
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
     """
 
     LD.A_mn16(b, MSXVER)
 
 
-def set_msx2_palette_default_macro(b: Block) -> None:
+@with_register_preserve
+def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """MSX2 以上でデフォルトパレットを設定するマクロ。
 
-    レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）
+    レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
     """
 
     # --- MSX バージョン確認 ---
@@ -129,25 +203,33 @@ def set_msx2_palette_default_macro(b: Block) -> None:
     b.label("__MSX2_PAL_DATA_END__")
 
 
-def set_screen_mode_macro(b: Block, mode: int) -> None:
+@with_register_preserve
+def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """CHGMOD を呼び出して画面モードを設定する。
 
-    レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）
+    レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
     """
 
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
 
 
+@with_register_preserve
 def set_screen_colors_macro(
-    b: Block, foreground: int, background: int, border: int
+    b: Block, foreground: int, background: int, border: int, *, preserve_regs: Sequence[RegisterName] = ()
 ) -> None:
     """MSX1/2 共通の画面色設定マクロ。
 
     FORCLR/BAKCLR/BDRCLR を指定した値に設定して CHGCLR を呼び出す。
     色は 0–15 の範囲に丸めて書き込む。
 
-    レジスタ変更: A（CHGCLR 呼び出しにより AF なども破壊される可能性あり）
+    レジスタ変更: A（CHGCLR 呼び出しにより AF なども破壊される可能性あり）。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
     """
 
     # FORCLR
@@ -166,12 +248,14 @@ def set_screen_colors_macro(
     b.emit(0xCD, CHGCLR & 0xFF, (CHGCLR >> 8) & 0xFF)
 
 
+@with_register_preserve
 def ldirvm_macro(
     b: Block,
     *,
     source: int | None = None,
     dest: int | None = None,
     length: int | None = None,
+    preserve_regs: Sequence[RegisterName] = (),
 ) -> None:
     """LDIRVM (#005C) を呼び出すマクロ。
 
@@ -181,6 +265,9 @@ def ldirvm_macro(
 
     レジスタ変更: HL, DE, BC（引数指定時に上書き）。BIOS 呼び出しによって
     AF/BC/DE/HL が破壊される前提で使用する。
+
+    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
+        省略時は退避を行わない。
     """
 
     if source is not None:
