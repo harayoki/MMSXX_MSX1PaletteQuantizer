@@ -35,11 +35,11 @@ v0で入っている機能:
 - 命令ラッパ:
   - JP 系: 無条件/条件付き絶対ジャンプ (JP, JP_Z, JP_NZ, JP_NC, JP_C, JP_PO, JP_PE, JP_P, JP_M, JP_mHL)
   - JR 系: 無条件/条件付き相対ジャンプ (JR, JR_Z, JR_NZ, JR_NC, JR_C) および DJNZ
-  - call(b, label): CALL label
+  - CALL(b, label): CALL label
 
 - データ配置:
-  - db(b, *values): 1バイト列を配置
-  - dw(b, *values): 16bit値(リトルエンディアン)を配置
+  - DB(b, *values): 1バイト列を配置
+  - DW(b, *values): 16bit値(リトルエンディアン)を配置
 
 - DEBUGフラグ:
   - DEBUG = True/False
@@ -59,8 +59,8 @@ __all__ = [
     "pad_pattern",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
-    "call", "Func",
-    "db", "dw",
+    "CALL", "Func",
+    "DB", "DW",
     "LD", "INC", "DEC",
     "HALT",
 ]
@@ -227,7 +227,7 @@ def db_const(b: Block, name: str) -> None:
         data = DATA8[name]
     except KeyError as exc:
         raise ValueError(f"unknown byte data name: {name}") from exc
-    db(b, *data)
+    DB(b, *data)
 
 
 def dw_const(b: Block, name: str) -> None:
@@ -238,7 +238,7 @@ def dw_const(b: Block, name: str) -> None:
         data = DATA16[name]
     except KeyError as exc:
         raise ValueError(f"unknown word data name: {name}") from exc
-    dw(b, *data)
+    DW(b, *data)
 
 
 def db_from_bytes(b: Block, data):
@@ -254,12 +254,12 @@ def db_from_bytes(b: Block, data):
     if isinstance(data, str):
         if data not in DATA8:
             raise KeyError(f"db_from_bytes: const '{data}' not found in DATA8")
-        db(b, *DATA8[data])
+        DB(b, *DATA8[data])
         return
 
     # 素のバイト列
     if isinstance(data, (bytes, bytearray)):
-        db(b, *data)
+        DB(b, *data)
         return
 
     # int の並び（list, tuple 等）
@@ -267,7 +267,7 @@ def db_from_bytes(b: Block, data):
         vals = list(data)
         if not all(isinstance(v, int) for v in vals):
             raise TypeError("db_from_bytes: iterable must contain ints")
-        db(b, *vals)
+        DB(b, *vals)
         return
 
     raise TypeError("db_from_bytes: unsupported data type")
@@ -436,7 +436,7 @@ def DJNZ(b: Block, target: str) -> None:
     _jr_rel8(b, 0x10, target)
 
 
-def call(b: Block, target: str) -> None:
+def CALL(b: Block, target: str) -> None:
     """CALL target (絶対コール)。"""
 
     # CALL nn (opcode 0xCD, nn = 16bit)
@@ -485,7 +485,7 @@ class Func:
     def call(self, b: Block) -> None:
         """CALL命令を発行。"""
 
-        call(b, self.name)
+        CALL(b, self.name)
 
 
 # ---------------------------------------------------------------------------
@@ -959,17 +959,17 @@ class DEC:
 
 
 # ---------------------------------------------------------------------------
-# データ配置ヘルパ: db / dw
+# データ配置ヘルパ: DB / DW
 # ---------------------------------------------------------------------------
 
-def db(b: Block, *values: int) -> None:
+def DB(b: Block, *values: int) -> None:
     """1バイト値を順に配置する。"""
 
     for v in values:
         b.emit(v & 0xFF)
 
 
-def dw(b: Block, *values: int) -> None:
+def DW(b: Block, *values: int) -> None:
     """16bit値(リトルエンディアン)を順に配置する。"""
 
     for v in values:

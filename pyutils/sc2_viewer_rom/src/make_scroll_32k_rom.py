@@ -300,7 +300,7 @@ def build_rom(packed_data: bytes) -> bytes:
 
     # ----- VRAM イメージデータ本体 -----
     b.label("PACKED_DATA")
-    db(b, *packed_data)
+    DB(b, *packed_data)
 
     # origin=0x4000 で fixup 解決
     return b.finalize(origin=ROM_BASE)
