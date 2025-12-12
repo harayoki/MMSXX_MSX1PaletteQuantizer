@@ -46,7 +46,7 @@ def build_example() -> bytes:
     b.label("start")
 
     # ROM HEADER の配置
-    db(b, *DATA8["MSX_ROM_HEADER"])
+    DB(b, *DATA8["MSX_ROM_HEADER"])
 
     # LD A, INIT_VALUE
     LD.A_n8(b, CONST["INIT_VALUE"])
@@ -68,8 +68,8 @@ def build_example() -> bytes:
 
     # --- データ領域 ---
     b.label("table")
-    db(b, 1, 2, 3, 4)
-    dw(b, 0x1234, 0xABCD)
+    DB(b, 1, 2, 3, 4)
+    DW(b, 0x1234, 0xABCD)
 
     # pad_pattern(b, 128, 0x00)  # 128B境界までパディング
 

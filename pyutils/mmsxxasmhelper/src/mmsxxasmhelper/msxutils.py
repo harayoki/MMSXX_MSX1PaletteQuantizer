@@ -7,7 +7,7 @@ from __future__ import annotations
 from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
-from mmsxxasmhelper.core import Block, LD, db, JP, JP_Z
+from mmsxxasmhelper.core import Block, DB, JP, JP_Z, LD
 
 __all__ = [
     "place_msx_rom_header_macro",
@@ -110,7 +110,7 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_
         (entry_point >> 8) & 0xFF,
         *([0x00] * (16 - 4)),
     ]
-    db(b, *header)
+    DB(b, *header)
 
 
 def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
@@ -200,7 +200,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     # パレットデータ本体（実行されない領域）
     JP(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
     b.label("__PALETTE_DATA__")
-    db(b, *_MSX2_PALETTE_BYTES)
+    DB(b, *_MSX2_PALETTE_BYTES)
     b.label("__MSX2_PAL_DATA_END__")
 
 
