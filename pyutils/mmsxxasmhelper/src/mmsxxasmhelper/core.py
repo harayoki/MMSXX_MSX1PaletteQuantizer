@@ -57,7 +57,8 @@ __all__ = [
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
     "jp", "jz", "jnz", "call", "Func",
-    "db", "dw", "set_debug", "debug_trap",
+    "db", "dw",
+    "HALT", "set_debug", "debug_trap",
     "LD", "INC", "DEC",
 ]
 
@@ -885,6 +886,11 @@ def dw(b: Block, *values: int) -> None:
 DEBUG: bool = True
 
 
+def HALT(b: Block) -> None:
+    """HALT 命令を挿入する。"""
+    b.emit(0x76)
+
+
 def set_debug(flag: bool) -> None:
     """DEBUG フラグを設定する。"""
     global DEBUG
@@ -893,8 +899,6 @@ def set_debug(flag: bool) -> None:
 
 def debug_trap(b: Block) -> None:
     """DEBUG が True のときだけデバッグ用命令を挿入する。"""
-
     if not DEBUG:
         return
-    # HALT
-    b.emit(0x76)
+    HALT(b)
