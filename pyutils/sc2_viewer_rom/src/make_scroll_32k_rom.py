@@ -282,6 +282,34 @@ def macro_set_msx2_palette_default(b: Block) -> None:
 
     b.label("MSX2_PAL_SET_END")
 
+
+def init_name_table_call(b: Block) -> None:
+    # ネームテーブルの初期化 0~255を3回書き込む
+    # HL = NAME_BASE
+    LD.HL_n16(b, NAME_BASE)
+    # A = 0~255
+    LD.A_n8(b, 0)
+    # B = 3
+    LD.B_n8(b, 3)
+    b.label("INIT_NAME_TABLE_LOOP_OUTER")
+    b.label("INIT_NAME_TABLE_LOOP_INNER")
+    # (HL) = A
+    LD.mHL_A(b)
+    # HL++
+    INC.HL(b)
+    # A++
+    INC.A(b)
+    b.emit(0x3C)  # INC A
+    # A != 0 ? ループ
+    jnz(b, "INIT_NAME_TABLE_LOOP_INNER")
+    # 3回繰り返し
+    DEC.B(b)
+    jnz(b, "INIT_NAME_TABLE_LOOP_OUTER")
+
+
+INIT_NAME_TABLE_CALL = Func("init_name_table_call", init_name_table_call)
+
+
 def draw_page_call(b: Block) -> None:
     """
     1ページ分の RowPackage データを VRAM に転送する関数
@@ -326,7 +354,7 @@ def draw_page_call(b: Block) -> None:
     b.emit(0x3D)  # DEC A
     jnz(b, "DRAW_PAGE_LOOP")
 
-# Funcとしてラップ
+
 DRAW_PAGE_CALL = Func("draw_page_call", draw_page_call)
 
 
@@ -334,6 +362,8 @@ def build_rom(packed_data: bytes) -> bytes:
     """
     ROMに書き込むコードを組み立てる。
     """
+
+    set_debug(True)
 
     b = Block()
 
@@ -356,6 +386,9 @@ def build_rom(packed_data: bytes) -> bytes:
     # 真っ黒になってしまうバグがあるので現状何もしないコードになっている
     macro_set_msx2_palette_default(b)
 
+    # ネームテーブル初期化
+    INIT_NAME_TABLE_CALL.call(b)
+
     # 1枚目の絵を出す
     # PACKED_DATA の先頭 (1 枚目) を描画
     DRAW_PAGE_CALL.call(b)
@@ -367,7 +400,8 @@ def build_rom(packed_data: bytes) -> bytes:
     b.label("MainLoop")
     jp(b, "MainLoop")
 
-    # ----- DRAW_PAGE_CALL の定義 -----
+    # ----- サブルーチンの定義 -----
+    INIT_NAME_TABLE_CALL.define(b)
     DRAW_PAGE_CALL.define(b)
 
     # ----- パレットデータ本体 (MSX2 用) -----
