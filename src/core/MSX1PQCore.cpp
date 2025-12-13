@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -119,6 +120,57 @@ bool  g_palette_hsb_initialized = false;
 float g_palette_h[256];
 float g_palette_s[256];
 float g_palette_b[256];
+
+int count_enabled_colors(const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    int enabled = 0;
+    for (bool flag : palette_enabled) {
+        if (flag) {
+            ++enabled;
+        }
+    }
+    return enabled;
+}
+
+int find_first_enabled_color(const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    for (std::size_t i = 0; i < palette_enabled.size(); ++i) {
+        if (palette_enabled[i]) {
+            return static_cast<int>(i);
+        }
+    }
+    return 0;
+}
+
+bool palette_entry_allowed(int palette_idx, int num_colors, const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    if (palette_idx < 0 || palette_idx >= num_colors) {
+        return false;
+    }
+
+    if (palette_idx < MSX1PQ::kNumPaletteDither) {
+        const auto& dp = MSX1PQ::kPaletteDither[palette_idx];
+        const int pattern_size = static_cast<int>(dp.width) * static_cast<int>(dp.height);
+        if (pattern_size <= 0 || !dp.pattern) {
+            const int basic_idx = palette_idx % MSX1PQ::kNumBasicColors;
+            return palette_enabled[static_cast<std::size_t>(basic_idx)];
+        }
+
+        for (int i = 0; i < pattern_size; ++i) {
+            const std::uint8_t basic_idx = dp.pattern[i];
+            if (basic_idx >= MSX1PQ::kNumBasicColors) {
+                continue;
+            }
+            if (!palette_enabled[static_cast<std::size_t>(basic_idx)]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const int basic_idx = palette_idx % MSX1PQ::kNumBasicColors;
+    return palette_enabled[static_cast<std::size_t>(basic_idx)];
+}
 
 } // namespace
 
@@ -462,12 +514,17 @@ void ensure_palette_hsb_initialized()
 }
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        int num_colors)
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
     int   best_idx = 0;
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
+        if (!palette_entry_allowed(i, num_colors, palette_enabled)) {
+            continue;
+        }
+
         const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[i];
         float dr = static_cast<float>(r8) - static_cast<float>(qc.r);
         float dg = static_cast<float>(g8) - static_cast<float>(qc.g);
@@ -479,12 +536,17 @@ int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_idx = i;
         }
     }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
+    }
     return best_idx;
 }
 
 int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
-                        int num_colors)
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
     ensure_palette_hsb_initialized();
 
@@ -495,6 +557,10 @@ int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
+        if (!palette_entry_allowed(i, num_colors, palette_enabled)) {
+            continue;
+        }
+
         float dh = h - g_palette_h[i];
         float ds = s - g_palette_s[i];
         float dv = v - g_palette_b[i];
@@ -508,11 +574,16 @@ int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_idx = i;
         }
     }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
+    }
     return best_idx;
 }
 
 int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                      float w_h, float w_s, float w_b)
+                      float w_h, float w_s, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
     ensure_palette_hsb_initialized();
 
@@ -527,6 +598,10 @@ int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
+        if (!palette_enabled[static_cast<std::size_t>(i)]) {
+            continue;
+        }
+
         float dh = std::fabs(h - g_palette_h[i]);
         if (dh > 0.5f) {
             dh = 1.0f - dh;
@@ -543,6 +618,10 @@ int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_d2  = d2;
             best_idx = i;
         }
+    }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
     }
     return best_idx;
 }
@@ -583,10 +662,21 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
                                   std::int32_t x,
                                   std::int32_t y)
 {
+    const int enabled_colors = count_enabled_colors(qi.palette_enabled);
+    if (enabled_colors <= 0) {
+        return MSX1PQ::QuantColor{0, 0, 0};
+    }
+
+    const int fallback_basic_idx = find_first_enabled_color(qi.palette_enabled);
+    if (enabled_colors == 1) {
+        const MSX1PQ::QuantColor* palette = get_basic_palette(qi.color_system);
+        return palette[fallback_basic_idx];
+    }
+
     if (qi.use_palette_color) {
         const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors)
-            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors, qi.palette_enabled)
+            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors, qi.palette_enabled);
 
         return MSX1PQ::kQuantColors[palette_idx];
     }
@@ -600,14 +690,35 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
         }
 
         const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors)
-            : nearest_palette_rgb(r, g, b, num_colors);
+            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors, qi.palette_enabled)
+            : nearest_palette_rgb(r, g, b, num_colors, qi.palette_enabled);
 
         basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
+        if (basic_idx < 0 || basic_idx >= MSX1PQ::kNumBasicColors ||
+            !qi.palette_enabled[static_cast<std::size_t>(basic_idx)]) {
+            basic_idx = fallback_basic_idx;
+        }
     } else if (qi.use_hsb) {
-        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
+        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, qi.palette_enabled);
     } else {
-        basic_idx = MSX1PQ::nearest_basic_rgb(r, g, b);
+        long best_dist = LONG_MAX;
+        basic_idx = fallback_basic_idx;
+
+        for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+            if (!qi.palette_enabled[static_cast<std::size_t>(i)]) {
+                continue;
+            }
+
+            long dr = static_cast<long>(r) - static_cast<long>(MSX1PQ::kQuantColors[i].r);
+            long dg = static_cast<long>(g) - static_cast<long>(MSX1PQ::kQuantColors[i].g);
+            long db = static_cast<long>(b) - static_cast<long>(MSX1PQ::kQuantColors[i].b);
+
+            long dist = dr * dr + dg * dg + db * db;
+            if (dist < best_dist) {
+                best_dist = dist;
+                basic_idx = i;
+            }
+        }
     }
 
     const MSX1PQ::QuantColor* palette =
