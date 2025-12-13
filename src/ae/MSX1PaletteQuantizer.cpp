@@ -446,8 +446,7 @@ ParamsSetup (
     };
 
     for (PF_ParamIndex i = 0; i < kNumPaletteColors; ++i) {
-        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i * 2);
-        const PF_ParamIndex color_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_BOX_1 + i * 2);
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
 
         AEFX_CLR_STRUCT(def);
         PF_ADD_CHECKBOX(
@@ -457,12 +456,27 @@ ParamsSetup (
             0,
             flag_index
         );
+    }
+
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+
+    // Swatches are appended after the legacy palette controls to avoid changing
+    // any existing parameter indices.
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC(
+        "MSX1 Palette Swatches (read-only)",
+        MSX1PQ_PARAM_TOPIC_PALETTE_SWATCHES
+    );
+
+    for (PF_ParamIndex i = 0; i < kNumPaletteColors; ++i) {
+        const PF_ParamIndex color_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_BOX_1 + i);
 
         AEFX_CLR_STRUCT(def);
         def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
         def.ui_flags |= PF_PUI_DISABLED;
         PF_ADD_COLOR(
-            "",
+            palette_color_labels[i],
             palette_color_boxes[i].r,
             palette_color_boxes[i].g,
             palette_color_boxes[i].b,
@@ -471,7 +485,7 @@ ParamsSetup (
     }
 
     AEFX_CLR_STRUCT(def);
-    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_SWATCHES_END);
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
@@ -784,7 +798,7 @@ Render (
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
-        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i * 2);
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
         if (flag_index < MSX1PQ_PARAM_NUM_PARAMS) {
             qi.palette_enabled[static_cast<std::size_t>(i)] =
                 (params[flag_index]->u.bd.value != 0);
@@ -1160,7 +1174,7 @@ SmartRender(
         ERR( CheckinParam(in_dataP, param) );
 
         for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
-            const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i * 2);
+            const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
             ERR( CheckoutParam(
                     in_dataP,
                     flag_index,
