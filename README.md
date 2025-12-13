@@ -1,6 +1,6 @@
 # MMSXX_MSX1PaletteQuantizer (for AfterFX / Premiere PRO / CLI)
 
-MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
+MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI.
 
 日本語版のドキュメント：[README_ja](README_ja.md)
 
@@ -22,8 +22,8 @@ MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 ## Overview
 
 "MSX1PaletteQuantizer" is an effect plugin that recreates the MSX1 (TMS9918) look in compositions.
-It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area).
-Supports After Effects Smart Rendering and Multi-Frame Rendering, speeding up exports.
+It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area) and also provides an MSX2 palette preset.
+Supports After Effects Smart Rendering and Multi-Frame Rendering, speeding up exports. The CLI variant includes palette disabling, LUT support, and SCREEN2 binary export for emulator workflows.
 
 ## Disclaimer
 
@@ -32,8 +32,8 @@ The author assumes no responsibility for any damages caused by the use of this p
 ## Supported Platforms
 
 - Windows
-- Adobe After Effects CC 2018? or later
-- Adobe Premiere Pro CC 2018? or later
+- Adobe After Effects CC 2018 or later
+- Adobe Premiere Pro CC 2018 or later
 
 It should also work on Mac if built with Xcode.
 
@@ -73,7 +73,7 @@ Build the project using Visual Studio (Windows).
 
 `MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `platform\Win\x64` folder.
 
-## Build Instructions for CLI on Linux (not yet verified)
+## Build Instructions for CLI on Linux (container-focused, limited verification)
 
 These steps build only the `msx1pq_cli` tool for environments without the Adobe SDK (e.g., containerized Linux deployments). They were prepared for container environments but have not been fully verified across distributions.
 

@@ -1,6 +1,6 @@
-# MMSXX_MSX1PaletteQuantizer (AfterEffecst / Premiere PRO 向けプラグイン / CLI)
+# MMSXX_MSX1PaletteQuantizer (After Effects / Premiere PRO 向けプラグイン / CLI)
 
-Adobe After Effects (AE) / Premiere PRO用の MSX1風エフェクトプラグイン / コマンドラインツール
+Adobe After Effects (AE) / Premiere PRO 用の MSX1 風エフェクトプラグイン / コマンドラインツール。
 
 English documentation: [README_en](README.md)
 
@@ -23,16 +23,16 @@ English documentation: [README_en](README.md)
 ## 概要
 
 「MSX1PaletteQuantizer」は、コンポジットに MSX1（TMS9918）の見た目を再現するエフェクトプラグインです。
-これにより、画像をMSX1特有のルーㇽに基づいた（15色横8ドット内に2色）グラフィックスタイルを模倣します。
-After Effects のスマートレンダリングとマルチフレームレンダリングに対応しており、書き出しを高速化できます。
+MSX1特有のルール（15色、横8ドット内に2色）に基づいたグラフィックスタイルを模倣し、MSX2向けの15色パレットも切り替えできます。
+After Effects のスマートレンダリングとマルチフレームレンダリングに対応しており、書き出しを高速化できます。CLI 版ではパレット無効化や LUT 適用、SCREEN2 バイナリ出力などもサポートしています。
 
 ## 対応プラットフォーム
 
 - Windows
-- Adobe After Effects CC 2018？以降
-- Adobe Premiere Pro CC 2018？以降
+- Adobe After Effects CC 2018 以降
+- Adobe Premiere Pro CC 2018 以降
 
-MacもXcodeでビルドすれば動作すると思います。
+Mac でも Xcode でビルドすれば動作する想定です。
 
 ## 免責事項
 
@@ -80,9 +80,19 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 *   `platform/Mac/MSX1PaletteQuantizer.xcodeproj` を Xcode で開きます。
 *   `MSX1PaletteQuantizer` ターゲットをビルドして `MSX1PaletteQuantizer.plugin` を生成します。
 
-## LinuxでのCLIビルド手順（未検証）
+## LinuxでのCLIビルド手順（コンテナ向け、検証は限定的）
 
-* TBW
+Adobe SDK が不要な環境（例: コンテナ化した Linux 環境）で `msx1pq_cli` のみをビルドする手順です。ディストリビューション全体では未検証です。
+
+1. ビルド用ツールチェーンをインストール（Ubuntu 例）:
+   ```bash
+   sudo apt-get update && sudo apt-get install -y build-essential
+   ```
+2. `make` で CLI バイナリをビルド:
+   ```bash
+   make -C platform/Linux
+   ```
+3. 実行ファイルは `bin/msx1pq_cli` に生成されます。
 
 ## 実装について
 
@@ -96,7 +106,7 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 
 * CLI版にはPNGエンコーダ/デコーダライブラリ「lodepng」を使用しています。
   * https://github.com/lvandeve/lodepng/
-  * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)[README_ja.md](README_ja.md)
+  * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
 
 
 
