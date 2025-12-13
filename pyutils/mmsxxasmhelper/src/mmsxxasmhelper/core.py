@@ -61,7 +61,7 @@ __all__ = [
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
     "CALL_label", "CALL", "Func",
     "DB", "DW",
-    "LD", "ADD", "INC", "DEC",
+    "LD", "ADD", "CP", "INC", "DEC",
     "OUT", "OUT_C",
     "NOP", "HALT",
 ]
@@ -949,6 +949,76 @@ class ADD:
         """ADD IY,DE"""
 
         b.emit(0xFD, 0x19)
+
+
+class CP:
+    """CP 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """CP B"""
+
+        b.emit(0xB8)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """CP C"""
+
+        b.emit(0xB9)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """CP D"""
+
+        b.emit(0xBA)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """CP E"""
+
+        b.emit(0xBB)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """CP H"""
+
+        b.emit(0xBC)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """CP L"""
+
+        b.emit(0xBD)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """CP (HL)"""
+
+        b.emit(0xBE)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """CP A"""
+
+        b.emit(0xBF)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """CP (IX+d)"""
+
+        b.emit(0xDD, 0xBE, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """CP (IY+d)"""
+
+        b.emit(0xFD, 0xBE, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """CP n8"""
+
+        b.emit(0xFE, value & 0xFF)
 
     @staticmethod
     def IY_IY(b: Block) -> None:

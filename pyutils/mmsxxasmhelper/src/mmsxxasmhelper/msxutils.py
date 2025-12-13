@@ -199,7 +199,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 
     # --- MSX バージョン確認 ---
     get_msxver_macro(b)
-    b.emit(0xFE, 0x00)   # CP 0
+    CP.n8(b, 0x00)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
