@@ -108,8 +108,6 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_
 
     レジスタ変更: なし（ヘッダデータのみを配置する）。
 
-    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
-        省略時は退避を行わない。
     """
 
     header = [
@@ -180,8 +178,6 @@ def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) ->
 
     レジスタ変更: A
 
-    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
-        省略時は退避を行わない。
     """
 
     LD.A_mn16(b, MSXVER)
@@ -193,8 +189,6 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 
     レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
 
-    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
-        省略時は退避を行わない。
     """
 
     # --- MSX バージョン確認 ---
@@ -238,8 +232,6 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """CHGMOD を呼び出して画面モードを設定する。
     レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
-    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
-        省略時は退避を行わない。
     """
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
@@ -257,8 +249,6 @@ def set_screen_colors_macro(
 
     レジスタ変更: A（CHGCLR 呼び出しにより AF なども破壊される可能性あり）。
 
-    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
-        省略時は退避を行わない。
     """
     # OUT(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
     # OUT(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
@@ -302,8 +292,6 @@ def ldirvm_macro(
     レジスタ変更: HL, DE, BC（引数指定時に上書き）。BIOS 呼び出しによって
     AF/BC/DE/HL が破壊される前提で使用する。
 
-    preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
-        省略時は退避を行わない。
     """
 
     if source is not None:
