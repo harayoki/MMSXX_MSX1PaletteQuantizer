@@ -40,6 +40,9 @@ struct CliOptions {
     float weight_h{1.0f};
     float weight_s{0.5f};
     float weight_b{0.75f};
+    float weight_r{1.0f};
+    float weight_g{1.0f};
+    float weight_b_rgb{1.0f};
     int pre_posterize{16};
     float pre_sat{0.0f};
     float pre_gamma{1.0f};
@@ -119,6 +122,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
                   << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+                  << "  --weight-rgb-r <0-1> --weight-rgb-g <0-1> --weight-rgb-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
                   << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 0.0)\n"
                   << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
@@ -152,6 +156,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
               << "  --distance <rgb|hsb>         (default: hsb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+              << "  --weight-rgb-r <0-1> --weight-rgb-g <0-1> --weight-rgb-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"
               << "  --pre-sat <0-10>             Increase saturation before processing (default: 0.0)\n"
               << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
@@ -304,6 +309,12 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.weight_s = std::stof(require_value(arg));
         } else if (arg == "--weight-b") {
             opts.weight_b = std::stof(require_value(arg));
+        } else if (arg == "--weight-rgb-r") {
+            opts.weight_r = std::stof(require_value(arg));
+        } else if (arg == "--weight-rgb-g") {
+            opts.weight_g = std::stof(require_value(arg));
+        } else if (arg == "--weight-rgb-b") {
+            opts.weight_b_rgb = std::stof(require_value(arg));
         } else if (arg == "--pre-posterize") {
             opts.pre_posterize = std::stoi(require_value(arg));
         } else if (arg == "--pre-sat") {
@@ -385,6 +396,9 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
     qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
     qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);
+    qi.w_r             = MSX1PQCore::clamp01f(opts.weight_r);
+    qi.w_g             = MSX1PQCore::clamp01f(opts.weight_g);
+    qi.w_b_rgb         = MSX1PQCore::clamp01f(opts.weight_b_rgb);
     qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
     qi.pre_sat         = opts.pre_sat;
     qi.pre_gamma       = opts.pre_gamma;

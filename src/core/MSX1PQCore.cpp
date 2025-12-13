@@ -514,9 +514,14 @@ void ensure_palette_hsb_initialized()
 }
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                        float w_r, float w_g, float w_b,
                         int num_colors,
                         const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
+    const float wr = clamp01f(w_r);
+    const float wg = clamp01f(w_g);
+    const float wb = clamp01f(w_b);
+
     int   best_idx = 0;
     float best_d2  = 1.0e30f;
 
@@ -529,7 +534,45 @@ int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
         float dr = static_cast<float>(r8) - static_cast<float>(qc.r);
         float dg = static_cast<float>(g8) - static_cast<float>(qc.g);
         float db = static_cast<float>(b8) - static_cast<float>(qc.b);
-        float d2 = dr*dr + dg*dg + db*db;
+        float d2 = (wr * dr) * (wr * dr) +
+                   (wg * dg) * (wg * dg) +
+                   (wb * db) * (wb * db);
+
+        if (d2 < best_d2) {
+            best_d2  = d2;
+            best_idx = i;
+        }
+    }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
+    }
+    return best_idx;
+}
+
+int nearest_basic_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                      float w_r, float w_g, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    const float wr = clamp01f(w_r);
+    const float wg = clamp01f(w_g);
+    const float wb = clamp01f(w_b);
+
+    int   best_idx = 0;
+    float best_d2  = 1.0e30f;
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        if (!palette_enabled[static_cast<std::size_t>(i)]) {
+            continue;
+        }
+
+        float dr = static_cast<float>(r8) - static_cast<float>(MSX1PQ::kQuantColors[i].r);
+        float dg = static_cast<float>(g8) - static_cast<float>(MSX1PQ::kQuantColors[i].g);
+        float db = static_cast<float>(b8) - static_cast<float>(MSX1PQ::kQuantColors[i].b);
+
+        float d2 = (wr * dr) * (wr * dr) +
+                   (wg * dg) * (wg * dg) +
+                   (wb * db) * (wb * db);
 
         if (d2 < best_d2) {
             best_d2  = d2;
@@ -676,7 +719,7 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
     if (qi.use_palette_color) {
         const int palette_idx = qi.use_hsb
             ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors, qi.palette_enabled)
-            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors, qi.palette_enabled);
+            : nearest_palette_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, MSX1PQ::kNumQuantColors, qi.palette_enabled);
 
         return MSX1PQ::kQuantColors[palette_idx];
     }
@@ -691,7 +734,7 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
 
         const int palette_idx = qi.use_hsb
             ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors, qi.palette_enabled)
-            : nearest_palette_rgb(r, g, b, num_colors, qi.palette_enabled);
+            : nearest_palette_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, num_colors, qi.palette_enabled);
 
         basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
         if (basic_idx < 0 || basic_idx >= MSX1PQ::kNumBasicColors ||
@@ -701,24 +744,7 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
     } else if (qi.use_hsb) {
         basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, qi.palette_enabled);
     } else {
-        long best_dist = LONG_MAX;
-        basic_idx = fallback_basic_idx;
-
-        for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
-            if (!qi.palette_enabled[static_cast<std::size_t>(i)]) {
-                continue;
-            }
-
-            long dr = static_cast<long>(r) - static_cast<long>(MSX1PQ::kQuantColors[i].r);
-            long dg = static_cast<long>(g) - static_cast<long>(MSX1PQ::kQuantColors[i].g);
-            long db = static_cast<long>(b) - static_cast<long>(MSX1PQ::kQuantColors[i].b);
-
-            long dist = dr * dr + dg * dg + db * db;
-            if (dist < best_dist) {
-                best_dist = dist;
-                basic_idx = i;
-            }
-        }
+        basic_idx = nearest_basic_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, qi.palette_enabled);
     }
 
     const MSX1PQ::QuantColor* palette =
