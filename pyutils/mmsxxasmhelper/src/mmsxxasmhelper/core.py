@@ -824,51 +824,53 @@ class LD:
 class ADD:
     """ADD 系命令。"""
 
-    _A_R_OPCODES = {
-        "B": 0x80,
-        "C": 0x81,
-        "D": 0x82,
-        "E": 0x83,
-        "H": 0x84,
-        "L": 0x85,
-        "mHL": 0x86,  # (HL)
-        "A": 0x87,
-    }
+    @staticmethod
+    def A_B(b: Block) -> None:
+        """ADD A,B"""
 
-    _HL_SS_OPCODES = {
-        "BC": 0x09,
-        "DE": 0x19,
-        "HL": 0x29,
-        "SP": 0x39,
-    }
-
-    _IX_PP_OPCODES = {
-        "BC": (0xDD, 0x09),
-        "DE": (0xDD, 0x19),
-        "IX": (0xDD, 0x29),
-        "SP": (0xDD, 0x39),
-    }
-
-    _IY_PP_OPCODES = {
-        "BC": (0xFD, 0x09),
-        "DE": (0xFD, 0x19),
-        "IY": (0xFD, 0x29),
-        "SP": (0xFD, 0x39),
-    }
+        b.emit(0x80)
 
     @staticmethod
-    def A_r(b: Block, src: str) -> None:
-        """
-        ADD A,r / ADD A,(HL)
+    def A_C(b: Block) -> None:
+        """ADD A,C"""
 
-        src: "A","B","C","D","E","H","L","mHL"
-        """
+        b.emit(0x81)
 
-        try:
-            opcode = ADD._A_R_OPCODES[src]
-        except KeyError as exc:
-            raise ValueError(f"invalid src for ADD A,r: {src}") from exc
-        b.emit(opcode)
+    @staticmethod
+    def A_D(b: Block) -> None:
+        """ADD A,D"""
+
+        b.emit(0x82)
+
+    @staticmethod
+    def A_E(b: Block) -> None:
+        """ADD A,E"""
+
+        b.emit(0x83)
+
+    @staticmethod
+    def A_H(b: Block) -> None:
+        """ADD A,H"""
+
+        b.emit(0x84)
+
+    @staticmethod
+    def A_L(b: Block) -> None:
+        """ADD A,L"""
+
+        b.emit(0x85)
+
+    @staticmethod
+    def A_mHL(b: Block) -> None:
+        """ADD A,(HL)"""
+
+        b.emit(0x86)
+
+    @staticmethod
+    def A_A(b: Block) -> None:
+        """ADD A,A"""
+
+        b.emit(0x87)
 
     @staticmethod
     def A_mIXd(b: Block, disp: int) -> None:
@@ -889,34 +891,76 @@ class ADD:
         b.emit(0xC6, value & 0xFF)
 
     @staticmethod
-    def HL_ss(b: Block, src: str) -> None:
-        """ADD HL,ss"""
+    def HL_BC(b: Block) -> None:
+        """ADD HL,BC"""
 
-        try:
-            opcode = ADD._HL_SS_OPCODES[src]
-        except KeyError as exc:
-            raise ValueError(f"invalid src for ADD HL,ss: {src}") from exc
-        b.emit(opcode)
+        b.emit(0x09)
 
     @staticmethod
-    def IX_pp(b: Block, src: str) -> None:
-        """ADD IX,pp"""
+    def HL_DE(b: Block) -> None:
+        """ADD HL,DE"""
 
-        try:
-            prefix_opcode = ADD._IX_PP_OPCODES[src]
-        except KeyError as exc:
-            raise ValueError(f"invalid src for ADD IX,pp: {src}") from exc
-        b.emit(*prefix_opcode)
+        b.emit(0x19)
 
     @staticmethod
-    def IY_pp(b: Block, src: str) -> None:
-        """ADD IY,pp"""
+    def HL_HL(b: Block) -> None:
+        """ADD HL,HL"""
 
-        try:
-            prefix_opcode = ADD._IY_PP_OPCODES[src]
-        except KeyError as exc:
-            raise ValueError(f"invalid src for ADD IY,pp: {src}") from exc
-        b.emit(*prefix_opcode)
+        b.emit(0x29)
+
+    @staticmethod
+    def HL_SP(b: Block) -> None:
+        """ADD HL,SP"""
+
+        b.emit(0x39)
+
+    @staticmethod
+    def IX_BC(b: Block) -> None:
+        """ADD IX,BC"""
+
+        b.emit(0xDD, 0x09)
+
+    @staticmethod
+    def IX_DE(b: Block) -> None:
+        """ADD IX,DE"""
+
+        b.emit(0xDD, 0x19)
+
+    @staticmethod
+    def IX_IX(b: Block) -> None:
+        """ADD IX,IX"""
+
+        b.emit(0xDD, 0x29)
+
+    @staticmethod
+    def IX_SP(b: Block) -> None:
+        """ADD IX,SP"""
+
+        b.emit(0xDD, 0x39)
+
+    @staticmethod
+    def IY_BC(b: Block) -> None:
+        """ADD IY,BC"""
+
+        b.emit(0xFD, 0x09)
+
+    @staticmethod
+    def IY_DE(b: Block) -> None:
+        """ADD IY,DE"""
+
+        b.emit(0xFD, 0x19)
+
+    @staticmethod
+    def IY_IY(b: Block) -> None:
+        """ADD IY,IY"""
+
+        b.emit(0xFD, 0x29)
+
+    @staticmethod
+    def IY_SP(b: Block) -> None:
+        """ADD IY,SP"""
+
+        b.emit(0xFD, 0x39)
 
 
 # ---------------------------------------------------------------------------
