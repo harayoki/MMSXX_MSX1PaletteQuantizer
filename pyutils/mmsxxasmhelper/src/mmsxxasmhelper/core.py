@@ -1136,7 +1136,7 @@ class OUT_C:
 
 def NOP(b: Block, times: int = 1) -> None:
     """NOP 命令を挿入する。"""
-    for _ in range(times + 1):
+    for _ in range(times):
         b.emit(0x00)
 
 
