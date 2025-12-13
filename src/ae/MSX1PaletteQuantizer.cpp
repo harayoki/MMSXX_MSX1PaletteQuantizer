@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <cstddef>
 
 
 #ifdef AE_OS_WIN
@@ -423,7 +424,7 @@ ParamsSetup (
         "*1: Black",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_1
     );
 
@@ -432,7 +433,7 @@ ParamsSetup (
         "*2: Medium Green",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_2
     );
 
@@ -441,7 +442,7 @@ ParamsSetup (
         "*3: Light Green",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_3
     );
 
@@ -450,7 +451,7 @@ ParamsSetup (
         "*4: Dark Blue",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_4
     );
 
@@ -459,7 +460,7 @@ ParamsSetup (
         "*5: Light Blue",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_5
     );
 
@@ -468,7 +469,7 @@ ParamsSetup (
         "*6: Dark Red",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_6
     );
 
@@ -477,7 +478,7 @@ ParamsSetup (
         "*7: Cyan",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_7
     );
 
@@ -486,7 +487,7 @@ ParamsSetup (
         "*8: Medium Red",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_8
     );
 
@@ -495,7 +496,7 @@ ParamsSetup (
         "*9: Light Red",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_9
     );
 
@@ -504,7 +505,7 @@ ParamsSetup (
         "*10: Dark Yellow",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_10
     );
 
@@ -513,7 +514,7 @@ ParamsSetup (
         "*11: Light Yellow",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_11
     );
 
@@ -522,7 +523,7 @@ ParamsSetup (
         "*12: Dark Green",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_12
     );
 
@@ -531,7 +532,7 @@ ParamsSetup (
         "*13: Magenta",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_13
     );
 
@@ -540,7 +541,7 @@ ParamsSetup (
         "*14: Gray",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_14
     );
 
@@ -549,7 +550,7 @@ ParamsSetup (
         "*15: White",
         "Enable this palette entry",
         TRUE,
-        0,
+        PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_COLOR_FLAG_15
     );
 
@@ -1404,6 +1405,77 @@ PF_Err PluginDataEntryFunction2(
 
 
 static PF_Err
+DrawPaletteFlagColorBox(
+    PF_InData      *in_data,
+    PF_OutData     *out_data,
+    PF_ParamDef    *params[],
+    PF_EventExtra  *event_extraP)
+{
+    PF_Err err = PF_Err_NONE;
+
+    if (!event_extraP || event_extraP->evt_type != PF_Event_DRAW) {
+        return err;
+    }
+
+    const PF_ParamIndex param_index = event_extraP->param_index;
+    if (param_index < MSX1PQ_PARAM_COLOR_FLAG_1 || param_index > MSX1PQ_PARAM_COLOR_FLAG_15) {
+        return err;
+    }
+
+    // Draw only on AE
+    if (in_data->appl_id != kAppID_AfterEffects) {
+        return err;
+    }
+
+    AEGP_DrawbotRef drawbot_ref = reinterpret_cast<AEGP_DrawbotRef>(event_extraP->contextH);
+    if (!drawbot_ref) {
+        return err;
+    }
+
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+
+    AEGP_DrawbotPaintRef paint_ref = nullptr;
+    AEGP_DrawbotPathRef  path_ref  = nullptr;
+    A_FloatRect bounds = { 0, 0, 0, 0 };
+
+    ERR( suites.DrawbotSuite1()->AEGP_GetDrawbotBounds(drawbot_ref, &bounds) );
+
+    A_FloatRect color_rect = bounds;
+    constexpr A_FpLong kBoxWidth = 18.0;
+    color_rect.left   = static_cast<A_FpLong>(bounds.right - kBoxWidth);
+    color_rect.top   += 2.0f;
+    color_rect.bottom -= 2.0f;
+    if (color_rect.left < bounds.left) {
+        color_rect.left = bounds.left;
+    }
+
+    const std::size_t palette_idx = static_cast<std::size_t>(param_index - MSX1PQ_PARAM_COLOR_FLAG_1);
+    const auto &quant_color = MSX1PQ::kQuantColors[palette_idx];
+    const PF_Boolean enabled = params[param_index]->u.bd.value != 0;
+
+    AEGP_ColorVal paint_color {};
+    paint_color.alphaF = enabled ? 1.0f : 0.3f;
+    paint_color.redF   = static_cast<A_FpLong>(quant_color.r) / 255.0;
+    paint_color.greenF = static_cast<A_FpLong>(quant_color.g) / 255.0;
+    paint_color.blueF  = static_cast<A_FpLong>(quant_color.b) / 255.0;
+
+    ERR( suites.DrawbotSuite1()->AEGP_CreatePaint(drawbot_ref, &paint_ref) );
+    ERR( suites.DrawbotSuite1()->AEGP_SetPaintColor(paint_ref, &paint_color) );
+    ERR( suites.DrawbotSuite1()->AEGP_CreatePath(drawbot_ref, &path_ref) );
+    ERR( suites.DrawbotSuite1()->AEGP_AddRectToPath(path_ref, &color_rect) );
+    ERR( suites.DrawbotSuite1()->AEGP_Fill(drawbot_ref, paint_ref, path_ref) );
+
+    if (path_ref) {
+        suites.DrawbotSuite1()->AEGP_DisposePath(path_ref);
+    }
+    if (paint_ref) {
+        suites.DrawbotSuite1()->AEGP_DisposePaint(paint_ref);
+    }
+
+    return err;
+}
+
+static PF_Err
 UpdateParameterUI(
     PF_InData   *in_data,
     PF_OutData  *out_data,
@@ -1519,6 +1591,13 @@ EffectMain(
             //     return UpdateParameterUI(in_dataP, out_data, params);
             case PF_Cmd_PARAMS_SETUP:
                 err = ParamsSetup(in_dataP, out_data, params, output);
+                break;
+            case PF_Cmd_EVENT:
+                err = DrawPaletteFlagColorBox(
+                          in_dataP,
+                          out_data,
+                          params,
+                          reinterpret_cast<PF_EventExtra*>(extra));
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
             {
