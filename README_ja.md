@@ -84,6 +84,16 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 
 * TBW
 
+## Windows版 msx1pq_cli の自動テストの実行方法
+
+CLI の挙動確認用テストは Windows 環境で、既にビルド済みの `platform/Win/x64/msx1pq_cli.exe` が存在する前提で動作します。
+
+1. このリポジトリのルートで `platform/Win/x64/msx1pq_cli.exe` があることを確認します。
+2. コマンドプロンプトまたは PowerShell でリポジトリのルートに移動します。
+3. `python -m unittest tests/test_msx1pq_cli.py` を実行します。
+
+テスト結果は標準出力に unittest の結果として表示されます。`tests` フォルダに入力用 PNG がある場合はそれを利用し、存在しない場合は 256x192 のカラフルな PNG を自動生成します。出力画像や SC2 ファイルは `tests/msx1pq_outputs` 以下に、使用したパラメータが分かるプレフィックス/サフィックス付きのファイル名で保存され、次回のテスト開始時にまとめて削除されます。
+
 ## 実装について
 
 プラグインは8ビットエフェクトでGPUレンダリングには対応していません。After Effects のマルチフレームレンダリングに対応しています。
