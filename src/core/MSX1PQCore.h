@@ -44,6 +44,9 @@ struct QuantInfo {
     float w_h{};
     float w_s{};
     float w_b{};
+    float w_r{1.0f};
+    float w_g{1.0f};
+    float w_b_rgb{1.0f};
     int   pre_posterize{8};
     float pre_sat{};
     float pre_gamma{};
@@ -82,8 +85,13 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &b8);
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                        float w_r, float w_g, float w_b,
                         int num_colors,
                         const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
+
+int nearest_basic_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                      float w_r, float w_g, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
 int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,

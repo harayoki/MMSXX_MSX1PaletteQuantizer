@@ -291,6 +291,48 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
+        "R weight",
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_R
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "G weight",
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_G
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "B weight (RGB)",
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_B_RGB
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
         "Pre 1: Posterize",
         0,
         255,
@@ -806,6 +848,12 @@ Render (
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value));
     qi.w_b = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
+    qi.w_r = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_R]->u.fs_d.value));
+    qi.w_g = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_G]->u.fs_d.value));
+    qi.w_b_rgb = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B_RGB]->u.fs_d.value));
 
     qi.pre_posterize = clamp_value(
         static_cast<int>(params[MSX1PQ_PARAM_PRE_POSTERIZE]->u.fs_d.value + 0.5),
@@ -1125,6 +1173,27 @@ SmartRender(
         qi.w_b = clamp01f(static_cast<float>(param.u.fs_d.value));
         ERR( CheckinParam(in_dataP, param) );
 
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_R,
+                param) );
+        qi.w_r = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_G,
+                param) );
+        qi.w_g = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_B_RGB,
+                param) );
+        qi.w_b_rgb = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
         // PRE_POSTERIZE
         ERR( CheckoutParam(
                 in_dataP,
@@ -1351,6 +1420,7 @@ UpdateParameterUI(
 
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
     A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
+    A_Boolean enable_rgb = (mode == MSX1PQ_DIST_MODE_RGB);
 
     // MyDebugLog("=== UpdateParameterUI CALLED ===");
     // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
@@ -1389,6 +1459,36 @@ UpdateParameterUI(
     // MyDebugLog("  B ui_flags(new)=0x%08x", tmp.ui_flags);
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_B,
+                                 &tmp);
+
+    // --- R weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_R];
+    if (enable_rgb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_R,
+                                 &tmp);
+
+    // --- G weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_G];
+    if (enable_rgb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_G,
+                                 &tmp);
+
+    // --- B weight (RGB) ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_B_RGB];
+    if (enable_rgb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_B_RGB,
                                  &tmp);
 
     return err;
