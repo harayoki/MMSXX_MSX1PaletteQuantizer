@@ -22,7 +22,7 @@ namespace MSX1PQ {
     extern const int        kNumQuantColors;
 
     // 基本15色の数
-    extern const int        kNumBasicColors;
+    inline constexpr int kNumBasicColors = 15;
 
     // パレットごとのディザ割り当て
     extern const DitherPattern kPaletteDither[];
