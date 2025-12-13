@@ -54,8 +54,8 @@ make -C platform/Linux
 | `--dark-dither` / `--no-dark-dither` | 暗部専用ディザを使うか。既定: 有効。 |
 | `--no-preprocess` | すべての前処理（ポスタリゼーション、彩度、ガンマ、コントラスト、色相、LUT）をスキップ。 |
 | `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
-| `--distance <rgb|hsb>` | パレット選択時の色距離計算方法。既定: `hsb`。 |
-| `--weight-h`, `--weight-s`, `--weight-b` | `hsb` 距離使用時の色相・彩度・明度の重み（0〜1）。 |
+| `--distance <rgb|hsv>` | パレット選択時の色距離計算方法。既定: `hsv`。 |
+| `--weight-h`, `--weight-s`, `--weight-b` | `hsv` 距離使用時の色相・彩度・明度の重み（0〜1）。 |
 | `--disable-colors <index|range>...` | 使わないパレット番号（1〜15）を無効化。範囲指定（例：`3-5`）も可。最低1色は有効のままにしてください。 |
 | `--pre-posterize <0-255>` | 前処理でポスタリゼーションを適用（既定: `16`。`<=1` で無効）。 |
 | `--pre-sat <0-10>` | 量子化前に彩度を上げる。既定: `0.0`。 |

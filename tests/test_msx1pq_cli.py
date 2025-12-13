@@ -171,7 +171,7 @@ class Msx1pqCliTestCase(unittest.TestCase):
                 "--8dot",
                 "best-attr",
                 "--distance",
-                "hsb",
+                "hsv",
                 "--palette92",
                 "--dither",
                 "--dark-dither",
@@ -197,7 +197,7 @@ class Msx1pqCliTestCase(unittest.TestCase):
         output_dir = self.output_root / "randomized_runs"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        distance_modes = ["rgb", "hsb"]
+        distance_modes = ["rgb", "hsv"]
         color_systems = ["msx1", "msx2"]
 
         for idx in range(4):

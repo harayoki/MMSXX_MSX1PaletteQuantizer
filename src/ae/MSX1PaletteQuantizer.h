@@ -27,7 +27,7 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_USE_DITHER,      // Dither ON/OFF
     MSX1PQ_PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette
     MSX1PQ_PARAM_USE_8DOT2COL,    // 8dot / 2col restriction mode
-    MSX1PQ_PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSB)
+    MSX1PQ_PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSV)
     MSX1PQ_PARAM_WEIGHT_H,        // H intensity
     MSX1PQ_PARAM_WEIGHT_S,        // S intensity
     MSX1PQ_PARAM_WEIGHT_B,        // B intensity
