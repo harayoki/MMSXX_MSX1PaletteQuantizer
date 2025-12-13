@@ -418,6 +418,46 @@ ParamsSetup (
         MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
     );
 
+    constexpr PF_ParamIndex kNumPaletteColors = MSX1PQ::kNumBasicColors;
+    const MSX1PQ::QuantColor palette_color_boxes[kNumPaletteColors] = {
+        MSX1PQ::kQuantColors[0],  MSX1PQ::kQuantColors[1],  MSX1PQ::kQuantColors[2],
+        MSX1PQ::kQuantColors[3],  MSX1PQ::kQuantColors[4],  MSX1PQ::kQuantColors[5],
+        MSX1PQ::kQuantColors[6],  MSX1PQ::kQuantColors[7],  MSX1PQ::kQuantColors[8],
+        MSX1PQ::kQuantColors[9],  MSX1PQ::kQuantColors[10], MSX1PQ::kQuantColors[11],
+        MSX1PQ::kQuantColors[12], MSX1PQ::kQuantColors[13], MSX1PQ::kQuantColors[14]
+    };
+
+    const char* palette_color_labels[kNumPaletteColors] = {
+        "*1: Black",
+        "*2: Medium Green",
+        "*3: Light Green",
+        "*4: Dark Blue",
+        "*5: Light Blue",
+        "*6: Dark Red",
+        "*7: Cyan",
+        "*8: Medium Red",
+        "*9: Light Red",
+        "*10: Dark Yellow",
+        "*11: Light Yellow",
+        "*12: Dark Green",
+        "*13: Magenta",
+        "*14: Gray",
+        "*15: White"
+    };
+
+    for (PF_ParamIndex i = 0; i < kNumPaletteColors; ++i) {
+        AEFX_CLR_STRUCT(def);
+        def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
+        def.ui_flags |= PF_PUI_DISABLED;
+        PF_ADD_COLOR(
+            palette_color_labels[i],
+            palette_color_boxes[i].r,
+            palette_color_boxes[i].g,
+            palette_color_boxes[i].b,
+            static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_BOX_1 + i)
+        );
+    }
+
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*1: Black",
