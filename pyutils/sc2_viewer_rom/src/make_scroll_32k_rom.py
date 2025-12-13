@@ -109,39 +109,9 @@ def validate_sc2_bytes(sc2_bytes: bytes) -> bytes:
     return bytes(vram)
 
 
-# def trimmed_to_full_vram(trimmed: bytes) -> bytes:
-#     """
-#     トリム済み 0x3780 バイトから、フル VRAM 0x4000 バイトに戻す。
-#     → この関数は開発時以外必要ない
-#     トリム形式:
-#         0000–1AFF   → VRAM 0000–1AFF
-#         1B00–377F   → VRAM 1B80–37FF
-#     それ以外の VRAM 領域は 0 クリア。
-#     """
-#     if len(trimmed) != IMAGE_LENGTH:
-#         raise ValueError("trimmed image must be 0x3780 bytes")
-#     vram = bytearray([0x00] * VRAM_SIZE)
-#     # 0000–1AFF
-#     vram[0x0000:0x1B00] = trimmed[0x0000:0x1B00]
-#     # 1B80–37FF
-#     vram[0x1B80:0x3800] = trimmed[0x1B00:0x3780]
-#     return bytes(vram)
-
-def vram_to_trimmed_offset(addr: int) -> int:
-    """
-    VRAM アドレス 0x0000–0x37FF を、
-    トリム済み 0x3780 バッファ上のオフセットに変換。
-    → この関数は最終的に使わなくなる？
-    """
-    if addr < 0x1B00:
-        return addr
-    # 1B80–37FF が 1B00–35FF に詰められている
-    return addr - 0x80
-
-
 def build_row_packages(image_bytes: bytes) -> bytes:
     """
-    1画面のバイト列から RowPackage[24] を生成。@
+    1画面のバイト列から RowPackage[24] を生成。
     RowPackage:
         pattern * 32
         color   * 32
@@ -164,10 +134,10 @@ def build_row_packages(image_bytes: bytes) -> bytes:
 
         pattern_line = pattern_gen[row * 32:(row + 1) * 32]
         pattern_line_as_str = " ".join(f"{b:02X}" for b in pattern_line)
-        print(f"#{row} pattern_line({((bank * 0x800) + (row % 8) * 32):04X}) {pattern_line_as_str}")
+        # print(f"#{row} pattern_line({((bank * 0x800) + (row % 8) * 32):04X}) {pattern_line_as_str}")
         color_line   = color_table[row * 32:(row + 1) * 32]
         color_line_as_str = " ".join(f"{b:02X}" for b in color_line)
-        print(f"#{row} color_line({((bank * 0x800) + (row % 8) * 32):04X}) {color_line_as_str}")
+        # print(f"#{row} color_line({((bank * 0x800) + (row % 8) * 32):04X}) {color_line_as_str}")
 
         pkg: bytes = pattern_line + color_line  # 64 bytes
         rows.append(pkg)
@@ -185,6 +155,7 @@ def init_name_table_call(b: Block) -> None:
     b.label("CREATE_NAME_TABLE_LOOP")
     # (HL) = A
     LD.mHL_A(b)
+    LD.mHL_n8(b, 0)
     # HL++
     INC.HL(b)
     # A++
@@ -205,10 +176,12 @@ def draw_page_call(b: Block) -> None:
     """
     1ページ分の RowPackage データを VRAM に転送する関数
     """
+
     start_addr = "PACKED_DATA"
 
     # HL = RowPackage 先頭
-    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,start_addr
+    # TODO 直接バイト列を書かない仕組みにしたい LD.HL_label的なのを
+    pos = b.emit(0x21, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, start_addr)
 
     # DE = PATTERN_BASE / IY = COLOR_BASE
@@ -265,40 +238,36 @@ def build_rom(packed_data: bytes) -> bytes:
 
     # ----- ここから 0x4010: 実際に実行されるコード -----
 
+    LD.HL_
+
     # SCREEN 2 に変更: LD A,2 / CALL 005Fh (CHGMOD)
     set_screen_mode_macro(b, 2)
 
     # 色: 前景=白 / 背景=黒 / 枠=黒
-    set_screen_colors_macro(b, 0x0F, 0x00, 0x00)
+    set_screen_colors_macro(b, 15, 15, 15, 2)
+
+    debug_trap(b)
 
     # MSX2 以上ならパレット設定
-    # 真っ黒になってしまうバグがあるので現状何もしないコードになっている
     # set_msx2_palette_default_macro(b)
 
     # ネームテーブル初期化
     INIT_NAME_TABLE_CALL.call(b)
 
-    # DEBUG=True なら HALT
-    debug_trap(b)
 
     # 1枚目の絵を出す
     # PACKED_DATA の先頭 (1 枚目) を描画
-    # DRAW_PAGE_CALL.call(b)
-
-    loop_infinite_macro(b)
-
-    # DEBUG=True なら HALT
-    debug_trap(b)
+    DRAW_PAGE_CALL.call(b)
 
     # 以降は無限ループ
-    b.label("FinalLoop")
-    JP(b, "FinalLoop")
+    loop_infinite_macro(b)
 
     # ----- サブルーチンの定義 -----
     INIT_NAME_TABLE_CALL.define(b)
     DRAW_PAGE_CALL.define(b)
 
     # ----- VRAM イメージデータ本体 -----
+    NOP(b, 16)  # test
     b.label("PACKED_DATA")
     DB(b, *packed_data)
 
@@ -333,11 +302,10 @@ def build(
     return bytes(rom)
 
 
-def int_from_str(v: str) -> int:
-    return int(v, 0)
-
-
 def parse_args() -> argparse.Namespace:
+    def int_from_str(v: str) -> int:
+        return int(v, 0)
+
     p = argparse.ArgumentParser(
         description="MSX1 SCREEN2 1枚目表示 ROM ビルダー（スクロール前段階＋色＆パレット）"
     )
@@ -372,7 +340,10 @@ def main() -> None:
         name = f"{args.image0.stem}_scroll_{args.image1.stem}"
         out = args.image0.with_name(name).with_suffix(".rom")
 
-    out.write_bytes(rom)
+    try:
+        out.write_bytes(rom)
+    except Exception as e:
+        raise SystemExit(f"ERROR! failed to write ROM file: {e}") from e
     print(f"Wrote {len(rom)} bytes to {out}")
 
 

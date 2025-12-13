@@ -59,10 +59,11 @@ __all__ = [
     "pad_pattern",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
-    "CALL", "Func",
+    "CALL_label", "CALL", "Func",
     "DB", "DW",
     "LD", "INC", "DEC",
-    "HALT", "OUT",
+    "OUT", "OUT_C",
+    "NOP", "HALT",
 ]
 
 from dataclasses import dataclass
@@ -436,12 +437,20 @@ def DJNZ(b: Block, target: str) -> None:
     _jr_rel8(b, 0x10, target)
 
 
-def CALL(b: Block, target: str) -> None:
-    """CALL target (絶対コール)。"""
-
+def CALL_label(b: Block, target: str) -> None:
+    """
+    CALL（ラベル指定版）
+    """
     # CALL nn (opcode 0xCD, nn = 16bit)
     pos = b.emit(0xCD, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, target)
+
+
+def CALL(b: Block, address: int) -> None:
+    """
+    CALL nn (即値アドレス指定版)
+    """
+    b.emit(0xCD, address & 0xFF, (address >> 8) & 0xFF)
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +494,7 @@ class Func:
     def call(self, b: Block) -> None:
         """CALL命令を発行。"""
 
-        CALL(b, self.name)
+        CALL_label(b, self.name)
 
 
 # ---------------------------------------------------------------------------
@@ -727,6 +736,7 @@ class LD:
         """LD SP,IY"""
         b.emit(0xFD, 0xF9)
 
+
     # ---------------------------------------------------------
     # IX / IY + d 版 LD
     # ---------------------------------------------------------
@@ -959,41 +969,6 @@ class DEC:
 
 
 # ---------------------------------------------------------------------------
-# OUT 命令
-# ---------------------------------------------------------------------------
-
-
-class OUT:
-    """OUT 系命令。"""
-
-    _C_R_OPCODES = {
-        "B": 0x41,
-        "C": 0x49,
-        "D": 0x51,
-        "E": 0x59,
-        "H": 0x61,
-        "L": 0x69,
-        "A": 0x79,
-    }
-
-    @staticmethod
-    def C_r(b: Block, src: str) -> None:
-        """OUT (C),r"""
-
-        try:
-            opcode = OUT._C_R_OPCODES[src]
-        except KeyError as exc:
-            raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
-        b.emit(0xED, opcode)
-
-    @staticmethod
-    def n_A(b: Block, port: int) -> None:
-        """OUT (n),A"""
-
-        b.emit(0xD3, port & 0xFF)
-
-
-# ---------------------------------------------------------------------------
 # データ配置ヘルパ: DB / DW
 # ---------------------------------------------------------------------------
 
@@ -1012,10 +987,55 @@ def DW(b: Block, *values: int) -> None:
         hi = (v >> 8) & 0xFF
         b.emit(lo, hi)
 
+# ---------------------------------------------------------------------------
+# OUT 命令
+# ---------------------------------------------------------------------------
+
+
+def OUT(b: Block, port: int, a: int | None = None) -> None:
+    """
+    OUT OUT (n),A
+    Aが None の場合は A レジスタの値を指定しない。
+    """
+    if a is not None:
+        LD.A_n8(b, a & 0xFF)
+    b.emit(0xD3, port & 0xFF)
+
+
+class OUT_C:
+    """OUT 系命令。"""
+
+    _R_OPCODES = {
+        "B": 0x41,
+        "C": 0x49,
+        "D": 0x51,
+        "E": 0x59,
+        "H": 0x61,
+        "L": 0x69,
+        "A": 0x79,
+    }
+
+    @staticmethod
+    def r(b: Block, src: str) -> None:
+        """OUT (C),r"""
+
+        try:
+            opcode = OUT_C._R_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
+        b.emit(0xED, opcode)
+
 
 # ---------------------------------------------------------------------------
-# HALT
+# misc
 # ---------------------------------------------------------------------------
+
+
+def NOP(b: Block, times: int = 1) -> None:
+    """NOP 命令を挿入する。"""
+    for _ in range(times + 1):
+        b.emit(0x00)
+
 
 def HALT(b: Block) -> None:
     """HALT 命令を挿入する。"""

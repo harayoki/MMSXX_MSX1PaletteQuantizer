@@ -7,7 +7,9 @@ from __future__ import annotations
 from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
-from mmsxxasmhelper.core import Block, DB, JP, JP_Z, LD
+from mmsxxasmhelper.core import *
+from mmsxxasmhelper.utils import *
+
 
 __all__ = [
     "place_msx_rom_header_macro",
@@ -77,6 +79,9 @@ def with_register_preserve(
 
     return wrapper
 
+# システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
+SP_TEMP_RAM = 0xF300
+
 # BIOS コールアドレス
 LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
@@ -88,6 +93,8 @@ BAKCLR = 0xF3EA  # 背景色
 BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 
+VDP_DATA = 98   # VDPデータポート
+VDP_CTRL = 99   # VDPコントロールポート
 
 @with_register_preserve
 def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
@@ -111,6 +118,13 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_
         *([0x00] * (16 - 4)),
     ]
     DB(b, *header)
+
+def save_stack_pointer_macro(b: Block) -> None:
+    """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。
+    """
+    LD.HL_n16(b, 0)
+    # TODO : 実装
+
 
 
 def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
@@ -213,14 +227,14 @@ def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[Regist
     preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
         省略時は退避を行わない。
     """
-
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
 
 
 @with_register_preserve
 def set_screen_colors_macro(
-    b: Block, foreground: int, background: int, border: int, *, preserve_regs: Sequence[RegisterName] = ()
+    b: Block, foreground: int, background: int, border: int,
+        current_screen_mode: int, *, preserve_regs: Sequence[RegisterName] = ()
 ) -> None:
     """MSX1/2 共通の画面色設定マクロ。
 
@@ -232,6 +246,9 @@ def set_screen_colors_macro(
     preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
         省略時は退避を行わない。
     """
+    # OUT(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
+    # OUT(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
+    # OUT(b, VDP_DATA, background & 0x0F)  # 背景色指定
 
     # FORCLR
     LD.A_n8(b, foreground & 0x0F)
@@ -245,8 +262,12 @@ def set_screen_colors_macro(
     LD.A_n8(b, border & 0x0F)
     LD.mn16_A(b, BDRCLR)
 
+    # set current screen mode in A
+    LD.A_n8(b, current_screen_mode)
+
     # CALL CHGCLR
-    b.emit(0xCD, CHGCLR & 0xFF, (CHGCLR >> 8) & 0xFF)
+    CALL(b, CHGCLR)
+
 
 
 @with_register_preserve

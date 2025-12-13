@@ -2,9 +2,13 @@ import sys
 from pathlib import Path
 try:
     from mmsxxasmhelper.core import *
+    from mmsxxasmhelper.utils import *
+    from mmsxxasmhelper.msxutils import *
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from mmsxxasmhelper.core import *
+    from mmsxxasmhelper.utils import *
+    from mmsxxasmhelper.utils import *
 
 
 # 1) マクロ相当の関数サンプル
