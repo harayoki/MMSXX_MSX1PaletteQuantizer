@@ -542,6 +542,50 @@ class LD:
         opcode = 0x40 | (d << 3) | s
         b.emit(opcode)
 
+    # ---- A レジスタへのロード（レジスタ版） ----
+
+    @staticmethod
+    def A_B(b: Block) -> None:
+        """LD A,B"""
+
+        LD.rr(b, "A", "B")
+
+    @staticmethod
+    def A_C(b: Block) -> None:
+        """LD A,C"""
+
+        LD.rr(b, "A", "C")
+
+    @staticmethod
+    def A_D(b: Block) -> None:
+        """LD A,D"""
+
+        LD.rr(b, "A", "D")
+
+    @staticmethod
+    def A_E(b: Block) -> None:
+        """LD A,E"""
+
+        LD.rr(b, "A", "E")
+
+    @staticmethod
+    def A_H(b: Block) -> None:
+        """LD A,H"""
+
+        LD.rr(b, "A", "H")
+
+    @staticmethod
+    def A_L(b: Block) -> None:
+        """LD A,L"""
+
+        LD.rr(b, "A", "L")
+
+    @staticmethod
+    def A_A(b: Block) -> None:
+        """LD A,A"""
+
+        LD.rr(b, "A", "A")
+
     # ---- 8bit 即値ロード ----
 
     @staticmethod
