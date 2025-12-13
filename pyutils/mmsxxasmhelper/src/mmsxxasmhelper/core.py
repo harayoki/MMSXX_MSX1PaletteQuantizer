@@ -542,6 +542,25 @@ class LD:
         opcode = 0x40 | (d << 3) | s
         b.emit(opcode)
 
+
+# LD の 8bit レジスタ間命令 (LD r,r' / LD r,(HL) / LD (HL),r)
+# techdocs/z80_assembly_byte_map.md を参考に全パターンを補完する。
+def _make_ld_rr(dst: str, src: str) -> staticmethod:
+    def _impl(b: Block) -> None:
+        LD.rr(b, dst, src)
+
+    _impl.__name__ = f"{dst}_{src}"
+    _impl.__doc__ = f"LD {dst},{src}"
+    return staticmethod(_impl)
+
+
+for _dst in ("B", "C", "D", "E", "H", "L", "mHL", "A"):
+    for _src in ("B", "C", "D", "E", "H", "L", "mHL", "A"):
+        # (HL),(HL) = 0x76 は HALT なので除外する
+        if _dst == "mHL" and _src == "mHL":
+            continue
+        setattr(LD, f"{_dst}_{_src}", _make_ld_rr(_dst, _src))
+
     # ---- 8bit 即値ロード ----
 
     @staticmethod
