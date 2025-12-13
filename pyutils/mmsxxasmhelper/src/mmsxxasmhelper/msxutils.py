@@ -17,10 +17,12 @@ __all__ = [
     "restore_stack_pointer_macro",
     "get_msxver_macro",
     "set_msx2_palette_default_macro",
+    "init_screen2_macro",
     "set_screen_mode_macro",
     "set_screen_colors_macro",
     "ldirvm_macro",
-    "with_register_preserve",
+    "test_fill_vram_macro",
+    # "with_register_preserve",
 ]
 
 RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
@@ -87,6 +89,7 @@ SP_TEMP_RAM = 0xF300
 # BIOS コールアドレス
 LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
+INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
 
 # カラー関連システム変数 (MSX1/2 共通)
@@ -175,11 +178,8 @@ _MSX2_PALETTE_BYTES = [
 @with_register_preserve
 def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """MSX バージョンを A レジスタに読み出す。
-
     レジスタ変更: A
-
     """
-
     LD.A_mn16(b, MSXVER)
 
 
@@ -192,8 +192,9 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     """
 
     # --- MSX バージョン確認 ---
-    get_msxver_macro(b)
+    get_msxver_macro(b)  # A = MSXVER
     CP.n8(b, 0x00)
+    debug_trap(b)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
@@ -237,6 +238,32 @@ def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[Regist
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
 
 
+def init_screen2_macro(b: Block) -> None:
+    """SCREEN 2 初期化マクロ。
+    レジスタ変更: A（INIGRP 呼び出しにより AF なども破壊される可能性あり）。
+    """
+    b.emit(0xCD, INIGRP & 0xFF, (INIGRP >> 8) & 0xFF)
+
+
+@with_register_preserve
+def test_fill_vram_macro(b: Block, color: int = 0, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+    """VRAMをテスト用に塗りつぶすマクロ。
+    レジスタ変更: A, BC
+    """
+
+    # DI(b)
+    OUT(b, VDP_CTRL, 0x00)
+    OUT(b, VDP_CTRL, 0x40)
+    LD.BC_n16(b, 0x0800)
+    b.label("TEST_FILL_LOOP")
+    OUT(b, VDP_DATA, color)
+    DEC.BC(b)
+    LD.A_B(b)
+    OR.C(b)
+    JP_NZ(b, "TEST_FILL_LOOP")
+    # EI(b)
+
+
 @with_register_preserve
 def set_screen_colors_macro(
     b: Block, foreground: int, background: int, border: int,
@@ -250,9 +277,21 @@ def set_screen_colors_macro(
     レジスタ変更: A（CHGCLR 呼び出しにより AF なども破壊される可能性あり）。
 
     """
+
+    # 直前に VDP を操作する場合のコード？
     # OUT(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
     # OUT(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
     # OUT(b, VDP_DATA, background & 0x0F)  # 背景色指定
+
+    # DI(b)
+
+    # vdpを初期化するコード？
+    # OUT(b, VDP_CTRL, 0x02)
+    # OUT(b, VDP_CTRL, 0x80)
+    # LD.A_n8(b, 0xE0)
+    # AND.n8(b, 0xFD)
+    # OUT(b, VDP_CTRL)
+    # OUT(b, VDP_CTRL, 0x81)
 
     # FORCLR
     LD.A_n8(b, foreground & 0x0F)
@@ -270,9 +309,9 @@ def set_screen_colors_macro(
     LD.A_n8(b, current_screen_mode)
 
     # CALL CHGCLR
-    CALL(b, CHGCLR)
+    # CALL(b, CHGCLR)  # コールすると固まってしまうのでいったんコメントアウトしておく
 
-
+    # EI(b)
 
 @with_register_preserve
 def ldirvm_macro(
