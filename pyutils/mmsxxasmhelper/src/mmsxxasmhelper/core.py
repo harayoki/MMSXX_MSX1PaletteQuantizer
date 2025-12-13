@@ -13,7 +13,7 @@ v0で入っている機能:
 
 - 定数テーブル:
   - const(name, value): 定数登録
-  - CONST[name] で参照
+  - Const[name] で参照
 
 - 定数データ列 (バイト列 / ワード列)
     - TBW
@@ -33,12 +33,13 @@ v0で入っている機能:
   - .call(b): CALL 命令を出力(アドレスはfixupで解決)
 
 - 命令ラッパ:
-  - jp(b, label): JP label
-  - call(b, label): CALL label
+  - JP 系: 無条件/条件付き絶対ジャンプ (JP, JP_Z, JP_NZ, JP_NC, JP_C, JP_PO, JP_PE, JP_P, JP_M, JP_mHL)
+  - JR 系: 無条件/条件付き相対ジャンプ (JR, JR_Z, JR_NZ, JR_NC, JR_C) および DJNZ
+  - CALL(b, label): CALL label
 
 - データ配置:
-  - db(b, *values): 1バイト列を配置
-  - dw(b, *values): 16bit値(リトルエンディアン)を配置
+  - DB(b, *values): 1バイト列を配置
+  - DW(b, *values): 16bit値(リトルエンディアン)を配置
 
 - DEBUGフラグ:
   - DEBUG = True/False
@@ -46,18 +47,23 @@ v0で入っている機能:
 """
 
 from __future__ import annotations
+from collections.abc import Iterable
 
 __all__ = [
-    "Block", "Fixup", "const", "CONST",
-    "DATA8", "DATA16",
+    "Block", "Fixup", "const", "Const",
+    "Data8", "Data16",
     "const_bytes", "const_words",
-    "db_const", "dw_const",
+    "db_const", "dw_const", "db_from_bytes",
     "str_bytes", "const_string",
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
-    "jp", "call", "Func",
-    "db", "dw", "DEBUG", "debug_trap",
-    "LD", "INC", "DEC",
+    "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
+    "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
+    "CALL_label", "CALL", "Func",
+    "DB", "DW",
+    "LD", "ADD", "CP", "AND", "OR", "XOR", "INC", "DEC",
+    "OUT", "OUT_C",
+    "NOP", "HALT", "DI", "EI",
 ]
 
 from dataclasses import dataclass
@@ -68,7 +74,7 @@ from typing import Callable, Dict, List, Literal
 # Block: コード構築の基本単位
 # ---------------------------------------------------------------------------
 
-FixupKind = Literal["abs16"]  # v0では絶対16bitアドレスのみ扱う
+FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 
 
 @dataclass
@@ -122,6 +128,14 @@ class Block:
 
         self.fixups.append(Fixup(kind="abs16", pos=pos, target=target))
 
+    def add_rel8_fixup(self, pos: int, target: str) -> None:
+        """8bit相対オフセットを書き込むためのfixupを登録。
+
+        pos: オフセットを書き込む位置（この1バイトの直後が基準アドレス）。
+        """
+
+        self.fixups.append(Fixup(kind="rel8", pos=pos, target=target))
+
     # --- 出力確定 ---
 
     def finalize(self, origin: int = 0) -> bytes:
@@ -139,6 +153,14 @@ class Block:
                 hi = (addr >> 8) & 0xFF
                 self.code[fx.pos] = lo
                 self.code[fx.pos + 1] = hi
+            elif fx.kind == "rel8":
+                base = origin + fx.pos + 1  # 相対オフセットの基準 (次命令のアドレス)
+                target = origin + self._get_label_addr(fx.target)
+                offset = target - base
+                if not -128 <= offset <= 127:
+                    raise ValueError(
+                        f"relative jump out of range: target={fx.target}, offset={offset}")
+                self.code[fx.pos] = offset & 0xFF
             else:
                 raise ValueError(f"unknown fixup kind: {fx.kind}")
 
@@ -155,23 +177,23 @@ class Block:
 # 定数テーブル
 # ---------------------------------------------------------------------------
 
-CONST: Dict[str, int] = {}
+Const: Dict[str, int] = {}
 
 
 def const(name: str, value: int) -> None:
     """定数を登録する。再定義はエラー。"""
 
-    if name in CONST:
+    if name in Const:
         raise ValueError(f"const redefined: {name}")
-    CONST[name] = value
+    Const[name] = value
 
 # ---------------------------------------------------------------------------
 # 定数データ列 (バイト列 / ワード列)
 # ---------------------------------------------------------------------------
 
 
-DATA8: Dict[str, List[int]] = {}
-DATA16: Dict[str, List[int]] = {}
+Data8: Dict[str, List[int]] = {}
+Data16: Dict[str, List[int]] = {}
 
 
 def const_bytes(name: str, *values: int) -> None:
@@ -181,9 +203,9 @@ def const_bytes(name: str, *values: int) -> None:
     例:
         const_bytes("LOGO", 0x01, 0x02, 0x03)
     """
-    if name in DATA8:
+    if name in Data8:
         raise ValueError(f"byte data redefined: {name}")
-    DATA8[name] = [v & 0xFF for v in values]
+    Data8[name] = [v & 0xFF for v in values]
 
 
 def const_words(name: str, *values: int) -> None:
@@ -193,9 +215,9 @@ def const_words(name: str, *values: int) -> None:
     例:
         const_words("PALETTE", 0x1234, 0xABCD)
     """
-    if name in DATA16:
+    if name in Data16:
         raise ValueError(f"word data redefined: {name}")
-    DATA16[name] = [v & 0xFFFF for v in values]
+    Data16[name] = [v & 0xFFFF for v in values]
 
 
 def db_const(b: Block, name: str) -> None:
@@ -203,10 +225,10 @@ def db_const(b: Block, name: str) -> None:
     const_bytes で登録したデータをそのまま db で吐く。
     """
     try:
-        data = DATA8[name]
+        data = Data8[name]
     except KeyError as exc:
         raise ValueError(f"unknown byte data name: {name}") from exc
-    db(b, *data)
+    DB(b, *data)
 
 
 def dw_const(b: Block, name: str) -> None:
@@ -214,10 +236,42 @@ def dw_const(b: Block, name: str) -> None:
     const_words で登録したデータをそのまま dw で吐く。
     """
     try:
-        data = DATA16[name]
+        data = Data16[name]
     except KeyError as exc:
         raise ValueError(f"unknown word data name: {name}") from exc
-    dw(b, *data)
+    DW(b, *data)
+
+
+def db_from_bytes(b: Block, data):
+    """
+    Block に大量のバイト列を突っ込むユーティリティ。
+
+    data:
+        - bytes / bytearray
+        - list[int] / tuple[int, ...]
+        - str なら Data8[name] を引く
+    """
+    # 名前で指定された場合は Data8 から探す
+    if isinstance(data, str):
+        if data not in Data8:
+            raise KeyError(f"db_from_bytes: const '{data}' not found in Data8")
+        DB(b, *Data8[data])
+        return
+
+    # 素のバイト列
+    if isinstance(data, (bytes, bytearray)):
+        DB(b, *data)
+        return
+
+    # int の並び（list, tuple 等）
+    if isinstance(data, Iterable):
+        vals = list(data)
+        if not all(isinstance(v, int) for v in vals):
+            raise TypeError("db_from_bytes: iterable must contain ints")
+        DB(b, *vals)
+        return
+
+    raise TypeError("db_from_bytes: unsupported data type")
 
 
 # ---------------------------------------------------------------------------
@@ -273,24 +327,130 @@ def const_bytes_padded(name: str, size: int, fill: int = 0x00, *values: int) -> 
 
 
 # ---------------------------------------------------------------------------
-# 命令ラッパ (v0: JP / CALL のみ)
+# 命令ラッパ (v0: ジャンプ / コール)
 # ---------------------------------------------------------------------------
 
-def jp(b: Block, target: str) -> None:
-    """JP target (絶対ジャンプ)。"""
 
-    # JP nn  (opcode 0xC3, nn = 16bit)
-    pos = b.emit(0xC3, 0x00, 0x00)
-    # 下位バイト位置を fixup.pos として登録
+def _jp_abs16(b: Block, opcode: int, target: str) -> None:
+    pos = b.emit(opcode, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, target)
 
 
-def call(b: Block, target: str) -> None:
-    """CALL target (絶対コール)。"""
+def _jr_rel8(b: Block, opcode: int, target: str) -> None:
+    pos = b.emit(opcode, 0x00)
+    b.add_rel8_fixup(pos + 1, target)
 
+
+def JP(b: Block, target: str) -> None:
+    """JP target (無条件絶対ジャンプ)。"""
+
+    _jp_abs16(b, 0xC3, target)
+
+
+def JP_NZ(b: Block, target: str) -> None:
+    """JP NZ,target (Z=0)。"""
+
+    _jp_abs16(b, 0xC2, target)
+
+
+def JP_Z(b: Block, target: str) -> None:
+    """JP Z,target (Z=1)。"""
+
+    _jp_abs16(b, 0xCA, target)
+
+
+def JP_NC(b: Block, target: str) -> None:
+    """JP NC,target (C=0)。"""
+
+    _jp_abs16(b, 0xD2, target)
+
+
+def JP_C(b: Block, target: str) -> None:
+    """JP C,target (C=1)。"""
+
+    _jp_abs16(b, 0xDA, target)
+
+
+def JP_PO(b: Block, target: str) -> None:
+    """JP PO,target (パリティオーバーフロー=0)。"""
+
+    _jp_abs16(b, 0xE2, target)
+
+
+def JP_PE(b: Block, target: str) -> None:
+    """JP PE,target (パリティオーバーフロー=1)。"""
+
+    _jp_abs16(b, 0xEA, target)
+
+
+def JP_P(b: Block, target: str) -> None:
+    """JP P,target (符号フラグ=0)。"""
+
+    _jp_abs16(b, 0xF2, target)
+
+
+def JP_M(b: Block, target: str) -> None:
+    """JP M,target (符号フラグ=1)。"""
+
+    _jp_abs16(b, 0xFA, target)
+
+
+def JP_mHL(b: Block) -> None:
+    """JP (HL) (HLが指すアドレスへジャンプ)。"""
+
+    b.emit(0xE9)
+
+
+def JR(b: Block, target: str) -> None:
+    """JR target (無条件相対ジャンプ)。"""
+
+    _jr_rel8(b, 0x18, target)
+
+
+def JR_NZ(b: Block, target: str) -> None:
+    """JR NZ,target (Z=0)。"""
+
+    _jr_rel8(b, 0x20, target)
+
+
+def JR_Z(b: Block, target: str) -> None:
+    """JR Z,target (Z=1)。"""
+
+    _jr_rel8(b, 0x28, target)
+
+
+def JR_NC(b: Block, target: str) -> None:
+    """JR NC,target (C=0)。"""
+
+    _jr_rel8(b, 0x30, target)
+
+
+def JR_C(b: Block, target: str) -> None:
+    """JR C,target (C=1)。"""
+
+    _jr_rel8(b, 0x38, target)
+
+
+def DJNZ(b: Block, target: str) -> None:
+    """DJNZ target (Bをデクリメントし非ゼロなら相対ジャンプ)。"""
+
+    _jr_rel8(b, 0x10, target)
+
+
+def CALL_label(b: Block, target: str) -> None:
+    """
+    CALL（ラベル指定版）
+    """
     # CALL nn (opcode 0xCD, nn = 16bit)
     pos = b.emit(0xCD, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, target)
+
+
+def CALL(b: Block, address: int) -> None:
+    """
+    CALL nn (即値アドレス指定版)
+    """
+    b.emit(0xCD, address & 0xFF, (address >> 8) & 0xFF)
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +494,7 @@ class Func:
     def call(self, b: Block) -> None:
         """CALL命令を発行。"""
 
-        call(b, self.name)
+        CALL_label(b, self.name)
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +541,50 @@ class LD:
             raise ValueError(f"invalid LD rr operands: {dst}, {src}") from exc
         opcode = 0x40 | (d << 3) | s
         b.emit(opcode)
+
+    # ---- A レジスタへのロード（レジスタ版） ----
+
+    @staticmethod
+    def A_B(b: Block) -> None:
+        """LD A,B"""
+
+        LD.rr(b, "A", "B")
+
+    @staticmethod
+    def A_C(b: Block) -> None:
+        """LD A,C"""
+
+        LD.rr(b, "A", "C")
+
+    @staticmethod
+    def A_D(b: Block) -> None:
+        """LD A,D"""
+
+        LD.rr(b, "A", "D")
+
+    @staticmethod
+    def A_E(b: Block) -> None:
+        """LD A,E"""
+
+        LD.rr(b, "A", "E")
+
+    @staticmethod
+    def A_H(b: Block) -> None:
+        """LD A,H"""
+
+        LD.rr(b, "A", "H")
+
+    @staticmethod
+    def A_L(b: Block) -> None:
+        """LD A,L"""
+
+        LD.rr(b, "A", "L")
+
+    @staticmethod
+    def A_A(b: Block) -> None:
+        """LD A,A"""
+
+        LD.rr(b, "A", "A")
 
     # ---- 8bit 即値ロード ----
 
@@ -576,6 +780,7 @@ class LD:
         """LD SP,IY"""
         b.emit(0xFD, 0xF9)
 
+
     # ---------------------------------------------------------
     # IX / IY + d 版 LD
     # ---------------------------------------------------------
@@ -653,6 +858,433 @@ class LD:
         LD (IY+d),n8
         """
         b.emit(0xFD, 0x36, disp & 0xFF, value & 0xFF)
+
+
+# ---------------------------------------------------------------------------
+# ADD 命令
+# ---------------------------------------------------------------------------
+
+
+class ADD:
+    """ADD 系命令。"""
+
+    @staticmethod
+    def A_B(b: Block) -> None:
+        """ADD A,B"""
+
+        b.emit(0x80)
+
+    @staticmethod
+    def A_C(b: Block) -> None:
+        """ADD A,C"""
+
+        b.emit(0x81)
+
+    @staticmethod
+    def A_D(b: Block) -> None:
+        """ADD A,D"""
+
+        b.emit(0x82)
+
+    @staticmethod
+    def A_E(b: Block) -> None:
+        """ADD A,E"""
+
+        b.emit(0x83)
+
+    @staticmethod
+    def A_H(b: Block) -> None:
+        """ADD A,H"""
+
+        b.emit(0x84)
+
+    @staticmethod
+    def A_L(b: Block) -> None:
+        """ADD A,L"""
+
+        b.emit(0x85)
+
+    @staticmethod
+    def A_mHL(b: Block) -> None:
+        """ADD A,(HL)"""
+
+        b.emit(0x86)
+
+    @staticmethod
+    def A_A(b: Block) -> None:
+        """ADD A,A"""
+
+        b.emit(0x87)
+
+    @staticmethod
+    def A_mIXd(b: Block, disp: int) -> None:
+        """ADD A,(IX+d)"""
+
+        b.emit(0xDD, 0x86, disp & 0xFF)
+
+    @staticmethod
+    def A_mIYd(b: Block, disp: int) -> None:
+        """ADD A,(IY+d)"""
+
+        b.emit(0xFD, 0x86, disp & 0xFF)
+
+    @staticmethod
+    def A_n8(b: Block, value: int) -> None:
+        """ADD A,n8"""
+
+        b.emit(0xC6, value & 0xFF)
+
+    @staticmethod
+    def HL_BC(b: Block) -> None:
+        """ADD HL,BC"""
+
+        b.emit(0x09)
+
+    @staticmethod
+    def HL_DE(b: Block) -> None:
+        """ADD HL,DE"""
+
+        b.emit(0x19)
+
+    @staticmethod
+    def HL_HL(b: Block) -> None:
+        """ADD HL,HL"""
+
+        b.emit(0x29)
+
+    @staticmethod
+    def HL_SP(b: Block) -> None:
+        """ADD HL,SP"""
+
+        b.emit(0x39)
+
+    @staticmethod
+    def IX_BC(b: Block) -> None:
+        """ADD IX,BC"""
+
+        b.emit(0xDD, 0x09)
+
+    @staticmethod
+    def IX_DE(b: Block) -> None:
+        """ADD IX,DE"""
+
+        b.emit(0xDD, 0x19)
+
+    @staticmethod
+    def IX_IX(b: Block) -> None:
+        """ADD IX,IX"""
+
+        b.emit(0xDD, 0x29)
+
+    @staticmethod
+    def IX_SP(b: Block) -> None:
+        """ADD IX,SP"""
+
+        b.emit(0xDD, 0x39)
+
+    @staticmethod
+    def IY_BC(b: Block) -> None:
+        """ADD IY,BC"""
+
+        b.emit(0xFD, 0x09)
+
+    @staticmethod
+    def IY_DE(b: Block) -> None:
+        """ADD IY,DE"""
+
+        b.emit(0xFD, 0x19)
+
+    @staticmethod
+    def IY_IY(b: Block) -> None:
+        """ADD IY,IY"""
+
+        b.emit(0xFD, 0x29)
+
+    @staticmethod
+    def IY_SP(b: Block) -> None:
+        """ADD IY,SP"""
+
+        b.emit(0xFD, 0x39)
+
+
+class CP:
+    """CP 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """CP B"""
+
+        b.emit(0xB8)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """CP C"""
+
+        b.emit(0xB9)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """CP D"""
+
+        b.emit(0xBA)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """CP E"""
+
+        b.emit(0xBB)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """CP H"""
+
+        b.emit(0xBC)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """CP L"""
+
+        b.emit(0xBD)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """CP (HL)"""
+
+        b.emit(0xBE)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """CP A"""
+
+        b.emit(0xBF)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """CP (IX+d)"""
+
+        b.emit(0xDD, 0xBE, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """CP (IY+d)"""
+
+        b.emit(0xFD, 0xBE, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """CP n8"""
+
+        b.emit(0xFE, value & 0xFF)
+
+
+class AND:
+    """AND 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """AND B"""
+
+        b.emit(0xA0)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """AND C"""
+
+        b.emit(0xA1)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """AND D"""
+
+        b.emit(0xA2)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """AND E"""
+
+        b.emit(0xA3)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """AND H"""
+
+        b.emit(0xA4)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """AND L"""
+
+        b.emit(0xA5)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """AND (HL)"""
+
+        b.emit(0xA6)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """AND A"""
+
+        b.emit(0xA7)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """AND (IX+d)"""
+
+        b.emit(0xDD, 0xA6, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """AND (IY+d)"""
+
+        b.emit(0xFD, 0xA6, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """AND n8"""
+
+        b.emit(0xE6, value & 0xFF)
+
+
+class OR:
+    """OR 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """OR B"""
+
+        b.emit(0xB0)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """OR C"""
+
+        b.emit(0xB1)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """OR D"""
+
+        b.emit(0xB2)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """OR E"""
+
+        b.emit(0xB3)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """OR H"""
+
+        b.emit(0xB4)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """OR L"""
+
+        b.emit(0xB5)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """OR (HL)"""
+
+        b.emit(0xB6)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """OR A"""
+
+        b.emit(0xB7)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """OR (IX+d)"""
+
+        b.emit(0xDD, 0xB6, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """OR (IY+d)"""
+
+        b.emit(0xFD, 0xB6, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """OR n8"""
+
+        b.emit(0xF6, value & 0xFF)
+
+
+class XOR:
+    """XOR 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """XOR B"""
+
+        b.emit(0xA8)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """XOR C"""
+
+        b.emit(0xA9)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """XOR D"""
+
+        b.emit(0xAA)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """XOR E"""
+
+        b.emit(0xAB)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """XOR H"""
+
+        b.emit(0xAC)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """XOR L"""
+
+        b.emit(0xAD)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """XOR (HL)"""
+
+        b.emit(0xAE)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """XOR A"""
+
+        b.emit(0xAF)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """XOR (IX+d)"""
+
+        b.emit(0xDD, 0xAE, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """XOR (IY+d)"""
+
+        b.emit(0xFD, 0xAE, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """XOR n8"""
+
+        b.emit(0xEE, value & 0xFF)
 
 
 # ---------------------------------------------------------------------------
@@ -808,17 +1440,17 @@ class DEC:
 
 
 # ---------------------------------------------------------------------------
-# データ配置ヘルパ: db / dw
+# データ配置ヘルパ: DB / DW
 # ---------------------------------------------------------------------------
 
-def db(b: Block, *values: int) -> None:
+def DB(b: Block, *values: int) -> None:
     """1バイト値を順に配置する。"""
 
     for v in values:
         b.emit(v & 0xFF)
 
 
-def dw(b: Block, *values: int) -> None:
+def DW(b: Block, *values: int) -> None:
     """16bit値(リトルエンディアン)を順に配置する。"""
 
     for v in values:
@@ -826,18 +1458,67 @@ def dw(b: Block, *values: int) -> None:
         hi = (v >> 8) & 0xFF
         b.emit(lo, hi)
 
+# ---------------------------------------------------------------------------
+# OUT 命令
+# ---------------------------------------------------------------------------
+
+
+def OUT(b: Block, port: int, a: int | None = None) -> None:
+    """
+    OUT OUT (n),A
+    Aが None の場合は A レジスタの値を指定しない。
+    """
+    if a is not None:
+        LD.A_n8(b, a & 0xFF)
+    b.emit(0xD3, port & 0xFF)
+
+
+class OUT_C:
+    """OUT 系命令。"""
+
+    _R_OPCODES = {
+        "B": 0x41,
+        "C": 0x49,
+        "D": 0x51,
+        "E": 0x59,
+        "H": 0x61,
+        "L": 0x69,
+        "A": 0x79,
+    }
+
+    @staticmethod
+    def r(b: Block, src: str) -> None:
+        """OUT (C),r"""
+
+        try:
+            opcode = OUT_C._R_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
+        b.emit(0xED, opcode)
+
 
 # ---------------------------------------------------------------------------
-# DEBUG 用フラグと簡易トラップ
+# misc
 # ---------------------------------------------------------------------------
 
-DEBUG: bool = True
+
+def NOP(b: Block, times: int = 1) -> None:
+    """NOP 命令を挿入する。"""
+    for _ in range(times):
+        b.emit(0x00)
 
 
-def debug_trap(b: Block) -> None:
-    """DEBUG が True のときだけデバッグ用命令を挿入する。"""
-
-    if not DEBUG:
-        return
-    # HALT
+def HALT(b: Block) -> None:
+    """HALT 命令を挿入する。"""
     b.emit(0x76)
+
+
+def DI(b: Block) -> None:
+    """DI (割り込み禁止) 命令を挿入する。"""
+    b.emit(0xF3)
+
+
+def EI(b: Block) -> None:
+    """EI (割り込み許可) 命令を挿入する。"""
+    b.emit(0xFB)
+
