@@ -66,16 +66,8 @@ from pathlib import Path
 from typing import List
 
 from mmsxxasmhelper.core import *
-from mmsxxasmhelper.msxutils import (
-    ldirvm_macro,
-    place_msx_rom_header_macro,
-    set_msx2_palette_default_macro,
-    set_screen_mode_macro,
-    set_screen_colors_macro,
-)
-from mmsxxasmhelper.utils import (
-    loop_infinite_macro, debug_trap, set_debug
-)
+from mmsxxasmhelper.msxutils import *
+from mmsxxasmhelper.utils import *
 
 ROM_SIZE = 0x8000      # 32KB
 ROM_BASE = 0x4000
@@ -238,13 +230,14 @@ def build_rom(packed_data: bytes) -> bytes:
 
     # ----- ここから 0x4010: 実際に実行されるコード -----
 
-    LD.HL_
+    # スタックポインタ退避
+    store_stack_pointer_macro(b)
 
     # SCREEN 2 に変更: LD A,2 / CALL 005Fh (CHGMOD)
     set_screen_mode_macro(b, 2)
 
     # 色: 前景=白 / 背景=黒 / 枠=黒
-    set_screen_colors_macro(b, 15, 15, 15, 2)
+    set_screen_colors_macro(b, 15, 0, 0, 2)
 
     debug_trap(b)
 
@@ -254,13 +247,15 @@ def build_rom(packed_data: bytes) -> bytes:
     # ネームテーブル初期化
     INIT_NAME_TABLE_CALL.call(b)
 
-
     # 1枚目の絵を出す
     # PACKED_DATA の先頭 (1 枚目) を描画
     DRAW_PAGE_CALL.call(b)
 
     # 以降は無限ループ
     loop_infinite_macro(b)
+
+    # スタックポインタ復帰（必要なら）
+    restore_stack_pointer_macro(b)
 
     # ----- サブルーチンの定義 -----
     INIT_NAME_TABLE_CALL.define(b)

@@ -13,6 +13,8 @@ from mmsxxasmhelper.utils import *
 
 __all__ = [
     "place_msx_rom_header_macro",
+    "store_stack_pointer_macro",
+    "restore_stack_pointer_macro",
     "get_msxver_macro",
     "set_msx2_palette_default_macro",
     "set_screen_mode_macro",
@@ -119,12 +121,26 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_
     ]
     DB(b, *header)
 
-def save_stack_pointer_macro(b: Block) -> None:
-    """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。
-    """
-    LD.HL_n16(b, 0)
-    # TODO : 実装
 
+def store_stack_pointer_macro(b: Block) -> None:
+    """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。"""
+
+    # 元のスタックポインタ(SP)の値を RAM に退避する
+    LD.HL_n16(b, 0)
+    ADD.HL_SP(b)  # HL = SP
+    LD.mn16_HL(b, SP_TEMP_RAM)  # SP_TEMP_RAM にSP保存
+
+    # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+2)へ設定
+    LD.HL_n16(b, SP_TEMP_RAM)
+    INC.HL(b)
+    INC.HL(b)
+    LD.SP_HL(b)
+
+
+def restore_stack_pointer_macro(b: Block) -> None:
+    """一時 RAM 領域に保存したスタックポインタ(SP)の値を復元するマクロ。"""
+    LD.HL_mn16(b, SP_TEMP_RAM)
+    LD.SP_HL(b)
 
 
 def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
@@ -221,9 +237,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 @with_register_preserve
 def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
     """CHGMOD を呼び出して画面モードを設定する。
-
     レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
-
     preserve_regs: 実行前後で PUSH/POP するレジスタ名のシーケンス。
         省略時は退避を行わない。
     """
