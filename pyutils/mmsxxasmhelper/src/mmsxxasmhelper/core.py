@@ -63,7 +63,7 @@ __all__ = [
     "DB", "DW",
     "LD", "ADD", "CP", "INC", "DEC",
     "OUT", "OUT_C",
-    "NOP", "HALT",
+    "NOP", "HALT", "DI", "EI",
 ]
 
 from dataclasses import dataclass
@@ -1257,4 +1257,14 @@ def NOP(b: Block, times: int = 1) -> None:
 def HALT(b: Block) -> None:
     """HALT 命令を挿入する。"""
     b.emit(0x76)
+
+
+def DI(b: Block) -> None:
+    """DI (割り込み禁止) 命令を挿入する。"""
+    b.emit(0xF3)
+
+
+def EI(b: Block) -> None:
+    """EI (割り込み許可) 命令を挿入する。"""
+    b.emit(0xFB)
 
