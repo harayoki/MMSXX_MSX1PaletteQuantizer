@@ -369,6 +369,151 @@ ParamsSetup (
         MSX1PQ_PARAM_USE_PALETTE_COLOR
     );
 
+    // Palette control topic
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC(
+        "MSX1 Palette Control",
+        MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*1: Black",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_1
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*2: Medium Green",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_2
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*3: Light Green",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_3
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*4: Dark Blue",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_4
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*5: Light Blue",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_5
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*6: Dark Red",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_6
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*7: Cyan",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_7
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*8: Medium Red",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_8
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*9: Light Red",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_9
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*10: Dark Yellow",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_10
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*11: Light Yellow",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_11
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*12: Dark Green",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_12
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*13: Magenta",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_13
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*14: Gray",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_14
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*15: White",
+        "Enable this palette entry",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_15
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
@@ -672,6 +817,14 @@ Render (
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+        if (flag_index < MSX1PQ_PARAM_NUM_PARAMS) {
+            qi.palette_enabled[static_cast<std::size_t>(i)] =
+                (params[flag_index]->u.bd.value != 0);
+        }
+    }
 
     // 画像サイズ（extent_hint ベース）
     const A_long width  = output->extent_hint.right  - output->extent_hint.left;
@@ -1019,6 +1172,16 @@ SmartRender(
                 param) );
         qi.use_dark_dither = (param.u.bd.value != 0);
         ERR( CheckinParam(in_dataP, param) );
+
+        for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+            const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+            ERR( CheckoutParam(
+                    in_dataP,
+                    flag_index,
+                    param) );
+            qi.palette_enabled[static_cast<std::size_t>(i)] = (param.u.bd.value != 0);
+            ERR( CheckinParam(in_dataP, param) );
+        }
 
         // --------------------------------------------------------------------
         // スマートレンダー用 ROI 揃え（ディザ使用時のみ 8ドット境界にスナップ）

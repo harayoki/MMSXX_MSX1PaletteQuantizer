@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -31,6 +32,11 @@ enum MSX1PQ_ColorSystem {
 };
 
 struct QuantInfo {
+    QuantInfo()
+    {
+        palette_enabled.fill(true);
+    }
+
     bool  use_dither{};
     bool  use_palette_color{};
     int   use_8dot2col{};
@@ -48,6 +54,7 @@ struct QuantInfo {
     const std::uint8_t* pre_lut{nullptr};
     const float* pre_lut3d{nullptr};
     int pre_lut3d_size{0};
+    std::array<bool, MSX1PQ::kNumBasicColors> palette_enabled;
 };
 
 bool load_pre_lut(const std::string& path,
@@ -75,14 +82,17 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &b8);
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        int num_colors);
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
 int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
-                        int num_colors);
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
 int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                      float w_h, float w_s, float w_b);
+                      float w_h, float w_s, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
 const MSX1PQ::QuantColor* get_basic_palette(int color_system);
 
