@@ -129,6 +129,39 @@ float clamp01f(float v)
     return v;
 }
 
+static float clamp_sharp_amount(float v)
+{
+    if (v < 0.0f) return 0.0f;
+    if (v > 10.0f) return 10.0f;
+    return v;
+}
+
+void apply_sharpness_rgb(float amount,
+                         std::uint8_t blurred_r,
+                         std::uint8_t blurred_g,
+                         std::uint8_t blurred_b,
+                         std::uint8_t &r8,
+                         std::uint8_t &g8,
+                         std::uint8_t &b8)
+{
+    amount = clamp_sharp_amount(amount);
+    if (amount <= 0.0f) {
+        return;
+    }
+
+    // Lumetri 相当の単純なアンシャープマスクを全画素に適用する
+    // （黒限定の特殊処理は行わない）
+    auto sharpen = [amount](std::uint8_t src, std::uint8_t blurred) {
+        float delta = static_cast<float>(src) - static_cast<float>(blurred);
+        float value = static_cast<float>(src) + delta * (1.5f * amount);
+        return clamp_value<int>(static_cast<int>(std::round(value)), 0, 255);
+    };
+
+    r8 = static_cast<std::uint8_t>(sharpen(r8, blurred_r));
+    g8 = static_cast<std::uint8_t>(sharpen(g8, blurred_g));
+    b8 = static_cast<std::uint8_t>(sharpen(b8, blurred_b));
+}
+
 bool load_pre_lut(const std::string& path,
                   std::vector<std::uint8_t>& out1d,
                   std::vector<float>& out3d,
