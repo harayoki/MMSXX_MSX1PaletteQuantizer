@@ -42,7 +42,7 @@ struct QuantInfo {
     int   pre_posterize{8};
     float pre_sat{};
     float pre_gamma{};
-    float pre_highlight{};
+    float pre_contrast{};
     float pre_hue{};
     float pre_sharpness{};
     bool  use_dark_dither{};
