@@ -131,10 +131,9 @@ def store_stack_pointer_macro(b: Block) -> None:
     ADD.HL_SP(b)  # HL = SP
     LD.mn16_HL(b, SP_TEMP_RAM)  # SP_TEMP_RAM にSP保存
 
-    # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+2)へ設定
-    LD.HL_n16(b, SP_TEMP_RAM)
-    INC.HL(b)
-    INC.HL(b)
+    # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+4)へ設定
+    # (PUSH 時のデクリメントで退避した SP の領域を踏まないように 4 バイト空ける)
+    LD.HL_n16(b, SP_TEMP_RAM + 4)
     LD.SP_HL(b)
 
 
