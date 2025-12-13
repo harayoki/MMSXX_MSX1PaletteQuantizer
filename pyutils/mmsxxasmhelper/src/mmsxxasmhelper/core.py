@@ -62,7 +62,7 @@ __all__ = [
     "CALL", "Func",
     "DB", "DW",
     "LD", "INC", "DEC",
-    "HALT",
+    "HALT", "OUT",
 ]
 
 from dataclasses import dataclass
@@ -956,6 +956,41 @@ class DEC:
     def mIYd(b: Block, disp: int) -> None:
         """DEC (IY+d)"""
         b.emit(0xFD, 0x35, disp & 0xFF)
+
+
+# ---------------------------------------------------------------------------
+# OUT 命令
+# ---------------------------------------------------------------------------
+
+
+class OUT:
+    """OUT 系命令。"""
+
+    _C_R_OPCODES = {
+        "B": 0x41,
+        "C": 0x49,
+        "D": 0x51,
+        "E": 0x59,
+        "H": 0x61,
+        "L": 0x69,
+        "A": 0x79,
+    }
+
+    @staticmethod
+    def C_r(b: Block, src: str) -> None:
+        """OUT (C),r"""
+
+        try:
+            opcode = OUT._C_R_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
+        b.emit(0xED, opcode)
+
+    @staticmethod
+    def n_A(b: Block, port: int) -> None:
+        """OUT (n),A"""
+
+        b.emit(0xD3, port & 0xFF)
 
 
 # ---------------------------------------------------------------------------
