@@ -1,0 +1,196 @@
+import binascii
+import os
+import shutil
+import struct
+import subprocess
+import zlib
+from pathlib import Path
+import unittest
+
+
+def _make_sample_png_bytes() -> bytes:
+    width, height = 256, 192
+    # Colorful pattern for visual confirmation
+    pixels = []
+    for y in range(height):
+        row = bytearray()
+        for x in range(width):
+            r = (x * 3) % 256
+            g = (y * 5) % 256
+            b = ((x + y) * 7) % 256
+            row.extend([r, g, b, 255])
+        pixels.append(bytes(row))
+
+    raw_data = b"".join(b"\x00" + row for row in pixels)  # Add filter byte per row
+
+    def chunk(chunk_type: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + chunk_type
+            + data
+            + struct.pack(">I", binascii.crc32(chunk_type + data) & 0xFFFFFFFF)
+        )
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    idat = chunk(b"IDAT", zlib.compress(raw_data))
+    iend = chunk(b"IEND", b"")
+    return signature + ihdr + idat + iend
+
+
+@unittest.skipUnless(os.name == "nt", "Windows-only CLI tests")
+class Msx1pqCliTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.repo_root = Path(__file__).resolve().parents[1]
+        cls.cli_path = cls.repo_root / "platform" / "Win" / "x64" / "msx1pq_cli.exe"
+        cls.tests_dir = Path(__file__).parent
+        cls.output_root = cls.tests_dir / "msx1pq_outputs"
+
+        if not cls.cli_path.exists():
+            raise FileNotFoundError(
+                f"CLI binary not found at {cls.cli_path}. Ensure the Windows build artifact is present before running tests."
+            )
+
+        # Clean previous outputs before the new test run starts.
+        if cls.output_root.exists():
+            shutil.rmtree(cls.output_root)
+        cls.output_root.mkdir(parents=True, exist_ok=True)
+
+        cls.sample_png_bytes = _make_sample_png_bytes()
+        cls.input_image = cls._locate_or_create_input()
+
+    @classmethod
+    def _locate_or_create_input(cls) -> Path:
+        candidate_pngs = sorted(
+            p for p in cls.tests_dir.glob("*.png") if p.name.lower() != "msx1pq_autogen_input.png"
+        )
+        if candidate_pngs:
+            return candidate_pngs[0]
+
+        png_path = cls.tests_dir / "msx1pq_autogen_input.png"
+        png_path.write_bytes(cls.sample_png_bytes)
+        return png_path
+
+    def _write_sample_png(self, directory: Path, name: str) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        png_path = directory / name
+        png_path.write_bytes(self.sample_png_bytes)
+        return png_path
+
+    def _run_cli(self, input_path: Path, output_dir: Path, extra_args: list[str]):
+        cmd = [str(self.cli_path), "--input", str(input_path), "--output", str(output_dir)] + extra_args
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+
+    def test_basic_png_output(self):
+        output_dir = self.output_root / "basic_force"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_prefix = "basic_force_"
+        result = self._run_cli(
+            self.input_image,
+            output_dir,
+            ["--out-prefix", output_prefix, "--force"],
+        )
+
+        expected_output = output_dir / f"{output_prefix}{self.input_image.name}"
+        self.assertTrue(
+            expected_output.exists(),
+            f"Output file not created. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
+    def test_prefix_suffix_and_adjustments(self):
+        output_dir = self.output_root / "prefix_suffix_adjustments"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        prefix = "msx2_nodither_"
+        suffix = "_rgb_w0.9-0.4-0.6"
+        result = self._run_cli(
+            self.input_image,
+            output_dir,
+            [
+                "--out-prefix",
+                prefix,
+                "--out-suffix",
+                suffix,
+                "--color-system",
+                "msx2",
+                "--no-dither",
+                "--no-dark-dither",
+                "--no-preprocess",
+                "--8dot",
+                "fast",
+                "--distance",
+                "rgb",
+                "--weight-h",
+                "0.9",
+                "--weight-s",
+                "0.4",
+                "--weight-b",
+                "0.6",
+                "--pre-posterize",
+                "8",
+                "--pre-sat",
+                "0.5",
+                "--pre-gamma",
+                "0.8",
+                "--pre-contrast",
+                "1.2",
+                "--pre-hue",
+                "15",
+                "--disable-colors",
+                "2",
+                "4-5",
+                "--force",
+            ],
+        )
+
+        expected_output = output_dir / f"{prefix}{self.input_image.stem}{suffix}{self.input_image.suffix}"
+        self.assertTrue(
+            expected_output.exists(),
+            f"Prefixed/suffixed output missing. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
+    def test_sc2_output_and_palette_options(self):
+        output_dir = self.output_root / "sc2_palette92_best_attr"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        input_dir = self.output_root / "sc2_inputs"
+        first_input = self._write_sample_png(input_dir, "first_input.png")
+        second_input = self._write_sample_png(input_dir, "second_input.png")
+
+        prefix = "sc2_bestattr_palette92_"
+        result = self._run_cli(
+            input_dir,
+            output_dir,
+            [
+                "--out-prefix",
+                prefix,
+                "--out-sc2",
+                "--8dot",
+                "best-attr",
+                "--distance",
+                "hsb",
+                "--palette92",
+                "--dither",
+                "--dark-dither",
+                "--weight-h",
+                "0.7",
+                "--weight-s",
+                "0.3",
+                "--weight-b",
+                "0.9",
+                "--force",
+            ],
+        )
+
+        expected_first = output_dir / f"{prefix}{first_input.stem}.sc2"
+        expected_second = output_dir / f"{prefix}{second_input.stem}.sc2"
+        self.assertTrue(
+            expected_first.exists() and expected_second.exists(),
+            f"SC2 outputs missing. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
