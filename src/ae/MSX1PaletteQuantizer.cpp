@@ -818,6 +818,14 @@ Render (
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+        if (flag_index < MSX1PQ_PARAM_NUM_PARAMS) {
+            qi.palette_enabled[static_cast<std::size_t>(i)] =
+                (params[flag_index]->u.bd.value != 0);
+        }
+    }
+
     // 画像サイズ（extent_hint ベース）
     const A_long width  = output->extent_hint.right  - output->extent_hint.left;
     const A_long height = output->extent_hint.bottom - output->extent_hint.top;
@@ -1164,6 +1172,16 @@ SmartRender(
                 param) );
         qi.use_dark_dither = (param.u.bd.value != 0);
         ERR( CheckinParam(in_dataP, param) );
+
+        for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+            const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+            ERR( CheckoutParam(
+                    in_dataP,
+                    flag_index,
+                    param) );
+            qi.palette_enabled[static_cast<std::size_t>(i)] = (param.u.bd.value != 0);
+            ERR( CheckinParam(in_dataP, param) );
+        }
 
         // --------------------------------------------------------------------
         // スマートレンダー用 ROI 揃え（ディザ使用時のみ 8ドット境界にスナップ）

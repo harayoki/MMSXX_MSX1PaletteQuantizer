@@ -341,8 +341,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
 
     const int enabled_colors = static_cast<int>(std::count(
         opts.palette_enabled.begin(), opts.palette_enabled.end(), true));
-    if (enabled_colors < 2) {
-        throw std::runtime_error("At least two palette colors must remain enabled");
+    if (enabled_colors < 1) {
+        throw std::runtime_error("At least one palette color must remain enabled");
     }
 
     if (opts.out_sc2 &&
@@ -395,6 +395,13 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
     qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
     qi.pre_lut3d_size  = opts.pre_lut3d_size;
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const std::size_t src_idx = static_cast<std::size_t>(i + 1);
+        if (src_idx < opts.palette_enabled.size()) {
+            qi.palette_enabled[static_cast<std::size_t>(i)] = opts.palette_enabled[src_idx];
+        }
+    }
 
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
