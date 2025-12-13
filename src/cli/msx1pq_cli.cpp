@@ -36,7 +36,7 @@ struct CliOptions {
     bool use_dark_dither{true};
     bool use_preprocess{true};
     int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
-    bool use_hsv{true};
+    bool use_hsv{false};
     float weight_h{1.0f};
     float weight_s{0.5f};
     float weight_b{0.75f};
@@ -120,7 +120,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
                   << "  --no-preprocess             前処理をスキップ\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
-                  << "  --distance <rgb|hsv>         (デフォルト: hsv)\n"
+                  << "  --distance <rgb|hsv>         (デフォルト: rgb)\n"
                   << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
                   << "  --weight-rgb-r <0-1> --weight-rgb-g <0-1> --weight-rgb-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
@@ -154,7 +154,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --no-preprocess             Skip preprocessing adjustments\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
-              << "  --distance <rgb|hsv>         (default: hsv)\n"
+              << "  --distance <rgb|hsv>         (default: rgb)\n"
               << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
               << "  --weight-rgb-r <0-1> --weight-rgb-g <0-1> --weight-rgb-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"

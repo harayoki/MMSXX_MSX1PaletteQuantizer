@@ -242,7 +242,7 @@ ParamsSetup (
     PF_ADD_POPUP(
         "Distance mode",      // ラベル
         2,                    // 項目数
-        MSX1PQ_DIST_MODE_HSV, // デフォルト値 (2 = HSV)
+        MSX1PQ_DIST_MODE_RGB, // デフォルト値 (1 = RGB)
         "RGB|HSV",            // 順番に 1:RGB, 2:HSV
         MSX1PQ_PARAM_DISTANCE_MODE
     );
@@ -277,7 +277,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "B weight",
+        "V weight",
         0,
         1,
         0,
@@ -319,7 +319,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "B weight (RGB)",
+        "B weight",
         0,
         1,
         0,
@@ -1450,7 +1450,7 @@ UpdateParameterUI(
                                  MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
 
-    // --- B weight ---
+    // --- V weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_B];
     if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
@@ -1481,7 +1481,7 @@ UpdateParameterUI(
                                  MSX1PQ_PARAM_WEIGHT_G,
                                  &tmp);
 
-    // --- B weight (RGB) ---
+    // --- B weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_B_RGB];
     if (enable_rgb)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
