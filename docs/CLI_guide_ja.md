@@ -14,7 +14,7 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 ビルド後、実行ファイルは `platform\\Win\\x64\\msx1pq_cli.exe` に生成されます。
 
-### Linux（未検証）
+### Linux（コンテナ向け、検証は限定的）
 
 Ubuntu 系の場合、まずビルドツールをインストールします。
 
@@ -48,7 +48,6 @@ make -C platform/Linux
 | `--output, -o <ディレクトリ>` | 変換結果を保存するディレクトリを指定。 |
 | `--out-prefix <文字列>` | 出力ファイル名の先頭に付与する接頭辞。 |
 | `--out-suffix <文字列>` | 出力ファイル名の末尾（拡張子の前）に付与する接尾辞。 |
-| `--out-sc5` | PNG ではなく SCREEN5 の `.sc5` バイナリで書き出し。 |
 | `--out-sc2` | SCREEN2 の `.sc2` バイナリで書き出し（`--8dot` が `none` 以外であることが必要）。 |
 | `--color-system <msx1\|msx2>` | MSX1（15色）か MSX2 パレットを選択。既定: `msx1`。 |
 | `--dither` / `--no-dither` | ディザリングの有無。既定: 有効。 |
@@ -57,8 +56,9 @@ make -C platform/Linux
 | `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | 8ドット2色アルゴリズムを選択。既定: `best`。 |
 | `--distance <rgb|hsb>` | パレット選択時の色距離計算方法。既定: `hsb`。 |
 | `--weight-h`, `--weight-s`, `--weight-b` | `hsb` 距離使用時の色相・彩度・明度の重み（0〜1）。 |
+| `--disable-colors <index|range>...` | 使わないパレット番号（1〜15）を無効化。範囲指定（例：`3-5`）も可。最低1色は有効のままにしてください。 |
 | `--pre-posterize <0-255>` | 前処理でポスタリゼーションを適用（既定: `16`。`<=1` で無効）。 |
-| `--pre-sat <0-10>` | 量子化前に彩度を上げる。既定: `1.0`。 |
+| `--pre-sat <0-10>` | 量子化前に彩度を上げる。既定: `0.0`。 |
 | `--pre-gamma <0-10>` | 量子化前にガンマを適用する。既定: `1.0`。 |
 | `--pre-contrast <0-10>` | 量子化前にコントラストを調整する。既定: `1.0`。 |
 | `--pre-hue <-180-180>` | 量子化前に色相を回転。既定: `0.0`。 |
@@ -70,9 +70,8 @@ make -C platform/Linux
 | `--help-ja`, `--help-en` | 日本語または英語のヘルプを強制表示。 |
 
 補足:
-- SCREEN5（`--out-sc5`）出力は廃止予定です。
-- `--out-sc2` と `--out-sc5` は同時に指定できません。指定した場合、出力拡張子はそれぞれ `.sc2` / `.sc5` に変わります。
 - SCREEN2 での出力には 8dot 2色処理が必須です（`--8dot none` 以外の指定が必要）。
+- `--disable-colors` を使う場合は、最低1色は有効のまま残してください。
 
 ### 使用例
 
