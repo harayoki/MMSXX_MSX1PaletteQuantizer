@@ -542,6 +542,25 @@ class LD:
         opcode = 0x40 | (d << 3) | s
         b.emit(opcode)
 
+
+# LD の 8bit レジスタ間命令 (LD r,r' / LD r,(HL) / LD (HL),r)
+# techdocs/z80_assembly_byte_map.md を参考に全パターンを補完する。
+def _make_ld_rr(dst: str, src: str) -> staticmethod:
+    def _impl(b: Block) -> None:
+        LD.rr(b, dst, src)
+
+    _impl.__name__ = f"{dst}_{src}"
+    _impl.__doc__ = f"LD {dst},{src}"
+    return staticmethod(_impl)
+
+
+for _dst in ("B", "C", "D", "E", "H", "L", "mHL", "A"):
+    for _src in ("B", "C", "D", "E", "H", "L", "mHL", "A"):
+        # (HL),(HL) = 0x76 は HALT なので除外する
+        if _dst == "mHL" and _src == "mHL":
+            continue
+        setattr(LD, f"{_dst}_{_src}", _make_ld_rr(_dst, _src))
+
     # ---- 8bit 即値ロード ----
 
     @staticmethod
@@ -1036,6 +1055,27 @@ class CP:
 class AND:
     """AND 系命令。"""
 
+    _REG_OPCODE = {
+        "B": 0xA0,
+        "C": 0xA1,
+        "D": 0xA2,
+        "E": 0xA3,
+        "H": 0xA4,
+        "L": 0xA5,
+        "mHL": 0xA6,
+        "A": 0xA7,
+    }
+
+    @staticmethod
+    def rr(b: Block, src: str) -> None:
+        """AND A,src (src = レジスタ/(HL))"""
+
+        try:
+            opcode = AND._REG_OPCODE[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid AND operand: {src}") from exc
+        b.emit(opcode)
+
     @staticmethod
     def B(b: Block) -> None:
         """AND B"""
@@ -1106,6 +1146,27 @@ class AND:
 class OR:
     """OR 系命令。"""
 
+    _REG_OPCODE = {
+        "B": 0xB0,
+        "C": 0xB1,
+        "D": 0xB2,
+        "E": 0xB3,
+        "H": 0xB4,
+        "L": 0xB5,
+        "mHL": 0xB6,
+        "A": 0xB7,
+    }
+
+    @staticmethod
+    def rr(b: Block, src: str) -> None:
+        """OR A,src (src = レジスタ/(HL))"""
+
+        try:
+            opcode = OR._REG_OPCODE[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid OR operand: {src}") from exc
+        b.emit(opcode)
+
     @staticmethod
     def B(b: Block) -> None:
         """OR B"""
@@ -1175,6 +1236,27 @@ class OR:
 
 class XOR:
     """XOR 系命令。"""
+
+    _REG_OPCODE = {
+        "B": 0xA8,
+        "C": 0xA9,
+        "D": 0xAA,
+        "E": 0xAB,
+        "H": 0xAC,
+        "L": 0xAD,
+        "mHL": 0xAE,
+        "A": 0xAF,
+    }
+
+    @staticmethod
+    def rr(b: Block, src: str) -> None:
+        """XOR A,src (src = レジスタ/(HL))"""
+
+        try:
+            opcode = XOR._REG_OPCODE[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid XOR operand: {src}") from exc
+        b.emit(opcode)
 
     @staticmethod
     def B(b: Block) -> None:
