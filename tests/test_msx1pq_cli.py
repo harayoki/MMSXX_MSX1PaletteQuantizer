@@ -1,5 +1,6 @@
 import binascii
 import os
+import random
 import shutil
 import struct
 import subprocess
@@ -190,6 +191,58 @@ class Msx1pqCliTestCase(unittest.TestCase):
             expected_first.exists() and expected_second.exists(),
             f"SC2 outputs missing. stdout={result.stdout}, stderr={result.stderr}",
         )
+
+    def test_randomized_parameter_runs(self):
+        rng = random.Random(98765)
+        output_dir = self.output_root / "randomized_runs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        distance_modes = ["rgb", "hsb"]
+        color_systems = ["msx1", "msx2"]
+
+        for idx in range(4):
+            prefix = f"rand_{idx}_"
+            args: list[str] = ["--out-prefix", prefix]
+
+            color_system = rng.choice(color_systems)
+            args.extend(["--color-system", color_system])
+
+            args.append("--8dot")
+            args.append(rng.choice(["fast", "best-attr"]))
+
+            distance_mode = rng.choice(distance_modes)
+            args.extend(["--distance", distance_mode])
+
+            if rng.choice([True, False]):
+                args.append("--no-dither")
+            else:
+                args.append("--dither")
+
+            if rng.choice([True, False]):
+                args.append("--no-dark-dither")
+            else:
+                args.append("--dark-dither")
+
+            weight_h = f"{rng.uniform(0.4, 1.0):.2f}"
+            weight_s = f"{rng.uniform(0.2, 0.8):.2f}"
+            weight_b = f"{rng.uniform(0.5, 1.0):.2f}"
+            args.extend(["--weight-h", weight_h, "--weight-s", weight_s, "--weight-b", weight_b])
+
+            if rng.choice([True, False]):
+                args.extend(["--pre-posterize", str(rng.choice([6, 8, 10]))])
+
+            args.append("--force")
+
+            result = self._run_cli(self.input_image, output_dir, args)
+
+            expected_output = output_dir / f"{prefix}{self.input_image.name}"
+            self.assertTrue(
+                expected_output.exists(),
+                (
+                    "Randomized output missing. "
+                    f"stdout={result.stdout}, stderr={result.stderr}, args={args}"
+                ),
+            )
 
 
 if __name__ == "__main__":
