@@ -61,7 +61,7 @@ __all__ = [
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
     "CALL_label", "CALL", "Func",
     "DB", "DW",
-    "LD", "ADD", "CP", "INC", "DEC",
+    "LD", "ADD", "CP", "AND", "OR", "XOR", "INC", "DEC",
     "OUT", "OUT_C",
     "NOP", "HALT", "DI", "EI",
 ]
@@ -950,6 +950,18 @@ class ADD:
 
         b.emit(0xFD, 0x19)
 
+    @staticmethod
+    def IY_IY(b: Block) -> None:
+        """ADD IY,IY"""
+
+        b.emit(0xFD, 0x29)
+
+    @staticmethod
+    def IY_SP(b: Block) -> None:
+        """ADD IY,SP"""
+
+        b.emit(0xFD, 0x39)
+
 
 class CP:
     """CP 系命令。"""
@@ -1020,17 +1032,215 @@ class CP:
 
         b.emit(0xFE, value & 0xFF)
 
-    @staticmethod
-    def IY_IY(b: Block) -> None:
-        """ADD IY,IY"""
 
-        b.emit(0xFD, 0x29)
+class AND:
+    """AND 系命令。"""
 
     @staticmethod
-    def IY_SP(b: Block) -> None:
-        """ADD IY,SP"""
+    def B(b: Block) -> None:
+        """AND B"""
 
-        b.emit(0xFD, 0x39)
+        b.emit(0xA0)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """AND C"""
+
+        b.emit(0xA1)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """AND D"""
+
+        b.emit(0xA2)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """AND E"""
+
+        b.emit(0xA3)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """AND H"""
+
+        b.emit(0xA4)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """AND L"""
+
+        b.emit(0xA5)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """AND (HL)"""
+
+        b.emit(0xA6)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """AND A"""
+
+        b.emit(0xA7)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """AND (IX+d)"""
+
+        b.emit(0xDD, 0xA6, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """AND (IY+d)"""
+
+        b.emit(0xFD, 0xA6, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """AND n8"""
+
+        b.emit(0xE6, value & 0xFF)
+
+
+class OR:
+    """OR 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """OR B"""
+
+        b.emit(0xB0)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """OR C"""
+
+        b.emit(0xB1)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """OR D"""
+
+        b.emit(0xB2)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """OR E"""
+
+        b.emit(0xB3)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """OR H"""
+
+        b.emit(0xB4)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """OR L"""
+
+        b.emit(0xB5)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """OR (HL)"""
+
+        b.emit(0xB6)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """OR A"""
+
+        b.emit(0xB7)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """OR (IX+d)"""
+
+        b.emit(0xDD, 0xB6, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """OR (IY+d)"""
+
+        b.emit(0xFD, 0xB6, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """OR n8"""
+
+        b.emit(0xF6, value & 0xFF)
+
+
+class XOR:
+    """XOR 系命令。"""
+
+    @staticmethod
+    def B(b: Block) -> None:
+        """XOR B"""
+
+        b.emit(0xA8)
+
+    @staticmethod
+    def C(b: Block) -> None:
+        """XOR C"""
+
+        b.emit(0xA9)
+
+    @staticmethod
+    def D(b: Block) -> None:
+        """XOR D"""
+
+        b.emit(0xAA)
+
+    @staticmethod
+    def E(b: Block) -> None:
+        """XOR E"""
+
+        b.emit(0xAB)
+
+    @staticmethod
+    def H(b: Block) -> None:
+        """XOR H"""
+
+        b.emit(0xAC)
+
+    @staticmethod
+    def L(b: Block) -> None:
+        """XOR L"""
+
+        b.emit(0xAD)
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        """XOR (HL)"""
+
+        b.emit(0xAE)
+
+    @staticmethod
+    def A(b: Block) -> None:
+        """XOR A"""
+
+        b.emit(0xAF)
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """XOR (IX+d)"""
+
+        b.emit(0xDD, 0xAE, disp & 0xFF)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """XOR (IY+d)"""
+
+        b.emit(0xFD, 0xAE, disp & 0xFF)
+
+    @staticmethod
+    def n8(b: Block, value: int) -> None:
+        """XOR n8"""
+
+        b.emit(0xEE, value & 0xFF)
 
 
 # ---------------------------------------------------------------------------
