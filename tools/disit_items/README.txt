@@ -25,6 +25,14 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_
 
 バッチファイル内の各行は直接コマンドを実行する際の参考としても利用できます。
 
+## basic sc2/sc5 viewer
+
+`basic_sc2_viewer.exe` は 複数の画像生データファイルとBASIC製のビューアーを収めたdskイメージを生成するツールです。
+msx1pq_cli.exe が書き出したsc2/sc5ファイルを引数に渡すと、MSXエミュレーター等で実行できるdskイメージを生成します。
+実際の2DDディスクに書き込めば実機でも実行可能と思われますが、動作確認はしていません。
+なお、SC5対応は廃止予定で、今後はSC4対応に変更予定です。
+また、将来的に入力ファイルとしてsc2の代わりにPNG画像を直接受け入れられるようになる予定です。
+使い方は`basic_sc2_viewer.exe -h` でヘルプを参照してください。
 
 # ドキュメント
 詳しくは以下のURLを確認してください。
@@ -53,7 +61,14 @@ to an `out` folder next to the input, with numbered prefixes to distinguish each
 
 Each line in the batch file can also serve as a reference if you want to run the commands directly.
 
+## basic sc2 viewer
 
+`basic_sc2_viewer.exe` is a tool that generates a DSK image containing multiple raw image data files and a BASIC viewer.
+By passing the `.sc2`/`.sc5` files output by `msx1pq_cli.exe` as arguments, it creates a DSK image that can be executed on MSX emulators.
+SC5 support is slated for deprecation, with a switch to planned SC4 support.
+There are also plans to allow passing PNG images directly as inputs instead of only `.sc2` files.
+It is assumed that writing the image to an actual 2DD disk will allow it to run on real hardware, but this has not been verified.
+For usage, refer to the help by running `basic_sc2_viewer.exe -h`.
 # Documentation
 For more details, see the repository below.
 https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer

@@ -7,6 +7,7 @@ for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
 set "DIST_DIR=%REPO_ROOT%\dist"
 set "SOURCE_DIR=%REPO_ROOT%\platform\Win\x64"
 set "EXTRA_DIR=%SCRIPT_DIR%disit_items"
+set "BASIC_SC2_VIEWER=%REPO_ROOT%\pyutils\basic_sc2_viewer\dist\basic_sc2_viewer.exe"
 
 if not exist "%DIST_DIR%" (
     echo Creating dist directory: %DIST_DIR%
@@ -24,6 +25,13 @@ for /r "%SOURCE_DIR%" %%I in (*.aex *.exe) do (
 )
 if "!COPIED_ANY!"=="0" (
     echo    (no .aex or .exe files found under x64)
+)
+
+echo Copying Basic SC2 Viewer from %BASIC_SC2_VIEWER% ...
+if exist "%BASIC_SC2_VIEWER%" (
+    copy /Y "%BASIC_SC2_VIEWER%" "%DIST_DIR%" >nul
+) else (
+    echo Basic SC2 Viewer not found: %BASIC_SC2_VIEWER%
 )
 
 if exist "%EXTRA_DIR%" (
