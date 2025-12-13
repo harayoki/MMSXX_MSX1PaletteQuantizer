@@ -379,7 +379,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*1: Black",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_1
@@ -388,7 +388,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*2: Medium Green",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_2
@@ -397,7 +397,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*3: Light Green",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_3
@@ -406,7 +406,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*4: Dark Blue",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_4
@@ -415,7 +415,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*5: Light Blue",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_5
@@ -424,7 +424,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*6: Dark Red",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_6
@@ -433,7 +433,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*7: Cyan",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_7
@@ -442,7 +442,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*8: Medium Red",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_8
@@ -451,7 +451,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*9: Light Red",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_9
@@ -460,7 +460,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*10: Dark Yellow",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_10
@@ -469,7 +469,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*11: Light Yellow",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_11
@@ -478,7 +478,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*12: Dark Green",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_12
@@ -487,7 +487,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*13: Magenta",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_13
@@ -496,7 +496,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*14: Gray",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_14
@@ -505,7 +505,7 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*15: White",
-        "Disable this palette entry",
+        "Enable this palette entry",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_15
