@@ -61,7 +61,7 @@ __all__ = [
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
     "CALL_label", "CALL", "Func",
     "DB", "DW",
-    "LD", "INC", "DEC",
+    "LD", "ADD", "INC", "DEC",
     "OUT", "OUT_C",
     "NOP", "HALT",
 ]
@@ -814,6 +814,109 @@ class LD:
         LD (IY+d),n8
         """
         b.emit(0xFD, 0x36, disp & 0xFF, value & 0xFF)
+
+
+# ---------------------------------------------------------------------------
+# ADD 命令
+# ---------------------------------------------------------------------------
+
+
+class ADD:
+    """ADD 系命令。"""
+
+    _A_R_OPCODES = {
+        "B": 0x80,
+        "C": 0x81,
+        "D": 0x82,
+        "E": 0x83,
+        "H": 0x84,
+        "L": 0x85,
+        "mHL": 0x86,  # (HL)
+        "A": 0x87,
+    }
+
+    _HL_SS_OPCODES = {
+        "BC": 0x09,
+        "DE": 0x19,
+        "HL": 0x29,
+        "SP": 0x39,
+    }
+
+    _IX_PP_OPCODES = {
+        "BC": (0xDD, 0x09),
+        "DE": (0xDD, 0x19),
+        "IX": (0xDD, 0x29),
+        "SP": (0xDD, 0x39),
+    }
+
+    _IY_PP_OPCODES = {
+        "BC": (0xFD, 0x09),
+        "DE": (0xFD, 0x19),
+        "IY": (0xFD, 0x29),
+        "SP": (0xFD, 0x39),
+    }
+
+    @staticmethod
+    def A_r(b: Block, src: str) -> None:
+        """
+        ADD A,r / ADD A,(HL)
+
+        src: "A","B","C","D","E","H","L","mHL"
+        """
+
+        try:
+            opcode = ADD._A_R_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for ADD A,r: {src}") from exc
+        b.emit(opcode)
+
+    @staticmethod
+    def A_mIXd(b: Block, disp: int) -> None:
+        """ADD A,(IX+d)"""
+
+        b.emit(0xDD, 0x86, disp & 0xFF)
+
+    @staticmethod
+    def A_mIYd(b: Block, disp: int) -> None:
+        """ADD A,(IY+d)"""
+
+        b.emit(0xFD, 0x86, disp & 0xFF)
+
+    @staticmethod
+    def A_n8(b: Block, value: int) -> None:
+        """ADD A,n8"""
+
+        b.emit(0xC6, value & 0xFF)
+
+    @staticmethod
+    def HL_ss(b: Block, src: str) -> None:
+        """ADD HL,ss"""
+
+        try:
+            opcode = ADD._HL_SS_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for ADD HL,ss: {src}") from exc
+        b.emit(opcode)
+
+    @staticmethod
+    def IX_pp(b: Block, src: str) -> None:
+        """ADD IX,pp"""
+
+        try:
+            prefix_opcode = ADD._IX_PP_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for ADD IX,pp: {src}") from exc
+        b.emit(*prefix_opcode)
+
+    @staticmethod
+    def IY_pp(b: Block, src: str) -> None:
+        """ADD IY,pp"""
+
+        try:
+            prefix_opcode = ADD._IY_PP_OPCODES[src]
+        except KeyError as exc:
+            raise ValueError(f"invalid src for ADD IY,pp: {src}") from exc
+        b.emit(*prefix_opcode)
 
 
 # ---------------------------------------------------------------------------
