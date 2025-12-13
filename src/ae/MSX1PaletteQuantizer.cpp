@@ -72,8 +72,8 @@ using MSX1PQCore::QuantInfo;
 using MSX1PQCore::apply_preprocess;
 using MSX1PQCore::find_basic_index_from_rgb;
 using MSX1PQCore::get_basic_palette;
-using MSX1PQCore::nearest_basic_hsb;
-using MSX1PQCore::nearest_palette_hsb;
+using MSX1PQCore::nearest_basic_hsv;
+using MSX1PQCore::nearest_palette_hsv;
 using MSX1PQCore::nearest_palette_rgb;
 using MSX1PQCore::quantize_pixel;
 using MSX1PQCore::clamp01f;
@@ -86,7 +86,7 @@ using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST;
-using MSX1PQCore::MSX1PQ_DIST_MODE_HSB;
+using MSX1PQCore::MSX1PQ_DIST_MODE_HSV;
 using MSX1PQCore::MSX1PQ_DIST_MODE_RGB;
 
 namespace {
@@ -242,8 +242,8 @@ ParamsSetup (
     PF_ADD_POPUP(
         "Distance mode",      // ラベル
         2,                    // 項目数
-        MSX1PQ_DIST_MODE_HSB, // デフォルト値 (2 = HSB)
-        "RGB|HSB",            // 順番に 1:RGB, 2:HSB
+        MSX1PQ_DIST_MODE_RGB, // デフォルト値 (1 = RGB)
+        "RGB|HSV",            // 順番に 1:RGB, 2:HSV
         MSX1PQ_PARAM_DISTANCE_MODE
     );
 
@@ -277,7 +277,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "B weight",
+        "V weight",
         0,
         1,
         0,
@@ -319,7 +319,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "B weight (RGB)",
+        "B weight",
         0,
         1,
         0,
@@ -840,7 +840,7 @@ Render (
     qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
     qi.use_palette_color = (params[MSX1PQ_PARAM_USE_PALETTE_COLOR]->u.bd.value != 0);
     qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
-    qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
+    qi.use_hsv         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSV);
 
     qi.w_h = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value));
@@ -1148,7 +1148,7 @@ SmartRender(
                 in_dataP,
                 MSX1PQ_PARAM_DISTANCE_MODE,
                 param) );
-        qi.use_hsb = (param.u.pd.value == MSX1PQ_DIST_MODE_HSB);
+        qi.use_hsv = (param.u.pd.value == MSX1PQ_DIST_MODE_HSV);
         ERR( CheckinParam(in_dataP, param) );
 
         // WEIGHT_H/S/B (float)
@@ -1419,18 +1419,18 @@ UpdateParameterUI(
         out_data);
 
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
-    A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
+    A_Boolean enable_hsv = (mode == MSX1PQ_DIST_MODE_HSV);
     A_Boolean enable_rgb = (mode == MSX1PQ_DIST_MODE_RGB);
 
     // MyDebugLog("=== UpdateParameterUI CALLED ===");
-    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
-    //          mode, enable_hsb ? 1 : 0);
+    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsv=%d",
+    //          mode, enable_hsv ? 1 : 0);
 
     PF_ParamDef tmp;
 
     // --- H weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_H];
-    if (enable_hsb)
+    if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
@@ -1441,7 +1441,7 @@ UpdateParameterUI(
 
     // --- S weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_S];
-    if (enable_hsb)
+    if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
@@ -1450,9 +1450,9 @@ UpdateParameterUI(
                                  MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
 
-    // --- B weight ---
+    // --- V weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_B];
-    if (enable_hsb)
+    if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
@@ -1481,7 +1481,7 @@ UpdateParameterUI(
                                  MSX1PQ_PARAM_WEIGHT_G,
                                  &tmp);
 
-    // --- B weight (RGB) ---
+    // --- B weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_B_RGB];
     if (enable_rgb)
         tmp.ui_flags &= ~PF_PUI_DISABLED;

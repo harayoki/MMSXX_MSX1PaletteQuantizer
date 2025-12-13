@@ -32,8 +32,8 @@ It is recommended to apply the following adjustments before the MSX1 effect.
     - **Best**: Re-selects the two most optimal colors from the 15-palette that represent the colors appearing within 8 pixels. (Recommended)
     - **Best-Atttr**: In addition to "Best", considers the colors of the surrounding upper and lower pixels to select two colors.
     - **Best-Tran**: In addition to "Best Attribute", considers the colors of the left and right frames to select two colors.
--   **Color Distance**: Selects the color distance calculation method from RGB or HSB.
--   **HSB Weight**: Adjusts the weighting (Hue, Saturation, Brightness) for color distance calculation in the HSB space.
+-   **Color Distance**: Selects the color distance calculation method from RGB or HSV.
+-   **HSV Weight**: Adjusts the weighting (Hue, Saturation, Value) for color distance calculation in the HSV space.
 
 ## Pre-processing
 -   **Posterization**: Reduces the total number of colors before conversion (0–255, default 16; disabled when `<=1`). Helpful for suppressing noise, flattening areas, or steering dithering patterns.

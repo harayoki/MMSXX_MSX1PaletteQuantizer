@@ -14,7 +14,7 @@ namespace MSX1PQCore {
 // AE 依存を排除した enum 定義
 enum MSX1PQ_DistanceMode {
     MSX1PQ_DIST_MODE_RGB = 1,
-    MSX1PQ_DIST_MODE_HSB = 2
+    MSX1PQ_DIST_MODE_HSV = 2
 };
 
 enum MSX1PQ_EightDotMode {
@@ -40,7 +40,7 @@ struct QuantInfo {
     bool  use_dither{};
     bool  use_palette_color{};
     int   use_8dot2col{};
-    bool  use_hsb{};
+    bool  use_hsv{};
     float w_h{};
     float w_s{};
     float w_b{};
@@ -73,10 +73,10 @@ constexpr T clamp_value(const T& v, const T& lo, const T& hi)
     return (v < lo) ? lo : (v > hi ? hi : v);
 }
 
-void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+void rgb_to_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                 float &h, float &s, float &v);
 
-void hsb_to_rgb(float h, float s, float v,
+void hsv_to_rgb(float h, float s, float v,
                 std::uint8_t &r8, std::uint8_t &g8, std::uint8_t &b8);
 
 void apply_preprocess(const QuantInfo *qi,
@@ -93,12 +93,12 @@ int nearest_basic_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                       float w_r, float w_g, float w_b,
                       const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
-int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+int nearest_palette_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
                         int num_colors,
                         const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
-int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+int nearest_basic_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                       float w_h, float w_s, float w_b,
                       const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 

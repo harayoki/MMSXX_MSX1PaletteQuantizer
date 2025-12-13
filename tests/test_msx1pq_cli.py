@@ -123,9 +123,9 @@ class Msx1pqCliTestCase(unittest.TestCase):
                 "fast",
                 "--distance",
                 "rgb",
-                "--weight-h",
+                "--weight-r",
                 "0.9",
-                "--weight-s",
+                "--weight-g",
                 "0.4",
                 "--weight-b",
                 "0.6",
@@ -171,7 +171,7 @@ class Msx1pqCliTestCase(unittest.TestCase):
                 "--8dot",
                 "best-attr",
                 "--distance",
-                "hsb",
+                "hsv",
                 "--palette92",
                 "--dither",
                 "--dark-dither",
@@ -197,7 +197,7 @@ class Msx1pqCliTestCase(unittest.TestCase):
         output_dir = self.output_root / "randomized_runs"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        distance_modes = ["rgb", "hsb"]
+        distance_modes = ["rgb", "hsv"]
         color_systems = ["msx1", "msx2"]
 
         for idx in range(4):
@@ -223,10 +223,16 @@ class Msx1pqCliTestCase(unittest.TestCase):
             else:
                 args.append("--dark-dither")
 
-            weight_h = f"{rng.uniform(0.4, 1.0):.2f}"
-            weight_s = f"{rng.uniform(0.2, 0.8):.2f}"
-            weight_b = f"{rng.uniform(0.5, 1.0):.2f}"
-            args.extend(["--weight-h", weight_h, "--weight-s", weight_s, "--weight-b", weight_b])
+            if distance_mode == "hsv":
+                weight_h = f"{rng.uniform(0.4, 1.0):.2f}"
+                weight_s = f"{rng.uniform(0.2, 0.8):.2f}"
+                weight_v = f"{rng.uniform(0.5, 1.0):.2f}"
+                args.extend(["--weight-h", weight_h, "--weight-s", weight_s, "--weight-v", weight_v])
+            else:
+                weight_r = f"{rng.uniform(0.4, 1.0):.2f}"
+                weight_g = f"{rng.uniform(0.2, 0.8):.2f}"
+                weight_b = f"{rng.uniform(0.5, 1.0):.2f}"
+                args.extend(["--weight-r", weight_r, "--weight-g", weight_g, "--weight-b", weight_b])
 
             if rng.choice([True, False]):
                 args.extend(["--pre-posterize", str(rng.choice([6, 8, 10]))])
