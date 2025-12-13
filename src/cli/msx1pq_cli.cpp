@@ -36,7 +36,7 @@ struct CliOptions {
     bool use_dark_dither{true};
     bool use_preprocess{true};
     int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
-    bool use_hsb{true};
+    bool use_hsv{false};
     float weight_h{1.0f};
     float weight_s{0.5f};
     float weight_b{0.75f};
@@ -120,9 +120,9 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
                   << "  --no-preprocess             前処理をスキップ\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
-                  << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
-                  << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-                  << "  --weight-rgb-r <0-1> --weight-rgb-g <0-1> --weight-rgb-b <0-1>\n"
+                  << "  --distance <rgb|hsv>         (デフォルト: rgb)\n"
+                  << "  --weight-h <0-1> --weight-s <0-1> --weight-v <0-1>\n"
+                  << "  --weight-r <0-1> --weight-g <0-1> --weight-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
                   << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 0.0)\n"
                   << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
@@ -154,9 +154,9 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --no-preprocess             Skip preprocessing adjustments\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
-              << "  --distance <rgb|hsb>         (default: hsb)\n"
-              << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
-              << "  --weight-rgb-r <0-1> --weight-rgb-g <0-1> --weight-rgb-b <0-1>\n"
+              << "  --distance <rgb|hsv>         (default: rgb)\n"
+              << "  --weight-h <0-1> --weight-s <0-1> --weight-v <0-1>\n"
+              << "  --weight-r <0-1> --weight-g <0-1> --weight-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"
               << "  --pre-sat <0-10>             Increase saturation before processing (default: 0.0)\n"
               << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
@@ -278,9 +278,9 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         } else if (arg == "--distance") {
             std::string value = require_value(arg);
             if (value == "rgb") {
-                opts.use_hsb = false;
-            } else if (value == "hsb") {
-                opts.use_hsb = true;
+                opts.use_hsv = false;
+            } else if (value == "hsv") {
+                opts.use_hsv = true;
             } else {
                 throw std::runtime_error("Unknown distance mode: " + value);
             }
@@ -307,13 +307,13 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.weight_h = std::stof(require_value(arg));
         } else if (arg == "--weight-s") {
             opts.weight_s = std::stof(require_value(arg));
-        } else if (arg == "--weight-b") {
+        } else if (arg == "--weight-v") {
             opts.weight_b = std::stof(require_value(arg));
-        } else if (arg == "--weight-rgb-r") {
+        } else if (arg == "--weight-r") {
             opts.weight_r = std::stof(require_value(arg));
-        } else if (arg == "--weight-rgb-g") {
+        } else if (arg == "--weight-g") {
             opts.weight_g = std::stof(require_value(arg));
-        } else if (arg == "--weight-rgb-b") {
+        } else if (arg == "--weight-b") {
             opts.weight_b_rgb = std::stof(require_value(arg));
         } else if (arg == "--pre-posterize") {
             opts.pre_posterize = std::stoi(require_value(arg));
@@ -392,7 +392,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.use_dither      = opts.use_dither;
     qi.use_palette_color = opts.use_palette_color;
     qi.use_8dot2col    = opts.use_8dot2col;
-    qi.use_hsb         = opts.use_hsb;
+    qi.use_hsv         = opts.use_hsv;
     qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
     qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
     qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);

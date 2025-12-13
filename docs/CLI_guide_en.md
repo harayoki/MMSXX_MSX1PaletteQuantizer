@@ -54,8 +54,9 @@ The compiled binary will be placed at `bin/msx1pq_cli`.
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
 | `--no-preprocess` | Skip all preprocessing tweaks (posterize, saturation, gamma, contrast, hue, LUT). |
 | `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
-| `--distance <rgb|hsb>` | Color distance mode for palette selection. Default: `hsb`. |
-| `--weight-h`, `--weight-s`, `--weight-b` | Weights (0–1) for hue, saturation, and brightness when `hsb` distance is selected. |
+| `--distance <rgb|hsv>` | Color distance mode for palette selection. Default: `rgb`. |
+| `--weight-h`, `--weight-s`, `--weight-v` | Weights (0–1) for hue, saturation, and value when `hsv` distance is selected. |
+| `--weight-r`, `--weight-g`, `--weight-b` | Weights (0–1) for red, green, and blue when `rgb` distance is selected. |
 | `--disable-colors <index|range>...` | Disable specific palette indices (1–15). Ranges are allowed (e.g., `3-5`). At least one color must remain enabled. |
 | `--pre-posterize <0-255>` | Posterize before processing (default: `16`; skipped if `<=1`). |
 | `--pre-sat <0-10>` | Boost saturation before quantizing. Default: `0.0`. |

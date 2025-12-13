@@ -115,8 +115,8 @@ bool parse_cube_lut(std::istream& file, std::vector<float>& out3d, int& lut_size
     return true;
 }
 
-// パレットのHSBを一度だけ計算してキャッシュ
-bool  g_palette_hsb_initialized = false;
+// パレットのHSVを一度だけ計算してキャッシュ
+bool  g_palette_hsv_initialized = false;
 float g_palette_h[256];
 float g_palette_s[256];
 float g_palette_b[256];
@@ -245,7 +245,7 @@ bool load_pre_lut(const std::string& path,
     return true;
 }
 
-void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+void rgb_to_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                 float &h, float &s, float &v)
 {
     float r = r8 / 255.0f;
@@ -285,7 +285,7 @@ void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     }
 }
 
-void hsb_to_rgb(float h, float s, float v,
+void hsv_to_rgb(float h, float s, float v,
                 std::uint8_t &r8, std::uint8_t &g8, std::uint8_t &b8)
 {
     h = h - floorf(h);      // 念のため 0〜1 に丸め
@@ -481,7 +481,7 @@ void apply_preprocess(const QuantInfo *qi,
     }
 
     float h, s, v;
-    rgb_to_hsb(r8, g8, b8, h, s, v);
+    rgb_to_hsv(r8, g8, b8, h, s, v);
 
     if (qi->pre_hue != 0.0f) {
         h += qi->pre_hue / 360.0f;
@@ -492,17 +492,17 @@ void apply_preprocess(const QuantInfo *qi,
         s *= sat_scale;
     }
 
-    hsb_to_rgb(h, s, v, r8, g8, b8);
+    hsv_to_rgb(h, s, v, r8, g8, b8);
 }
 
-void ensure_palette_hsb_initialized()
+void ensure_palette_hsv_initialized()
 {
-    if (g_palette_hsb_initialized) {
+    if (g_palette_hsv_initialized) {
         return;
     }
     for (int i = 0; i < MSX1PQ::kNumQuantColors; i++) {
         float h, s, v;
-        rgb_to_hsb(MSX1PQ::kQuantColors[i].r,
+        rgb_to_hsv(MSX1PQ::kQuantColors[i].r,
                    MSX1PQ::kQuantColors[i].g,
                    MSX1PQ::kQuantColors[i].b,
                    h, s, v);
@@ -510,7 +510,7 @@ void ensure_palette_hsb_initialized()
         g_palette_s[i] = s;
         g_palette_b[i] = v;
     }
-    g_palette_hsb_initialized = true;
+    g_palette_hsv_initialized = true;
 }
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
@@ -586,15 +586,15 @@ int nearest_basic_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     return best_idx;
 }
 
-int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+int nearest_palette_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
                         int num_colors,
                         const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
-    ensure_palette_hsb_initialized();
+    ensure_palette_hsv_initialized();
 
     float h, s, v;
-    rgb_to_hsb(r8, g8, b8, h, s, v);
+    rgb_to_hsv(r8, g8, b8, h, s, v);
 
     int   best_idx = 0;
     float best_d2  = 1.0e30f;
@@ -624,14 +624,14 @@ int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     return best_idx;
 }
 
-int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+int nearest_basic_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                       float w_h, float w_s, float w_b,
                       const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
-    ensure_palette_hsb_initialized();
+    ensure_palette_hsv_initialized();
 
     float h, s, v;
-    rgb_to_hsb(r8, g8, b8, h, s, v);
+    rgb_to_hsv(r8, g8, b8, h, s, v);
 
     float wh = clamp01f(w_h);
     float ws = clamp01f(w_s);
@@ -717,8 +717,8 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
     }
 
     if (qi.use_palette_color) {
-        const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors, qi.palette_enabled)
+        const int palette_idx = qi.use_hsv
+            ? nearest_palette_hsv(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors, qi.palette_enabled)
             : nearest_palette_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, MSX1PQ::kNumQuantColors, qi.palette_enabled);
 
         return MSX1PQ::kQuantColors[palette_idx];
@@ -732,8 +732,8 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
             num_colors = MSX1PQ::kFirstDarkDitherIndex;
         }
 
-        const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors, qi.palette_enabled)
+        const int palette_idx = qi.use_hsv
+            ? nearest_palette_hsv(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors, qi.palette_enabled)
             : nearest_palette_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, num_colors, qi.palette_enabled);
 
         basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
@@ -741,8 +741,8 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
             !qi.palette_enabled[static_cast<std::size_t>(basic_idx)]) {
             basic_idx = fallback_basic_idx;
         }
-    } else if (qi.use_hsb) {
-        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, qi.palette_enabled);
+    } else if (qi.use_hsv) {
+        basic_idx = nearest_basic_hsv(r, g, b, qi.w_h, qi.w_s, qi.w_b, qi.palette_enabled);
     } else {
         basic_idx = nearest_basic_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, qi.palette_enabled);
     }
