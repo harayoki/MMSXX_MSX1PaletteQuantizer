@@ -2,9 +2,13 @@ import sys
 from pathlib import Path
 try:
     from mmsxxasmhelper.core import *
+    from mmsxxasmhelper.utils import *
+    from mmsxxasmhelper.msxutils import *
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from mmsxxasmhelper.core import *
+    from mmsxxasmhelper.utils import *
+    from mmsxxasmhelper.utils import *
 
 
 # 1) マクロ相当の関数サンプル
@@ -46,10 +50,10 @@ def build_example() -> bytes:
     b.label("start")
 
     # ROM HEADER の配置
-    db(b, *DATA8["MSX_ROM_HEADER"])
+    DB(b, *Data8["MSX_ROM_HEADER"])
 
     # LD A, INIT_VALUE
-    LD.A_n8(b, CONST["INIT_VALUE"])
+    LD.A_n8(b, Const["INIT_VALUE"])
 
     # デバッグ用 HALT を差し込む(後で消したければ DEBUG=False にする)
     debug_trap(b)
@@ -61,15 +65,15 @@ def build_example() -> bytes:
     debug_trap(b)
 
     # 無限ループ用ジャンプ (startに戻る)
-    jp(b, "start")
+    JP(b, "start")
 
     # --- 関数定義 ---
     INC_A_TIMES.define(b)
 
     # --- データ領域 ---
     b.label("table")
-    db(b, 1, 2, 3, 4)
-    dw(b, 0x1234, 0xABCD)
+    DB(b, 1, 2, 3, 4)
+    DW(b, 0x1234, 0xABCD)
 
     # pad_pattern(b, 128, 0x00)  # 128B境界までパディング
 
