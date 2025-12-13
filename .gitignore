@@ -58,3 +58,7 @@ venv
 __pycache__/
 *.pyc
 *.pyo
+
+tests/msx1pq_outputs/
+tests/msx1pq_autogen_input.png
+
