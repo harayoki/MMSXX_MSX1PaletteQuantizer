@@ -422,6 +422,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*1: Black",
         "Enable",
@@ -432,6 +433,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*2: Medium Green",
         "Enable",
@@ -442,6 +444,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*3: Light Green",
         "Enable",
@@ -452,6 +455,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*4: Dark Blue",
         "Enable",
@@ -462,6 +466,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*5: Light Blue",
         "Enable",
@@ -472,6 +477,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*6: Dark Red",
         "Enable",
@@ -482,6 +488,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*7: Cyan",
         "Enable",
@@ -492,6 +499,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*8: Medium Red",
         "Enable",
@@ -502,6 +510,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*9: Light Red",
         "Enable",
@@ -512,6 +521,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*10: Dark Yellow",
         "Enable",
@@ -522,6 +532,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*11: Light Yellow",
         "Enable",
@@ -532,6 +543,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*12: Dark Green",
         "Enable",
@@ -542,6 +554,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*13: Magenta",
         "Enable",
@@ -552,6 +565,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*14: Gray",
         "Enable",
@@ -562,6 +576,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     def.flags |= PF_ParamFlag_SUPERVISE;
+    //def.ui_flags |= PF_PUI_CONTROL  | PF_PUI_DONT_ERASE_CONTROL;
     PF_ADD_CHECKBOX(
         "*15: White",
         "Enable",
@@ -573,7 +588,8 @@ ParamsSetup (
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
 
-    out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
+//    out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
+    out_data->num_params = MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END + 1;
 
     return err;
 }
@@ -588,14 +604,14 @@ static PF_Err DrawPaletteColorBox(
 
     PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
 
+    if (!ev || ev->e_type != PF_Event_DRAW) {
+        return PF_Err_NONE;
+    }
+
     MyDebugLog("EVENT: e_type=%d, appl_id=0x%08X, index=%ld",
            (int)ev->e_type,
            (unsigned int)in_data->appl_id,
            (long)ev->effect_win.index);
-
-    if (!ev || ev->e_type != PF_Event_DRAW) {
-        return PF_Err_NONE;
-    }
 
     (void)out_data;
     (void)output;
@@ -1655,6 +1671,8 @@ EffectMain(
 {
     PF_Err  err = PF_Err_NONE;
 
+//    MyDebugLog("EffectMain: cmd=%d", (int)cmd);
+
     try {
         switch (cmd)
         {
@@ -1702,6 +1720,7 @@ EffectMain(
                           reinterpret_cast<PF_SmartRenderExtra*>(extra));
                 break;
             case PF_Cmd_EVENT:
+                MyDebugLog("############# PF_Cmd_EVENT received");
                 err = DrawPaletteColorBox(in_dataP, out_data, params, output, extra);
                 break;
         }
