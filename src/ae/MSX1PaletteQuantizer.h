@@ -44,6 +44,7 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_USE_PALETTE_COLOR, // Use 92-color palette directly
 
     MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL, // Topic: palette usage controls
+    MSX1PQ_PARAM_RANDOM_SEED,           // Random seed for palette toggle
     MSX1PQ_PARAM_COLOR_FLAG_1,          // Checkbox: color 1
     MSX1PQ_PARAM_COLOR_FLAG_2,
     MSX1PQ_PARAM_COLOR_FLAG_3,

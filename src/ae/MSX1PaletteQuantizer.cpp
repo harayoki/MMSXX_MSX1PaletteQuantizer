@@ -15,8 +15,10 @@
 #include "MSX1PQPalettes.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdarg>
 #include <cstdio>
+#include <random>
 
 
 #ifdef AE_OS_WIN
@@ -113,6 +115,31 @@ static inline PF_Err CheckinParam(
     PF_ParamDef &param)
 {
     return PF_CHECKIN_PARAM(in_data, &param);
+}
+
+static void GeneratePaletteFlagsFromSeed(
+    A_long seed,
+    std::array<bool, MSX1PQ::kNumBasicColors>& out_flags)
+{
+    out_flags.fill(false);
+
+    if (seed <= 0) {
+        return;
+    }
+
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+    std::bernoulli_distribution dist(0.5);
+
+    bool any_enabled = false;
+    for (auto &flag : out_flags) {
+        flag = dist(rng);
+        any_enabled = any_enabled || flag;
+    }
+
+    if (!any_enabled) {
+        std::uniform_int_distribution<int> pick(0, static_cast<int>(out_flags.size()) - 1);
+        out_flags[static_cast<std::size_t>(pick(rng))] = true;
+    }
 }
 
 
@@ -417,6 +444,20 @@ ParamsSetup (
     PF_ADD_TOPIC(
         "MSX1 Palette Control",
         MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Random seed",
+        0,
+        99999,
+        0,
+        99999,
+        0,
+        0,
+        0,
+        0,
+        MSX1PQ_PARAM_RANDOM_SEED
     );
 
     AEFX_CLR_STRUCT(def);
@@ -867,11 +908,23 @@ Render (
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
 
+    const A_long random_seed = static_cast<A_long>(
+        params[MSX1PQ_PARAM_RANDOM_SEED]->u.fs_d.value + 0.5);
+    std::array<bool, MSX1PQ::kNumBasicColors> seed_palette{};
+    const bool use_seed_palette = random_seed > 0;
+    if (use_seed_palette) {
+        GeneratePaletteFlagsFromSeed(random_seed, seed_palette);
+    }
+
     for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
         const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
         if (flag_index < MSX1PQ_PARAM_NUM_PARAMS) {
-            qi.palette_enabled[static_cast<std::size_t>(i)] =
-                (params[flag_index]->u.bd.value != 0);
+            if (use_seed_palette) {
+                qi.palette_enabled[static_cast<std::size_t>(i)] = seed_palette[static_cast<std::size_t>(i)];
+            } else {
+                qi.palette_enabled[static_cast<std::size_t>(i)] =
+                    (params[flag_index]->u.bd.value != 0);
+            }
         }
     }
 
@@ -1243,13 +1296,31 @@ SmartRender(
         qi.use_dark_dither = (param.u.bd.value != 0);
         ERR( CheckinParam(in_dataP, param) );
 
+        A_long random_seed = 0;
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_RANDOM_SEED,
+                param) );
+        random_seed = static_cast<A_long>(param.u.fs_d.value + 0.5f);
+        ERR( CheckinParam(in_dataP, param) );
+
+        std::array<bool, MSX1PQ::kNumBasicColors> seed_palette{};
+        const bool use_seed_palette = random_seed > 0;
+        if (use_seed_palette) {
+            GeneratePaletteFlagsFromSeed(random_seed, seed_palette);
+        }
+
         for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
             const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
             ERR( CheckoutParam(
                     in_dataP,
                     flag_index,
                     param) );
-            qi.palette_enabled[static_cast<std::size_t>(i)] = (param.u.bd.value != 0);
+            if (use_seed_palette) {
+                qi.palette_enabled[static_cast<std::size_t>(i)] = seed_palette[static_cast<std::size_t>(i)];
+            } else {
+                qi.palette_enabled[static_cast<std::size_t>(i)] = (param.u.bd.value != 0);
+            }
             ERR( CheckinParam(in_dataP, param) );
         }
 
@@ -1492,6 +1563,30 @@ UpdateParameterUI(
                                  MSX1PQ_PARAM_WEIGHT_B_RGB,
                                  &tmp);
 
+    const A_long random_seed = static_cast<A_long>(
+        params[MSX1PQ_PARAM_RANDOM_SEED]->u.fs_d.value + 0.5);
+    std::array<bool, MSX1PQ::kNumBasicColors> seed_palette{};
+    const bool use_seed_palette = random_seed > 0;
+    if (use_seed_palette) {
+        GeneratePaletteFlagsFromSeed(random_seed, seed_palette);
+    }
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+        tmp = *params[flag_index];
+
+        if (use_seed_palette) {
+            tmp.ui_flags |= PF_PUI_DISABLED;
+            tmp.u.bd.value = seed_palette[static_cast<std::size_t>(i)];
+        } else {
+            tmp.ui_flags &= ~PF_PUI_DISABLED;
+        }
+
+        paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                     flag_index,
+                                     &tmp);
+    }
+
     return err;
 }
 
@@ -1526,7 +1621,8 @@ EffectMain(
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
-                if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
+                if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE ||
+                    extraP->param_index == MSX1PQ_PARAM_RANDOM_SEED) {
                     UpdateParameterUI(in_dataP, out_data, params);
                 }
 
