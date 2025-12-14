@@ -1518,6 +1518,37 @@ EffectMain(
 {
     PF_Err  err = PF_Err_NONE;
 
+    // Log command at entry
+    switch (cmd) {
+    case PF_Cmd_ABOUT:
+        MyDebugLog("CMD: ABOUT");
+        break;
+    case PF_Cmd_GLOBAL_SETUP:
+        MyDebugLog("CMD: GLOBAL_SETUP");
+        break;
+    case PF_Cmd_PARAMS_SETUP:
+        MyDebugLog("CMD: PARAMS_SETUP");
+        break;
+    case PF_Cmd_RENDER:
+        MyDebugLog("CMD: RENDER");
+        break;
+    case PF_Cmd_SMART_PRE_RENDER:
+        MyDebugLog("CMD: SMART_PRE_RENDER");
+        break;
+    case PF_Cmd_SMART_RENDER:
+        MyDebugLog("CMD: SMART_RENDER");
+        break;
+    case PF_Cmd_USER_CHANGED_PARAM:
+        MyDebugLog("CMD: USER_CHANGED_PARAM");
+        break;
+    case PF_Cmd_EVENT:
+        MyDebugLog("CMD: EVENT");
+        break;
+    default:
+        MyDebugLog("CMD: %d (other)", (int)cmd);
+        break;
+    }
+
     try {
         switch (cmd)
         {
@@ -1538,7 +1569,7 @@ EffectMain(
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
-                MyDebugLog("USER_CHANGED_PARAM index=%d", extraP->param_index);
+                MyDebugLog("USER_CHANGED_PARAM: index=%d", static_cast<int>(extraP->param_index));
                 MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
@@ -1600,6 +1631,30 @@ EffectMain(
                           params,
                           reinterpret_cast<PF_SmartRenderExtra*>(extra));
                 break;
+            case PF_Cmd_EVENT:
+            {
+                PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
+                if (!ev) {
+                    break;
+                }
+
+                MyDebugLog("EVENT: e_type=%d param_index=%d",
+                           (int)ev->e_type,
+                           (int)ev->param_index);
+
+                /*
+                ランダムボタン用の param_index が
+                MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS であれば、ここで処理を呼び出してもよい。
+
+                if (ev->e_type == PF_Event_COMMAND &&
+                    ev->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
+                    MyDebugLog("EVENT: RANDOMIZE button pressed");
+                    // ランダム化処理関数を呼ぶなど
+                }
+                */
+
+                break;
+            }
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない
