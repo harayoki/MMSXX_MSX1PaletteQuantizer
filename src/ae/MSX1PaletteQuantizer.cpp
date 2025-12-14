@@ -556,11 +556,10 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_BUTTON(
         "Randomize",
         "Randomize",
-        0, // flags
+        PF_ParamFlag_SUPERVISE,
         0, // reserved (必須)
         MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
     );
