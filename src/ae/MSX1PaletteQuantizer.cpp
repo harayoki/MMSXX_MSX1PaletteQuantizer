@@ -8,6 +8,7 @@
 #include "AE_Effect.h"
 #include "AE_EffectCB.h"
 #include "AE_GeneralPlug.h"
+#include "AEGP_DrawbotSuite.h"
 #include "Param_Utils.h"
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
@@ -1418,7 +1419,7 @@ DrawPaletteFlagColorBox(
         return err;
     }
 
-    const PF_ParamIndex param_index = event_extraP->parm_index;
+    const PF_ParamIndex param_index = event_extraP->param_index;
     if (param_index < MSX1PQ_PARAM_COLOR_FLAG_1 || param_index > MSX1PQ_PARAM_COLOR_FLAG_15) {
         return err;
     }
