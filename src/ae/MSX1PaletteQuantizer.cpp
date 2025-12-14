@@ -557,8 +557,8 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_BUTTON(
-        "ランダム化",
-        "ランダム化",
+        "Randomize",
+        "Randomize",
         0, // flags
         0, // reserved (必須)
         MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
