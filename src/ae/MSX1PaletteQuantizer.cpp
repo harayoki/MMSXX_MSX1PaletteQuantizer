@@ -1562,6 +1562,8 @@ EffectMain(
                                                      i,
                                                      &tmp);
                     }
+
+                    out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
                 }
 
                 break;
