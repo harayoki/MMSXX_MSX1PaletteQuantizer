@@ -420,6 +420,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*1: Black",
         "Enable this palette entry",
@@ -429,6 +430,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*2: Medium Green",
         "Enable this palette entry",
@@ -438,6 +440,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*3: Light Green",
         "Enable this palette entry",
@@ -447,6 +450,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*4: Dark Blue",
         "Enable this palette entry",
@@ -456,6 +460,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*5: Light Blue",
         "Enable this palette entry",
@@ -465,6 +470,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*6: Dark Red",
         "Enable this palette entry",
@@ -474,6 +480,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*7: Cyan",
         "Enable this palette entry",
@@ -483,6 +490,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*8: Medium Red",
         "Enable this palette entry",
@@ -492,6 +500,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*9: Light Red",
         "Enable this palette entry",
@@ -501,6 +510,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*10: Dark Yellow",
         "Enable this palette entry",
@@ -510,6 +520,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*11: Light Yellow",
         "Enable this palette entry",
@@ -519,6 +530,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*12: Dark Green",
         "Enable this palette entry",
@@ -528,6 +540,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*13: Magenta",
         "Enable this palette entry",
@@ -537,6 +550,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*14: Gray",
         "Enable this palette entry",
@@ -546,6 +560,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*15: White",
         "Enable this palette entry",
@@ -560,6 +575,78 @@ ParamsSetup (
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
     return err;
+}
+
+static PF_Err DrawPaletteColorBox(
+    PF_InData* in_data,
+    PF_OutData* out_data,
+    PF_ParamDef* params[],
+    PF_LayerDef* output,
+    void* extra)
+{
+    PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
+    if (!ev || ev->e_type != PF_Event_DRAW) return PF_Err_NONE;
+
+    (void)out_data;
+    (void)output;
+
+    const PF_ParamIndex p = ev->param_index;
+    if (p < MSX1PQ_PARAM_COLOR_FLAG_1 || p > MSX1PQ_PARAM_COLOR_FLAG_15)
+        return PF_Err_NONE;
+
+    // Premiere 判定。AE 以外は描画しない。
+    if (in_data->appl_id != 'FXTC') {
+        return PF_Err_NONE;
+    }
+
+    // パレット index 0〜14
+    const int idx = static_cast<int>(p - MSX1PQ_PARAM_COLOR_FLAG_1);
+    const MSX1PQ::QuantColor& qc = MSX1PQ::kQuantColors[idx];
+
+    bool enabled = (params[p]->u.bd.value != 0);
+    float alpha  = enabled ? 1.0f : 0.3f;
+
+    // Drawbot セットアップ
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+    PF_EffectCustomUISuite1* ui_suite = suites.EffectCustomUISuite1();
+    DRAWBOT_DrawRef draw_ref = ui_suite->PF_GetDrawingReference(in_data->effect_ref, ev->contextH);
+    if (!draw_ref) return PF_Err_NONE;
+
+    DRAWBOT_DrawbotSuite1* draw_suite = suites.DrawbotSuite();
+    DRAWBOT_SupplierSuite1* sup_suite = suites.SupplierSuite();
+    DRAWBOT_SurfaceSuite1* surf_suite = suites.SurfaceSuite();
+    DRAWBOT_PathSuite1* path_suite = suites.PathSuite();
+
+    DRAWBOT_SupplierRef supplier = nullptr;
+    DRAWBOT_SurfaceRef surface   = nullptr;
+    draw_suite->GetSupplier(draw_ref, &supplier);
+    draw_suite->GetSurface(draw_ref, &surface);
+
+    (void)sup_suite;
+    (void)path_suite;
+    (void)supplier;
+
+    // 描画矩形の計算
+    PF_Rect r = ev->u.draw.rect;
+    DRAWBOT_RectF32 box;
+    box.left   = static_cast<float>(r.right - 20);
+    box.top    = static_cast<float>(r.top) + 2.0f;
+    box.width  = 16.0f;
+    box.height = static_cast<float>(r.bottom - r.top) - 4.0f;
+
+    // 色
+    DRAWBOT_ColorRGBA col;
+    col.red   = qc.r / 255.0f;
+    col.green = qc.g / 255.0f;
+    col.blue  = qc.b / 255.0f;
+    col.alpha = alpha;
+
+    // BOX をそのまま四角塗りで描く（Path を作らず PaintRect を使う）
+    surf_suite->PushStateStack(surface);
+    surf_suite->PaintRect(surface, &col, &box);
+    surf_suite->PopStateStack(surface);
+
+    return PF_Err_NONE;
 }
 
 
@@ -1553,6 +1640,8 @@ EffectMain(
                           params,
                           reinterpret_cast<PF_SmartRenderExtra*>(extra));
                 break;
+            case PF_Cmd_EVENT:
+                return DrawPaletteColorBox(in_dataP, out_data, params, output, extra);
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない
