@@ -556,6 +556,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_BUTTON(
         "Randomize",
         "Randomize",
