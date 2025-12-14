@@ -7,10 +7,10 @@
 #include "entry.h"
 #include "AE_Effect.h"
 #include "AE_EffectCB.h"
+#include "AE_GeneralPlug.h"
 #include "Param_Utils.h"
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
-#include "AEGP_DrawbotSuite.h"
 #include "MSX1PaletteQuantizer.h"
 #include "MSX1PQPalettes.h"
 
