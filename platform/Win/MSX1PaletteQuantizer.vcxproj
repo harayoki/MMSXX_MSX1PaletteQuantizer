@@ -113,7 +113,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>
@@ -167,7 +167,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>
@@ -222,7 +222,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
@@ -276,7 +276,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
