@@ -219,6 +219,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
                                HEADER_SEARCH_PATHS = (
                                        "$(AESDK_ROOT)/Headers",
+                                       "$(AESDK_ROOT)/Headers/adobesdk",
                                        "$(AESDK_ROOT)/Headers/SP",
                                        "$(AESDK_ROOT)/Headers/Win",
                                        "$(AESDK_ROOT)/Resources",

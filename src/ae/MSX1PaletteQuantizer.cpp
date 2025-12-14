@@ -10,6 +10,7 @@
 #include "Param_Utils.h"
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
+#include "adobesdk/DrawbotSuite.h"
 #include "MSX1PaletteQuantizer.h"
 #include "MSX1PQPalettes.h"
 
