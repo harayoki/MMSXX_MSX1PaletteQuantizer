@@ -1530,6 +1530,7 @@ EffectMain(
             // case PF_Cmd_UPDATE_PARAMS_UI:
             //     return UpdateParameterUI(in_dataP, out_data, params);
             case PF_Cmd_PARAMS_SETUP:
+                MyDebugLog("PARAMS_SETUP start");
                 err = ParamsSetup(in_dataP, out_data, params, output);
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
@@ -1537,9 +1538,12 @@ EffectMain(
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
+                MyDebugLog("USER_CHANGED_PARAM index=%d", extraP->param_index);
+                MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
                 } else if (extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
+                    MyDebugLog("RANDOMIZE block entered");
                     AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
                         in_dataP,
                         kPFParamUtilsSuite,
@@ -1550,19 +1554,26 @@ EffectMain(
                     std::mt19937 gen(rd());
                     std::bernoulli_distribution dist(0.5);
 
+                    bool logged_update = false;
                     for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
                          i <= MSX1PQ_PARAM_COLOR_FLAG_15;
                          ++i) {
                         PF_ParamDef tmp = *params[i];
                         const A_Boolean value = dist(gen) ? TRUE : FALSE;
+                        if (!logged_update) {
+                            MyDebugLog("Updating flag param i=%d value=%d", static_cast<int>(i), value);
+                            logged_update = true;
+                        }
                         tmp.u.bd.value = value;
                         params[i]->u.bd.value = value;
 
                         paramUtils->PF_UpdateParamUI(in_dataP->effect_ref,
                                                      i,
                                                      &tmp);
+                        MyDebugLog("Updated UI param i=%d", static_cast<int>(i));
                     }
 
+                    MyDebugLog("RANDOMIZE done");
                     out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
                 }
 
