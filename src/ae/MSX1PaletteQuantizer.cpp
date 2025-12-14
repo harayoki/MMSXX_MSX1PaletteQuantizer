@@ -1638,9 +1638,10 @@ EffectMain(
                     break;
                 }
 
-                MyDebugLog("EVENT: e_type=%d param_index=%d",
                            (int)ev->e_type,
                            (int)ev->param_index);
+                MyDebugLog("EVENT: e_type=%d",
+                           (int)ev->e_type);
 
                 /*
                 ランダムボタン用の param_index が
