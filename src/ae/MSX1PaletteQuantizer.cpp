@@ -155,9 +155,10 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags  = PF_OutFlag_NONE; // | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
         out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
                                PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag_SEND_UPDATE_PARAMS_UI = 0x04000000
     //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
     //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
     MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
@@ -1633,6 +1634,7 @@ EffectMain(
             case PF_Cmd_EVENT:
             {
                 PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
+                MyDebugLog("PF_Cmd_EVENT command received");
                 if (!ev) {
                     break;
                 }
