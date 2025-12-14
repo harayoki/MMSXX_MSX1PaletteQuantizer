@@ -585,7 +585,14 @@ static PF_Err DrawPaletteColorBox(
     PF_LayerDef* output,
     void* extra)
 {
+
     PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
+
+    MyDebugLog("EVENT: e_type=%d, appl_id=0x%08X, index=%ld",
+           (int)ev->e_type,
+           (unsigned int)in_data->appl_id,
+           (long)ev->effect_win.index);
+
     if (!ev || ev->e_type != PF_Event_DRAW) {
         return PF_Err_NONE;
     }
@@ -593,7 +600,7 @@ static PF_Err DrawPaletteColorBox(
     (void)out_data;
     (void)output;
 
-    if (in_data->appl_id != 'FXTC') {
+    if (in_data->appl_id == kAppID_Premiere) {
         return PF_Err_NONE;
     }
 
