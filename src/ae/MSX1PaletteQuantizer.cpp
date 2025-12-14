@@ -424,7 +424,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*1: Black",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_1
@@ -434,7 +434,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*2: Medium Green",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_2
@@ -444,7 +444,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*3: Light Green",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_3
@@ -454,7 +454,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*4: Dark Blue",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_4
@@ -464,7 +464,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*5: Light Blue",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_5
@@ -474,7 +474,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*6: Dark Red",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_6
@@ -484,7 +484,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*7: Cyan",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_7
@@ -494,7 +494,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*8: Medium Red",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_8
@@ -504,7 +504,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*9: Light Red",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_9
@@ -514,7 +514,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*10: Dark Yellow",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_10
@@ -524,7 +524,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*11: Light Yellow",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_11
@@ -534,7 +534,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*12: Dark Green",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_12
@@ -544,7 +544,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*13: Magenta",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_13
@@ -554,7 +554,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*14: Gray",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_14
@@ -564,7 +564,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_SUPERVISE;
     PF_ADD_CHECKBOX(
         "*15: White",
-        "Enable this palette entry",
+        "Enable",
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_15
