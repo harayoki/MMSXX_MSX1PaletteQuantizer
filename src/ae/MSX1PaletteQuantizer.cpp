@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <random>
 
 
 #ifdef AE_OS_WIN
@@ -552,6 +553,16 @@ ParamsSetup (
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_15
+    );
+
+    AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_SUPERVISE;
+    PF_ADD_BUTTON(
+        "Randomize",
+        "Randomize",
+        0, // flags
+        0, // reserved (必須)
+        MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
     );
 
     AEFX_CLR_STRUCT(def);
@@ -1519,6 +1530,7 @@ EffectMain(
             // case PF_Cmd_UPDATE_PARAMS_UI:
             //     return UpdateParameterUI(in_dataP, out_data, params);
             case PF_Cmd_PARAMS_SETUP:
+                MyDebugLog("PARAMS_SETUP start");
                 err = ParamsSetup(in_dataP, out_data, params, output);
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
@@ -1526,8 +1538,47 @@ EffectMain(
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
+                MyDebugLog("USER_CHANGED_PARAM index=%d", extraP->param_index);
+
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
+                } else if (extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
+                    MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
+                    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+                        in_dataP,
+                        kPFParamUtilsSuite,
+                        kPFParamUtilsSuiteVersion3,
+                        out_data);
+
+                    MyDebugLog("RANDOMIZE block entered");
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::bernoulli_distribution dist(0.5);
+
+                    bool logged_first = false;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i) {
+                        PF_ParamDef tmp = *params[i];
+                        const A_Boolean value = dist(gen) ? TRUE : FALSE;
+                        tmp.u.bd.value = value;
+                        params[i]->u.bd.value = value;
+
+                        if (!logged_first) {
+                            MyDebugLog("Updating flag param i=%d value=%d", i, value);
+                            logged_first = true;
+                        }
+
+                        paramUtils->PF_UpdateParamUI(in_dataP->effect_ref,
+                                                     i,
+                                                     &tmp);
+
+                        MyDebugLog("Updated UI param i=%d", i);
+                    }
+
+                    MyDebugLog("RANDOMIZE done");
+                    out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
                 }
 
                 break;
