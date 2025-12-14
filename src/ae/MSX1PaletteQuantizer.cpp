@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <random>
 
 
 #ifdef AE_OS_WIN
@@ -417,6 +418,16 @@ ParamsSetup (
     PF_ADD_TOPIC(
         "MSX1 Palette Control",
         MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
+    );
+
+    AEFX_CLR_STRUCT(def);
+    def.flags    |= PF_ParamFlag_CANNOT_TIME_VARY;
+    PF_ADD_CHECKBOX(
+        "Randomize palette",
+        "Randomize",
+        FALSE,
+        0,
+        MSX1PQ_PARAM_PALETTE_RANDOMIZE
     );
 
     AEFX_CLR_STRUCT(def);
@@ -1405,6 +1416,48 @@ PF_Err PluginDataEntryFunction2(
 
 
 static PF_Err
+RandomizePaletteFlags(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    PF_ParamDef *params[])
+{
+    PF_Err err = PF_Err_NONE;
+
+    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+        in_data,
+        kPFParamUtilsSuite,
+        kPFParamUtilsSuiteVersion3,
+        out_data);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::bernoulli_distribution random_bool(0.5);
+
+    PF_ParamDef tmp{};
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+        tmp = *params[flag_index];
+        tmp.u.bd.value = random_bool(gen) ? TRUE : FALSE;
+        *params[flag_index] = tmp;
+        paramUtils->PF_UpdateParamUI(
+            in_data->effect_ref,
+            flag_index,
+            &tmp);
+    }
+
+    tmp = *params[MSX1PQ_PARAM_PALETTE_RANDOMIZE];
+    tmp.u.bd.value = FALSE;
+    *params[MSX1PQ_PARAM_PALETTE_RANDOMIZE] = tmp;
+    paramUtils->PF_UpdateParamUI(
+        in_data->effect_ref,
+        MSX1PQ_PARAM_PALETTE_RANDOMIZE,
+        &tmp);
+
+    return err;
+}
+
+static PF_Err
 UpdateParameterUI(
     PF_InData   *in_data,
     PF_OutData  *out_data,
@@ -1528,6 +1581,8 @@ EffectMain(
 
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
+                } else if (extraP->param_index == MSX1PQ_PARAM_PALETTE_RANDOMIZE) {
+                    RandomizePaletteFlags(in_dataP, out_data, params);
                 }
 
                 break;
