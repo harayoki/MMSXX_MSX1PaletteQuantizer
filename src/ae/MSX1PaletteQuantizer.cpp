@@ -1638,8 +1638,6 @@ EffectMain(
                     break;
                 }
 
-                           (int)ev->e_type,
-                           (int)ev->param_index);
                 MyDebugLog("EVENT: e_type=%d",
                            (int)ev->e_type);
 
