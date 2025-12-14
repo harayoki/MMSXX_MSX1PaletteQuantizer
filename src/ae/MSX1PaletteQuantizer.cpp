@@ -155,9 +155,10 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-        out_data->out_flags  = PF_OutFlag_NONE; // | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+        out_data->out_flags  = PF_OutFlag_NONE | PF_OutFlag_CUSTOM_UI; // | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
         out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
                                PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag_CUSTOM_UI = 0x00008000
     //PF_OutFlag_SEND_UPDATE_PARAMS_UI = 0x04000000
     //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
     //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
@@ -560,8 +561,8 @@ ParamsSetup (
     PF_ADD_BUTTON(
         "Randomize",
         "Randomize",
+        0,
         PF_ParamFlag_SUPERVISE,
-        0, // reserved (必須)
         MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
     );
 

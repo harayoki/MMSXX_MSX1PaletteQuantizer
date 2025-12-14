@@ -47,10 +47,11 @@ resource 'PiPL' (16000) {
 			0
 		},
 		AE_Effect_Global_OutFlags {
-			PF_OutFlag_NONE
+			0x00008000
 			/*
 			    PF_OutFlag_NONE: 0x00000000
     			PF_OutFlag_SEND_UPDATE_PARAMS_UI: 0x04000000
+    			PF_OutFlag_CUSTOM_UI: 0x00008000
 			*/
 		},
         AE_Effect_Global_OutFlags_2 {
