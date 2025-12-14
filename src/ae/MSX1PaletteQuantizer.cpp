@@ -10,6 +10,7 @@
 #include "Param_Utils.h"
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
+#include "AEGP_DrawbotSuite.h"
 #include "MSX1PaletteQuantizer.h"
 #include "MSX1PQPalettes.h"
 
@@ -1413,11 +1414,11 @@ DrawPaletteFlagColorBox(
 {
     PF_Err err = PF_Err_NONE;
 
-    if (!event_extraP || event_extraP->evt_type != PF_Event_DRAW) {
+    if (!event_extraP || event_extraP->e_type != PF_Event_DRAW) {
         return err;
     }
 
-    const PF_ParamIndex param_index = event_extraP->param_index;
+    const PF_ParamIndex param_index = event_extraP->parm_index;
     if (param_index < MSX1PQ_PARAM_COLOR_FLAG_1 || param_index > MSX1PQ_PARAM_COLOR_FLAG_15) {
         return err;
     }
