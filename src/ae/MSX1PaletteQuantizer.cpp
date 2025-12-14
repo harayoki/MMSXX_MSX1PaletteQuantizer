@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <random>
 
 
 #ifdef AE_OS_WIN
@@ -552,6 +553,14 @@ ParamsSetup (
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_15
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "ランダム化",
+        "ランダム化",
+        0,
+        MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
     );
 
     AEFX_CLR_STRUCT(def);
@@ -1528,6 +1537,29 @@ EffectMain(
 
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
+                } else if (extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
+                    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+                        in_dataP,
+                        kPFParamUtilsSuite,
+                        kPFParamUtilsSuiteVersion3,
+                        out_data);
+
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::bernoulli_distribution dist(0.5);
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i) {
+                        PF_ParamDef tmp = *params[i];
+                        const A_Boolean value = dist(gen) ? TRUE : FALSE;
+                        tmp.u.bd.value = value;
+                        params[i]->u.bd.value = value;
+
+                        paramUtils->PF_UpdateParamUI(in_dataP->effect_ref,
+                                                     i,
+                                                     &tmp);
+                    }
                 }
 
                 break;
