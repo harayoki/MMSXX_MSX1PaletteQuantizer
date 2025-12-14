@@ -415,13 +415,6 @@ ParamsSetup (
         MSX1PQ_PARAM_USE_PALETTE_COLOR
     );
 
-    // Palette control topic
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_TOPIC(
-        "MSX1 Palette Control",
-        MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
-    );
-
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*1: Black",
@@ -565,9 +558,6 @@ ParamsSetup (
         PF_ParamFlag_SUPERVISE,
         MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
     );
-
-    AEFX_CLR_STRUCT(def);
-    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 

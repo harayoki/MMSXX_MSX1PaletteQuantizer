@@ -43,7 +43,6 @@ enum MSX1PQ_ParamId {
 
     MSX1PQ_PARAM_USE_PALETTE_COLOR, // Use 92-color palette directly
 
-    MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL, // Topic: palette usage controls
     MSX1PQ_PARAM_COLOR_FLAG_1,          // Checkbox: color 1
     MSX1PQ_PARAM_COLOR_FLAG_2,
     MSX1PQ_PARAM_COLOR_FLAG_3,
@@ -60,7 +59,6 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_COLOR_FLAG_14,
     MSX1PQ_PARAM_COLOR_FLAG_15,
     MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS, // Button: randomize palette flags
-    MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END, // Topic end
 
     MSX1PQ_PARAM_NUM_PARAMS
 };
