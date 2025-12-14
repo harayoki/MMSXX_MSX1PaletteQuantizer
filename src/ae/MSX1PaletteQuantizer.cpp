@@ -1567,6 +1567,11 @@ EffectMain(
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
             {
+
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::bernoulli_distribution dist(0.5);
+
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
@@ -1574,61 +1579,90 @@ EffectMain(
                 MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
-                } else if (extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
-                    MyDebugLog("RANDOMIZE block entered");
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS)
+                {
+                    // ... (乱数生成ロジックはそのまま) ...
 
-                    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
-                        in_dataP,
-                        kPFParamUtilsSuite,
-                        kPFParamUtilsSuiteVersion3,
-                        out_data);
-
-                    std::random_device rd;
-                    std::mt19937 gen(rd());
-                    std::bernoulli_distribution dist(0.5);
-
-                    bool any_changed = false;
+                    A_long changed_count = 0;
+                    PF_ParamDef temp_param; // 一時的なPF_ParamDef
 
                     for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
                          i <= MSX1PQ_PARAM_COLOR_FLAG_15;
                          ++i)
                     {
-                        const A_Boolean new_value = dist(gen) ? TRUE : FALSE;
+                        // 1. パラメータをチェックアウトして、現在の値を取得
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
 
-                        // 現在値（この呼び出し内の params[]）と比較して変更検知
-                        const A_Boolean old_value = params[i]->u.bd.value;
-                        if (old_value != new_value) {
-                            any_changed = true;
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
                         }
 
-                        // 値を書き換え（ホストに反映させる意思表示は out_flags でやる）
-                        params[i]->u.bd.value = new_value;
+                        const A_Boolean old_v = temp_param.u.bd.value;
+                        const A_Boolean new_v = dist(gen) ? TRUE : FALSE;
 
-                        // UI更新（失敗することもあるので結果を見る）
-                        PF_ParamDef tmp = *params[i];
-                        tmp.u.bd.value = new_value;
+                        if (old_v != new_v)
+                        {
+                            // 2. チェックアウトした構造体に新しい値を設定
+                            temp_param.u.bd.value = new_v;
 
-                        PF_Err e = paramUtils->PF_UpdateParamUI(in_dataP->effect_ref, i, &tmp);
-                        if (e) {
-                            MyDebugLog("PF_UpdateParamUI failed i=%d err=%d", (int)i, (int)e);
+                            // 3. パラメータをチェックインして、AEに値を反映させる
+                            //    PF_CHECKIN_PARAM は新しい値を書き込む役割も果たします
+                            ERR( CheckinParam(in_dataP, temp_param) );
+
+                            changed_count++;
+                            MyDebugLog("RND: changed i=%d new=%d (using CHECKOUT/CHECKIN)", (int)i, (int)new_v);
                         } else {
-                            MyDebugLog("Updated UI param i=%d value=%d", (int)i, (int)new_value);
+                            // 値が変わらなくても、必ずチェックインする
+                            ERR( CheckinParam(in_dataP, temp_param) );
                         }
+
+                        // NOTE: 1個だけ更新する 'break;' は削除して、全て更新できるようにした方が実用的です。
                     }
 
-                    // ここが本命：「値が変わった」ことをホストへ通知
-                    if (any_changed) {
-                        out_data->out_flags |= PF_ChangeFlag_CHANGED_VALUE;
+                    if (changed_count > 0) {
+                        // ... (out_data->out_flags の設定はそのまま) ...
+
+                        // ★★★ 追加: PF_UpdateParamUI の強制呼び出し ★★★
+                        // NOTE: 乱数処理ループ内でiが最後に更新された値 (16～30) を使用
+
+                        AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+                            in_dataP,
+                            kPFParamUtilsSuite,
+                            kPFParamUtilsSuiteVersion3,
+                            out_data);
+
+                        PF_ParamDef tmp; // 一時的なパラメータ定義
+
+                        // NOTE: 乱数処理が成功し、iの値が最後まで到達している前提
+                        for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1; i <= MSX1PQ_PARAM_COLOR_FLAG_15; ++i)
+                        {
+                            // 1. Checkin 後の現在のパラメータ定義を取得
+                            ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, tmp) );
+
+                            // 2. UIの更新を要求（UIフラグは変更せず、単にUIに通知する）
+                            //    tmp.ui_flags = params[i]->ui_flags; // 既にparams[]には最新のUIフラグが入っているはず
+
+                            paramUtils->PF_UpdateParamUI(
+                                in_dataP->effect_ref,
+                                (PF_ParamIndex)i,
+                                &tmp);
+
+                            // 3. チェックアウトしたものをチェックインし直す
+                            ERR( CheckinParam(in_dataP, tmp) );
+                        }
+                        // ★★★ PF_UpdateParamUI 終了 ★★★
+
+                        out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                        out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                        out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI; // これは念のため残す
                     }
 
-                    // 画面更新も促す（必要なら）
-                    out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
-
-                    MyDebugLog("RANDOMIZE done any_changed=%d", (int)any_changed);
+                    MyDebugLog("RANDOMIZE done changed_count=%d", (int)changed_count);
                 }
-
                 break;
             }
+
             case PF_Cmd_RENDER:
                 err = Render(in_dataP, out_data, params, output);
                 break;
