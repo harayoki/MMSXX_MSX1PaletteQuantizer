@@ -154,9 +154,10 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags  = PF_OutFlag_NONE | PF_OutFlag_CUSTOM_UI;
         out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
                                PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag_CUSTOM_UI = 0x8000
     //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
     //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
     MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
@@ -585,74 +586,127 @@ static PF_Err DrawPaletteColorBox(
     void* extra)
 {
     PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
-    if (!ev || ev->e_type != PF_Event_DRAW) return PF_Err_NONE;
+    if (!ev || ev->e_type != PF_Event_DRAW) {
+        return PF_Err_NONE;
+    }
 
     (void)out_data;
     (void)output;
 
-    const PF_ParamIndex p = ev->param_index;
-    if (p < MSX1PQ_PARAM_COLOR_FLAG_1 || p > MSX1PQ_PARAM_COLOR_FLAG_15)
-        return PF_Err_NONE;
-
-    // Premiere 判定。AE 以外は描画しない。
     if (in_data->appl_id != 'FXTC') {
         return PF_Err_NONE;
     }
 
-    // パレット index 0〜14
-    const int idx = static_cast<int>(p - MSX1PQ_PARAM_COLOR_FLAG_1);
-    const MSX1PQ::QuantColor& qc = MSX1PQ::kQuantColors[idx];
+    const PF_EffectWindowInfo& ew = ev->effect_win;
+    const PF_ParamIndex p = static_cast<PF_ParamIndex>(ew.index);
+    if (p < MSX1PQ_PARAM_COLOR_FLAG_1 || p > MSX1PQ_PARAM_COLOR_FLAG_15) {
+        return PF_Err_NONE;
+    }
 
-    bool enabled = (params[p]->u.bd.value != 0);
-    float alpha  = enabled ? 1.0f : 0.3f;
+    PF_Err err = PF_Err_NONE;
 
-    // Drawbot セットアップ
-    AEGP_SuiteHandler suites(in_data->pica_basicP);
-    PF_EffectCustomUISuite1* ui_suite = suites.EffectCustomUISuite1();
-    DRAWBOT_DrawRef draw_ref = ui_suite->PF_GetDrawingReference(in_data->effect_ref, ev->contextH);
-    if (!draw_ref) return PF_Err_NONE;
+    const PF_EffectCustomUISuite1* ui_suite = nullptr;
+    const DRAWBOT_DrawbotSuite1*   draw_suite = nullptr;
+    const DRAWBOT_SupplierSuite1*  sup_suite  = nullptr;
+    const DRAWBOT_SurfaceSuite1*   surf_suite = nullptr;
 
-    DRAWBOT_DrawbotSuite1* draw_suite = suites.DrawbotSuite();
-    DRAWBOT_SupplierSuite1* sup_suite = suites.SupplierSuite();
-    DRAWBOT_SurfaceSuite1* surf_suite = suites.SurfaceSuite();
-    DRAWBOT_PathSuite1* path_suite = suites.PathSuite();
+    err = in_data->pica_basicP->AcquireSuite(
+        kPFEffectCustomUISuite,
+        kPFEffectCustomUISuiteVersion1,
+        reinterpret_cast<const void**>(&ui_suite));
+
+    if (!err) {
+        err = in_data->pica_basicP->AcquireSuite(
+            kDRAWBOT_DrawSuite,
+            kDRAWBOT_DrawSuite_Version1,
+            reinterpret_cast<const void**>(&draw_suite));
+    }
+
+    if (!err) {
+        err = in_data->pica_basicP->AcquireSuite(
+            kDRAWBOT_SupplierSuite,
+            kDRAWBOT_SupplierSuite_Version1,
+            reinterpret_cast<const void**>(&sup_suite));
+    }
+
+    if (!err) {
+        err = in_data->pica_basicP->AcquireSuite(
+            kDRAWBOT_SurfaceSuite,
+            kDRAWBOT_SurfaceSuite_VersionCurrent,
+            reinterpret_cast<const void**>(&surf_suite));
+    }
+
+    DRAWBOT_DrawRef draw_ref = nullptr;
+    if (!err) {
+        err = ui_suite->PF_GetDrawingReference(ev->contextH, &draw_ref);
+        if (!draw_ref && !err) {
+            err = PF_Err_INTERNAL_STRUCT_DAMAGED;
+        }
+    }
 
     DRAWBOT_SupplierRef supplier = nullptr;
-    DRAWBOT_SurfaceRef surface   = nullptr;
-    draw_suite->GetSupplier(draw_ref, &supplier);
-    draw_suite->GetSurface(draw_ref, &surface);
+    DRAWBOT_SurfaceRef  surface  = nullptr;
 
-    (void)sup_suite;
-    (void)path_suite;
-    (void)supplier;
+    if (!err) {
+        err = draw_suite->GetSupplier(draw_ref, &supplier);
+    }
+    if (!err) {
+        err = draw_suite->GetSurface(draw_ref, &surface);
+    }
 
-    // 描画矩形の計算
-    PF_Rect r = ev->u.draw.rect;
-    DRAWBOT_RectF32 box;
-    box.left   = static_cast<float>(r.right - 20);
-    box.top    = static_cast<float>(r.top) + 2.0f;
-    box.width  = 16.0f;
-    box.height = static_cast<float>(r.bottom - r.top) - 4.0f;
+    if (!err && surface) {
+        (void)supplier;
+        const int idx = static_cast<int>(p - MSX1PQ_PARAM_COLOR_FLAG_1);
+        const MSX1PQ::QuantColor& qc = MSX1PQ::kQuantColors[idx];
 
-    // 色
-    DRAWBOT_ColorRGBA col;
-    col.red   = qc.r / 255.0f;
-    col.green = qc.g / 255.0f;
-    col.blue  = qc.b / 255.0f;
-    col.alpha = alpha;
+        const bool enabled = (params[p]->u.bd.value != 0);
 
-    // BOX をそのまま四角塗りで描く（Path を作らず PaintRect を使う）
-    surf_suite->PushStateStack(surface);
-    surf_suite->PaintRect(surface, &col, &box);
-    surf_suite->PopStateStack(surface);
+        const PF_UnionableRect& r = ew.param_title_frame;
+        DRAWBOT_RectF32 box;
+        box.left   = static_cast<float>(r.right - 20);
+        box.top    = static_cast<float>(r.top + 2);
+        box.width  = 16.0f;
+        box.height = static_cast<float>(r.bottom - r.top - 4);
 
-    return PF_Err_NONE;
+        DRAWBOT_ColorRGBA col;
+        col.red   = qc.r / 255.0f;
+        col.green = qc.g / 255.0f;
+        col.blue  = qc.b / 255.0f;
+        col.alpha = enabled ? 1.0f : 0.3f;
+
+        surf_suite->PushStateStack(surface);
+        surf_suite->PaintRect(surface, &col, &box);
+        surf_suite->PopStateStack(surface);
+    }
+
+    if (surf_suite) {
+        in_data->pica_basicP->ReleaseSuite(
+            kDRAWBOT_SurfaceSuite,
+            kDRAWBOT_SurfaceSuite_VersionCurrent);
+    }
+    if (sup_suite) {
+        in_data->pica_basicP->ReleaseSuite(
+            kDRAWBOT_SupplierSuite,
+            kDRAWBOT_SupplierSuite_Version1);
+    }
+    if (draw_suite) {
+        in_data->pica_basicP->ReleaseSuite(
+            kDRAWBOT_DrawSuite,
+            kDRAWBOT_DrawSuite_Version1);
+    }
+    if (ui_suite) {
+        in_data->pica_basicP->ReleaseSuite(
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1);
+    }
+
+    return err;
 }
 
 
-// ------------------------------------------------------------
-// 横8ドット内2色制限
-// ------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 8bit ARGB (AE用) 量子化
+// ---------------------------------------------------------------------------
 
 static void
 apply_8dot2col_dispatch_ARGB(
@@ -1641,7 +1695,8 @@ EffectMain(
                           reinterpret_cast<PF_SmartRenderExtra*>(extra));
                 break;
             case PF_Cmd_EVENT:
-                return DrawPaletteColorBox(in_dataP, out_data, params, output, extra);
+                err = DrawPaletteColorBox(in_dataP, out_data, params, output, extra);
+                break;
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない
