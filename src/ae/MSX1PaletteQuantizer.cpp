@@ -1576,6 +1576,7 @@ EffectMain(
                     UpdateParameterUI(in_dataP, out_data, params);
                 } else if (extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
                     MyDebugLog("RANDOMIZE block entered");
+
                     AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
                         in_dataP,
                         kPFParamUtilsSuite,
@@ -1586,27 +1587,44 @@ EffectMain(
                     std::mt19937 gen(rd());
                     std::bernoulli_distribution dist(0.5);
 
-                    bool logged_update = false;
+                    bool any_changed = false;
+
                     for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
                          i <= MSX1PQ_PARAM_COLOR_FLAG_15;
-                         ++i) {
-                        PF_ParamDef tmp = *params[i];
-                        const A_Boolean value = dist(gen) ? TRUE : FALSE;
-                        if (!logged_update) {
-                            MyDebugLog("Updating flag param i=%d value=%d", static_cast<int>(i), value);
-                            logged_update = true;
-                        }
-                        tmp.u.bd.value = value;
-                        params[i]->u.bd.value = value;
+                         ++i)
+                    {
+                        const A_Boolean new_value = dist(gen) ? TRUE : FALSE;
 
-                        paramUtils->PF_UpdateParamUI(in_dataP->effect_ref,
-                                                     i,
-                                                     &tmp);
-                        MyDebugLog("Updated UI param i=%d", static_cast<int>(i));
+                        // 現在値（この呼び出し内の params[]）と比較して変更検知
+                        const A_Boolean old_value = params[i]->u.bd.value;
+                        if (old_value != new_value) {
+                            any_changed = true;
+                        }
+
+                        // 値を書き換え（ホストに反映させる意思表示は out_flags でやる）
+                        params[i]->u.bd.value = new_value;
+
+                        // UI更新（失敗することもあるので結果を見る）
+                        PF_ParamDef tmp = *params[i];
+                        tmp.u.bd.value = new_value;
+
+                        PF_Err e = paramUtils->PF_UpdateParamUI(in_dataP->effect_ref, i, &tmp);
+                        if (e) {
+                            MyDebugLog("PF_UpdateParamUI failed i=%d err=%d", (int)i, (int)e);
+                        } else {
+                            MyDebugLog("Updated UI param i=%d value=%d", (int)i, (int)new_value);
+                        }
                     }
 
-                    MyDebugLog("RANDOMIZE done");
+                    // ここが本命：「値が変わった」ことをホストへ通知
+                    if (any_changed) {
+                        out_data->out_flags |= PF_ChangeFlag_CHANGED_VALUE;
+                    }
+
+                    // 画面更新も促す（必要なら）
                     out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+
+                    MyDebugLog("RANDOMIZE done any_changed=%d", (int)any_changed);
                 }
 
                 break;
