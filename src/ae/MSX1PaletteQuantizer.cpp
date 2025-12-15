@@ -18,9 +18,110 @@
 #include <cstdarg>
 #include <cstdio>
 #include <random>
+#include <cstring>
+
+
+#ifndef MSX1PQ_IMPL_AEFX_SUITE_HELPER
+#define MSX1PQ_IMPL_AEFX_SUITE_HELPER
+extern "C" {
+PF_Err AEFX_AcquireSuite(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    const char  *name,
+    int32_t      version,
+    const char  *error_stringPC0,
+    void       **suite)
+{
+    PF_Err         err    = PF_Err_NONE;
+    SPBasicSuite  *bsuite = in_data->pica_basicP;
+
+    if (bsuite) {
+        (*bsuite->AcquireSuite)((char*)name, version, (const void**)suite);
+        if (!*suite) {
+            err = PF_Err_BAD_CALLBACK_PARAM;
+        }
+    } else {
+        err = PF_Err_BAD_CALLBACK_PARAM;
+    }
+
+    if (err) {
+        const char *error_stringPC = error_stringPC0 ? error_stringPC0 : "Not able to acquire AEFX Suite.";
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, error_stringPC);
+    }
+
+    return err;
+}
+
+PF_Err AEFX_ReleaseSuite(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    const char  *name,
+    int32_t      version,
+    const char  *error_stringPC0)
+{
+    PF_Err         err    = PF_Err_NONE;
+    SPBasicSuite  *bsuite = in_data->pica_basicP;
+
+    if (bsuite) {
+        (*bsuite->ReleaseSuite)((char*)name, version);
+    } else {
+        err = PF_Err_BAD_CALLBACK_PARAM;
+    }
+
+    if (err) {
+        const char *error_stringPC = error_stringPC0 ? error_stringPC0 : "Not able to release AEFX Suite.";
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, error_stringPC);
+    }
+
+    return err;
+}
+
+PF_Err AEFX_AcquireDrawbotSuites(
+    PF_InData       *in_data,
+    PF_OutData      *out_data,
+    DRAWBOT_Suites  *suitesP)
+{
+    PF_Err err = PF_Err_NONE;
+
+    if (!suitesP) {
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, "NULL suite pointer passed to AEFX_AcquireDrawbotSuites");
+        return PF_Err_UNRECOGNIZED_PARAM_TYPE;
+    }
+
+    err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, NULL, (void **)&suitesP->drawbot_suiteP);
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, NULL, (void **)&suitesP->supplier_suiteP);
+    }
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, NULL, (void **)&suitesP->surface_suiteP);
+    }
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_PathSuite, kDRAWBOT_PathSuite_VersionCurrent, NULL, (void **)&suitesP->path_suiteP);
+    }
+    return err;
+}
+
+PF_Err AEFX_ReleaseDrawbotSuites(
+    PF_InData   *in_data,
+    PF_OutData  *out_data)
+{
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_PathSuite, kDRAWBOT_PathSuite_VersionCurrent, NULL);
+    return PF_Err_NONE;
+}
+} // extern "C"
+#endif // MSX1PQ_IMPL_AEFX_SUITE_HELPER
 
 
 #ifdef AE_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
 #include <Windows.h>
 static inline void MyDebugLog(const char* fmt, ...)
 {
@@ -116,6 +217,161 @@ static inline PF_Err CheckinParam(
     return PF_CHECKIN_PARAM(in_data, &param);
 }
 
+
+static PF_Err DrawSwatchRow(
+    PF_InData     *in_data,
+    PF_OutData    *out_data,
+    PF_ParamDef   *params[],
+    PF_EventExtra *event_extra)
+{
+    if (!event_extra || !params || !in_data || !out_data) {
+        return PF_Err_NONE;
+    }
+    if (event_extra->e_type != PF_Event_DRAW ||
+        event_extra->effect_win.index != MSX1PQ_PARAM_SWATCH_ROW) {
+        return PF_Err_NONE;
+    }
+
+    MyDebugLog("DrawSwatchRow: area=%d index=%d event=%d",
+               event_extra->effect_win.area,
+               event_extra->effect_win.index,
+               event_extra->e_type);
+
+    const PF_Rect* frame_ptr = &event_extra->effect_win.current_frame;
+    const PF_Rect& title_frame = event_extra->effect_win.param_title_frame;
+    if (frame_ptr->bottom <= frame_ptr->top) {
+        frame_ptr = &title_frame;
+    }
+    const PF_Rect& frame = *frame_ptr;
+    const float height   = static_cast<float>(frame.bottom - frame.top);
+    const float width    = static_cast<float>(frame.right - frame.left);
+    const float window_height = std::max(height, 20.0f);
+    const float margin   = 4.0f;
+    const float max_box_by_height = window_height - 4.0f;
+    const float available_width = std::max(width - margin * 2.0f, 0.0f);
+    const float box_space = std::max(available_width - (MSX1PQ::kNumBasicColors - 1) * margin, 0.0f);
+    const float max_box_by_width = box_space / MSX1PQ::kNumBasicColors;
+    const float box_size = std::max(4.0f, std::min(14.0f, std::min(max_box_by_height, max_box_by_width)));
+    MyDebugLog("DrawSwatchRow: frame=(%d,%d,%d,%d) size=(%.1f,%.1f) window_h=%.1f box_size=%.1f title_frame=(%d,%d,%d,%d)",
+               frame.left, frame.top, frame.right, frame.bottom, width, height, window_height, box_size,
+               title_frame.left, title_frame.top, title_frame.right, title_frame.bottom);
+
+    const A_long color_system = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
+    const MSX1PQ::QuantColor* palette = get_basic_palette(static_cast<int>(color_system));
+    if (!palette) {
+        return PF_Err_NONE;
+    }
+
+    DRAWBOT_Suites drawbot_suites{};
+    if (AEFX_AcquireDrawbotSuites(in_data, out_data, &drawbot_suites) != PF_Err_NONE) {
+        MyDebugLog("DrawSwatchRow: AcquireDrawbotSuites failed");
+        return PF_Err_NONE;
+    }
+
+    PF_EffectCustomUISuite1 *custom_ui_suite = nullptr;
+    DRAWBOT_DrawRef draw_ref = nullptr;
+    if (AEFX_AcquireSuite(
+            in_data,
+            out_data,
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1,
+            "EffectCustomUISuite",
+            reinterpret_cast<void**>(&custom_ui_suite)) == PF_Err_NONE &&
+        custom_ui_suite) {
+        (void)custom_ui_suite->PF_GetDrawingReference(event_extra->contextH, &draw_ref);
+        (void)AEFX_ReleaseSuite(
+            in_data,
+            out_data,
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1,
+            "EffectCustomUISuite");
+    }
+
+    if (!draw_ref) {
+        (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+        return PF_Err_NONE;
+    }
+
+    DRAWBOT_SupplierRef supplier_ref = nullptr;
+    DRAWBOT_SurfaceRef surface_ref   = nullptr;
+    if (drawbot_suites.drawbot_suiteP->GetSupplier(draw_ref, &supplier_ref) != PF_Err_NONE ||
+        drawbot_suites.drawbot_suiteP->GetSurface(draw_ref, &surface_ref) != PF_Err_NONE) {
+        MyDebugLog("DrawSwatchRow: GetSupplier/GetSurface failed");
+        (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+        return PF_Err_NONE;
+    }
+
+    float x = static_cast<float>(frame.left) + margin;
+    const float y = (height > box_size + margin)
+        ? static_cast<float>(frame.top) + (height - box_size) * 0.5f
+        : static_cast<float>(frame.top) + margin;
+
+    DRAWBOT_BrushRef bg_brush_ref = nullptr;
+    DRAWBOT_PathRef bg_path_ref = nullptr;
+    DRAWBOT_ColorRGBA bg_color{};
+    bg_color.red = bg_color.green = bg_color.blue = 0.1f;
+    bg_color.alpha = 1.0f;
+
+    DRAWBOT_RectF32 bg_rect{
+        static_cast<float>(frame.left) + 0.5f,
+        static_cast<float>(frame.top) + 0.5f,
+        static_cast<float>(frame.right - frame.left),
+        static_cast<float>(window_height < 18.0f ? 18.0f : window_height)
+    };
+
+    if (drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &bg_path_ref) == PF_Err_NONE) {
+        (void)drawbot_suites.path_suiteP->AddRect(bg_path_ref, &bg_rect);
+        if (drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &bg_color, &bg_brush_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.surface_suiteP->FillPath(surface_ref, bg_brush_ref, bg_path_ref, kDRAWBOT_FillType_Default);
+        }
+    }
+
+    if (bg_brush_ref) {
+        (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(bg_brush_ref));
+    }
+    if (bg_path_ref) {
+        (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(bg_path_ref));
+    }
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        DRAWBOT_PathRef path_ref = nullptr;
+        DRAWBOT_BrushRef brush_ref = nullptr;
+        DRAWBOT_RectF32 rectF{ x + 0.5f, y + 0.5f, box_size, box_size };
+
+        if (drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &path_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.path_suiteP->AddRect(path_ref, &rectF);
+        }
+        else {
+            MyDebugLog("DrawSwatchRow: NewPath failed index=%d", i);
+        }
+
+        DRAWBOT_ColorRGBA c{};
+        c.red   = static_cast<float>(palette[i].r) / 255.0f;
+        c.green = static_cast<float>(palette[i].g) / 255.0f;
+        c.blue  = static_cast<float>(palette[i].b) / 255.0f;
+        c.alpha = 1.0f;
+
+        if (path_ref &&
+            drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &c, &brush_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.surface_suiteP->FillPath(surface_ref, brush_ref, path_ref, kDRAWBOT_FillType_Default);
+        } else if (path_ref) {
+            MyDebugLog("DrawSwatchRow: NewBrush failed index=%d", i);
+        }
+
+        if (brush_ref) {
+            (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(brush_ref));
+        }
+        if (path_ref) {
+            (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(path_ref));
+        }
+
+        x += box_size + margin;
+    }
+
+    event_extra->evt_out_flags |= PF_EO_HANDLED_EVENT;
+    (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+    return PF_Err_NONE;
+}
 
 } // namespace
 
@@ -423,6 +679,12 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_CANNOT_TIME_VARY;
+    def.ui_flags |= PF_PUI_CONTROL;
+    def.ui_height = 32;
+    PF_ADD_NULL("Palette sample", MSX1PQ_PARAM_SWATCH_ROW);
+
+    AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*1: Black",
         "Enable",
@@ -586,6 +848,16 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+
+    PF_CustomUIInfo ci{};
+    ci.events = PF_CustomEFlag_EFFECT;
+    ci.comp_ui_width = ci.comp_ui_height = 0;
+    ci.comp_ui_alignment = PF_UIAlignment_NONE;
+    ci.layer_ui_width = ci.layer_ui_height = 0;
+    ci.layer_ui_alignment = PF_UIAlignment_NONE;
+    ci.preview_ui_width = ci.preview_ui_height = 0;
+    ci.preview_ui_alignment = PF_UIAlignment_NONE;
+    ERR((*(in_data->inter.register_ui))(in_data->effect_ref, &ci));
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
@@ -1583,6 +1855,32 @@ SetPaletteFlagValue(
 }
 
 
+static PF_Err
+HandleEvent(
+    PF_InData     *in_data,
+    PF_OutData    *out_data,
+    PF_ParamDef   *params[],
+    PF_LayerDef   *output,
+    PF_EventExtra *extra)
+{
+    PF_Err err = PF_Err_NONE;
+
+    (void)output;
+
+    if (!extra) {
+        return err;
+    }
+
+    if (extra->e_type == PF_Event_DRAW &&
+        extra->effect_win.index == MSX1PQ_PARAM_SWATCH_ROW) {
+        MyDebugLog("HandleEvent: draw index=%d area=%d", extra->effect_win.index, extra->effect_win.area);
+        err = DrawSwatchRow(in_data, out_data, params, extra);
+    }
+
+    return err;
+}
+
+
 PF_Err
 EffectMain(
     PF_Cmd         cmd,
@@ -1637,7 +1935,7 @@ EffectMain(
             // case PF_Cmd_UPDATE_PARAMS_UI:
             //     return UpdateParameterUI(in_dataP, out_data, params);
             case PF_Cmd_PARAMS_SETUP:
-                MyDebugLog("PARAMS_SETUP start");
+                //MyDebugLog("PARAMS_SETUP start");
                 err = ParamsSetup(in_dataP, out_data, params, output);
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
@@ -1650,22 +1948,19 @@ EffectMain(
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
-                MyDebugLog("USER_CHANGED_PARAM: index=%d", static_cast<int>(extraP->param_index));
-                MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
+                //MyDebugLog("USER_CHANGED_PARAM: index=%d", static_cast<int>(extraP->param_index));
+                //MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
                 } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS)
                 {
-                    // ... (?????????????) ...
-
                     A_long changed_count = 0;
-                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamDef temp_param;
 
                     for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
                          i <= MSX1PQ_PARAM_COLOR_FLAG_15;
                          ++i)
                     {
-                        // 1. ???????????????????????
                         ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
 
                         if (temp_param.param_type != PF_Param_CHECKBOX) {
@@ -1678,21 +1973,15 @@ EffectMain(
 
                         if (old_v != new_v)
                         {
-                            // 2. ????????????????????
                             temp_param.u.bd.value = new_v;
                             temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
-                            // params[] ???????????????? UI ????????
                             params[i]->u.bd.value = new_v;
                             params[i]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
 
-                            // 3. ???????????????AE????????
-                            //    PF_CHECKIN_PARAM ????????????????
                             ERR( CheckinParam(in_dataP, temp_param) );
 
                             changed_count++;
-                            MyDebugLog("RND: changed i=%d new=%d (using CHECKOUT/CHECKIN)", (int)i, (int)new_v);
                         } else {
-                            // ????????????????????
                             ERR( CheckinParam(in_dataP, temp_param) );
                         }
                     }
@@ -1702,13 +1991,13 @@ EffectMain(
                         if (!err) {
                             out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
                             out_data->out_flags |= PF_OutFlag_REFRESH_UI;
-                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI; // ?????????
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
                         }
                     }
 
-                    MyDebugLog("RANDOMIZE done changed_count=%d", (int)changed_count);
+                    //MyDebugLog("RANDOMIZE done changed_count=%d", (int)changed_count);
                 } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE) {
-                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamDef temp_param;
                     PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
                     A_long candidate_count = 0;
 
@@ -1741,10 +2030,10 @@ EffectMain(
                             out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
                             out_data->out_flags |= PF_OutFlag_REFRESH_UI;
                             out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
-                            MyDebugLog("RND+1: enabled index=%d", static_cast<int>(target));
+                            // MyDebugLog("RND+1: enabled index=%d", static_cast<int>(target));
                         }
                     } else {
-                        MyDebugLog("RND+1: no disabled color to enable");
+                        // MyDebugLog("RND+1: no disabled color to enable");
                     }
                 } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE) {
                     PF_ParamDef temp_param; // ????PF_ParamDef
@@ -1780,10 +2069,10 @@ EffectMain(
                             out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
                             out_data->out_flags |= PF_OutFlag_REFRESH_UI;
                             out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
-                            MyDebugLog("RND-1: disabled index=%d", static_cast<int>(target));
+                            //MyDebugLog("RND-1: disabled index=%d", static_cast<int>(target));
                         }
                     } else {
-                        MyDebugLog("RND-1: no enabled color to disable");
+                        //MyDebugLog("RND-1: no enabled color to disable");
                     }
                 }
                 break;
@@ -1813,24 +2102,19 @@ EffectMain(
             case PF_Cmd_EVENT:
             {
                 PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
-                MyDebugLog("PF_Cmd_EVENT command received");
+                //MyDebugLog("PF_Cmd_EVENT command received");
                 if (!ev) {
                     break;
                 }
 
-                MyDebugLog("EVENT: e_type=%d",
-                           (int)ev->e_type);
+                MyDebugLog("EVENT: e_type=%d", (int)ev->e_type);
 
-                /*
-                ランダムボタン用の param_index が
-                MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS であれば、ここで処理を呼び出してもよい。
-
-                if (ev->e_type == PF_Event_COMMAND &&
-                    ev->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
-                    MyDebugLog("EVENT: RANDOMIZE button pressed");
-                    // ランダム化処理関数を呼ぶなど
-                }
-                */
+                err = HandleEvent(
+                    in_dataP,
+                    out_data,
+                    params,
+                    output,
+                    ev);
 
                 break;
             }
