@@ -1605,6 +1605,10 @@ EffectMain(
                         {
                             // 2. チェックアウトした構造体に新しい値を設定
                             temp_param.u.bd.value = new_v;
+                            temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+                            // params[] 側にも値とフラグを反映しておく（UI更新の確実性向上）
+                            params[i]->u.bd.value = new_v;
+                            params[i]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
 
                             // 3. パラメータをチェックインして、AEに値を反映させる
                             //    PF_CHECKIN_PARAM は新しい値を書き込む役割も果たします
