@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <random>
 
 
 #ifdef AE_OS_WIN
@@ -154,9 +155,11 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags  = PF_OutFlag_NONE | PF_OutFlag_CUSTOM_UI; // | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
         out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
                                PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag_CUSTOM_UI = 0x00008000
+    //PF_OutFlag_SEND_UPDATE_PARAMS_UI = 0x04000000
     //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
     //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
     MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
@@ -552,6 +555,33 @@ ParamsSetup (
         TRUE,
         0,
         MSX1PQ_PARAM_COLOR_FLAG_15
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Randomize",
+        "Randomize",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Rand +1",
+        "Rand +1",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Rand -1",
+        "Rand -1",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE
     );
 
     AEFX_CLR_STRUCT(def);
@@ -1495,6 +1525,63 @@ UpdateParameterUI(
     return err;
 }
 
+static PF_Err
+RefreshPaletteFlagsUI(
+    PF_InData   *in_data,
+    PF_OutData  *out_data)
+{
+    PF_Err err = PF_Err_NONE;
+
+    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+        in_data,
+        kPFParamUtilsSuite,
+        kPFParamUtilsSuiteVersion3,
+        out_data);
+
+    PF_ParamDef tmp;
+    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+         i <= MSX1PQ_PARAM_COLOR_FLAG_15 && !err;
+         ++i) {
+        ERR( CheckoutParam(
+                in_data,
+                static_cast<PF_ParamIndex>(i),
+                tmp) );
+        if (!err) {
+            paramUtils->PF_UpdateParamUI(
+                in_data->effect_ref,
+                static_cast<PF_ParamIndex>(i),
+                &tmp);
+            ERR( CheckinParam(in_data, tmp) );
+        }
+    }
+
+    return err;
+}
+
+static PF_Err
+SetPaletteFlagValue(
+    PF_InData    *in_data,
+    PF_ParamDef  *params[],
+    PF_ParamIndex index,
+    A_Boolean     value)
+{
+    PF_Err err = PF_Err_NONE;
+    PF_ParamDef temp_param;
+
+    ERR( CheckoutParam(in_data, index, temp_param) );
+    if (!err) {
+        if (temp_param.param_type == PF_Param_CHECKBOX) {
+            temp_param.u.bd.value = value;
+            temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+            params[index]->u.bd.value = value;
+            params[index]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        }
+        ERR( CheckinParam(in_data, temp_param) );
+    }
+
+    return err;
+}
+
 
 PF_Err
 EffectMain(
@@ -1506,6 +1593,37 @@ EffectMain(
     void           *extra)
 {
     PF_Err  err = PF_Err_NONE;
+
+    // Log command at entry
+    switch (cmd) {
+    case PF_Cmd_ABOUT:
+        MyDebugLog("CMD: ABOUT");
+        break;
+    case PF_Cmd_GLOBAL_SETUP:
+        MyDebugLog("CMD: GLOBAL_SETUP");
+        break;
+    case PF_Cmd_PARAMS_SETUP:
+        MyDebugLog("CMD: PARAMS_SETUP");
+        break;
+    case PF_Cmd_RENDER:
+        MyDebugLog("CMD: RENDER");
+        break;
+    case PF_Cmd_SMART_PRE_RENDER:
+        MyDebugLog("CMD: SMART_PRE_RENDER");
+        break;
+    case PF_Cmd_SMART_RENDER:
+        MyDebugLog("CMD: SMART_RENDER");
+        break;
+    case PF_Cmd_USER_CHANGED_PARAM:
+        MyDebugLog("CMD: USER_CHANGED_PARAM");
+        break;
+    case PF_Cmd_EVENT:
+        MyDebugLog("CMD: EVENT");
+        break;
+    default:
+        MyDebugLog("CMD: %d (other)", (int)cmd);
+        break;
+    }
 
     try {
         switch (cmd)
@@ -1519,19 +1637,158 @@ EffectMain(
             // case PF_Cmd_UPDATE_PARAMS_UI:
             //     return UpdateParameterUI(in_dataP, out_data, params);
             case PF_Cmd_PARAMS_SETUP:
+                MyDebugLog("PARAMS_SETUP start");
                 err = ParamsSetup(in_dataP, out_data, params, output);
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
             {
+
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::bernoulli_distribution dist(0.5);
+
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
+                MyDebugLog("USER_CHANGED_PARAM: index=%d", static_cast<int>(extraP->param_index));
+                MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
-                }
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS)
+                {
+                    // ... (?????????????) ...
 
+                    A_long changed_count = 0;
+                    PF_ParamDef temp_param; // ????PF_ParamDef
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        // 1. ???????????????????????
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const A_Boolean old_v = temp_param.u.bd.value;
+                        const A_Boolean new_v = dist(gen) ? TRUE : FALSE;
+
+                        if (old_v != new_v)
+                        {
+                            // 2. ????????????????????
+                            temp_param.u.bd.value = new_v;
+                            temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+                            // params[] ???????????????? UI ????????
+                            params[i]->u.bd.value = new_v;
+                            params[i]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+
+                            // 3. ???????????????AE????????
+                            //    PF_CHECKIN_PARAM ????????????????
+                            ERR( CheckinParam(in_dataP, temp_param) );
+
+                            changed_count++;
+                            MyDebugLog("RND: changed i=%d new=%d (using CHECKOUT/CHECKIN)", (int)i, (int)new_v);
+                        } else {
+                            // ????????????????????
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                        }
+                    }
+
+                    if (changed_count > 0) {
+                        ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                        if (!err) {
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI; // ?????????
+                        }
+                    }
+
+                    MyDebugLog("RANDOMIZE done changed_count=%d", (int)changed_count);
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE) {
+                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
+                    A_long candidate_count = 0;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const bool enabled = (temp_param.u.bd.value != 0);
+                        ERR( CheckinParam(in_dataP, temp_param) );
+
+                        if (!enabled && candidate_count < static_cast<A_long>(MSX1PQ::kNumBasicColors)) {
+                            candidates[candidate_count++] = static_cast<PF_ParamIndex>(i);
+                        }
+                    }
+
+                    if (candidate_count > 0) {
+                        std::uniform_int_distribution<A_long> pick(0, candidate_count - 1);
+                        const PF_ParamIndex target = candidates[pick(gen)];
+
+                        ERR( SetPaletteFlagValue(in_dataP, params, target, TRUE) );
+                        if (!err) {
+                            ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                            MyDebugLog("RND+1: enabled index=%d", static_cast<int>(target));
+                        }
+                    } else {
+                        MyDebugLog("RND+1: no disabled color to enable");
+                    }
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE) {
+                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
+                    A_long candidate_count = 0;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const bool enabled = (temp_param.u.bd.value != 0);
+                        ERR( CheckinParam(in_dataP, temp_param) );
+
+                        if (enabled && candidate_count < static_cast<A_long>(MSX1PQ::kNumBasicColors)) {
+                            candidates[candidate_count++] = static_cast<PF_ParamIndex>(i);
+                        }
+                    }
+
+                    if (candidate_count > 0) {
+                        std::uniform_int_distribution<A_long> pick(0, candidate_count - 1);
+                        const PF_ParamIndex target = candidates[pick(gen)];
+
+                        ERR( SetPaletteFlagValue(in_dataP, params, target, FALSE) );
+                        if (!err) {
+                            ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                            MyDebugLog("RND-1: disabled index=%d", static_cast<int>(target));
+                        }
+                    } else {
+                        MyDebugLog("RND-1: no enabled color to disable");
+                    }
+                }
                 break;
             }
+
             case PF_Cmd_RENDER:
                 err = Render(in_dataP, out_data, params, output);
                 break;
@@ -1553,6 +1810,30 @@ EffectMain(
                           params,
                           reinterpret_cast<PF_SmartRenderExtra*>(extra));
                 break;
+            case PF_Cmd_EVENT:
+            {
+                PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
+                MyDebugLog("PF_Cmd_EVENT command received");
+                if (!ev) {
+                    break;
+                }
+
+                MyDebugLog("EVENT: e_type=%d",
+                           (int)ev->e_type);
+
+                /*
+                ランダムボタン用の param_index が
+                MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS であれば、ここで処理を呼び出してもよい。
+
+                if (ev->e_type == PF_Event_COMMAND &&
+                    ev->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS) {
+                    MyDebugLog("EVENT: RANDOMIZE button pressed");
+                    // ランダム化処理関数を呼ぶなど
+                }
+                */
+
+                break;
+            }
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない
