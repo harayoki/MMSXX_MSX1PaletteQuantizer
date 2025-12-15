@@ -20,6 +20,103 @@
 #include <random>
 
 
+#ifndef MSX1PQ_IMPL_AEFX_SUITE_HELPER
+#define MSX1PQ_IMPL_AEFX_SUITE_HELPER
+extern "C" {
+PF_Err AEFX_AcquireSuite(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    const char  *name,
+    int32_t      version,
+    const char  *error_stringPC0,
+    void       **suite)
+{
+    PF_Err         err    = PF_Err_NONE;
+    SPBasicSuite  *bsuite = in_data->pica_basicP;
+
+    if (bsuite) {
+        (*bsuite->AcquireSuite)((char*)name, version, (const void**)suite);
+        if (!*suite) {
+            err = PF_Err_BAD_CALLBACK_PARAM;
+        }
+    } else {
+        err = PF_Err_BAD_CALLBACK_PARAM;
+    }
+
+    if (err) {
+        const char *error_stringPC = error_stringPC0 ? error_stringPC0 : "Not able to acquire AEFX Suite.";
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, error_stringPC);
+    }
+
+    return err;
+}
+
+PF_Err AEFX_ReleaseSuite(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    const char  *name,
+    int32_t      version,
+    const char  *error_stringPC0)
+{
+    PF_Err         err    = PF_Err_NONE;
+    SPBasicSuite  *bsuite = in_data->pica_basicP;
+
+    if (bsuite) {
+        (*bsuite->ReleaseSuite)((char*)name, version);
+    } else {
+        err = PF_Err_BAD_CALLBACK_PARAM;
+    }
+
+    if (err) {
+        const char *error_stringPC = error_stringPC0 ? error_stringPC0 : "Not able to release AEFX Suite.";
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, error_stringPC);
+    }
+
+    return err;
+}
+
+PF_Err AEFX_AcquireDrawbotSuites(
+    PF_InData       *in_data,
+    PF_OutData      *out_data,
+    DRAWBOT_Suites  *suitesP)
+{
+    PF_Err err = PF_Err_NONE;
+
+    if (!suitesP) {
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, "NULL suite pointer passed to AEFX_AcquireDrawbotSuites");
+        return PF_Err_UNRECOGNIZED_PARAM_TYPE;
+    }
+
+    err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, NULL, (void **)&suitesP->drawbot_suiteP);
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, NULL, (void **)&suitesP->supplier_suiteP);
+    }
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, NULL, (void **)&suitesP->surface_suiteP);
+    }
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_PathSuite, kDRAWBOT_PathSuite_VersionCurrent, NULL, (void **)&suitesP->path_suiteP);
+    }
+    return err;
+}
+
+PF_Err AEFX_ReleaseDrawbotSuites(
+    PF_InData   *in_data,
+    PF_OutData  *out_data)
+{
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_PathSuite, kDRAWBOT_PathSuite_VersionCurrent, NULL);
+    return PF_Err_NONE;
+}
+} // extern "C"
+#endif // MSX1PQ_IMPL_AEFX_SUITE_HELPER
+
+
 #ifdef AE_OS_WIN
 #include <Windows.h>
 static inline void MyDebugLog(const char* fmt, ...)
@@ -114,6 +211,120 @@ static inline PF_Err CheckinParam(
     PF_ParamDef &param)
 {
     return PF_CHECKIN_PARAM(in_data, &param);
+}
+
+static bool IsPaletteFlagIndex(PF_ParamIndex index)
+{
+    return index >= MSX1PQ_PARAM_COLOR_FLAG_1 &&
+           index <= MSX1PQ_PARAM_COLOR_FLAG_15;
+}
+
+static PF_Err DrawPaletteSwatch(
+    PF_InData      *in_data,
+    PF_OutData     *out_data,
+    PF_ParamDef    *params[],
+    PF_EventExtra  *event_extra)
+{
+    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+
+    if (!event_extra || !IsPaletteFlagIndex(event_extra->effect_win.index)) {
+        return err;
+    }
+    if (event_extra->effect_win.area != PF_EA_PARAM_TITLE ||
+        event_extra->e_type != PF_Event_DRAW) {
+        return err;
+    }
+
+    const A_long color_system = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
+    const MSX1PQ::QuantColor* palette = get_basic_palette(static_cast<int>(color_system));
+    const A_long color_idx = static_cast<A_long>(event_extra->effect_win.index - MSX1PQ_PARAM_COLOR_FLAG_1);
+    const MSX1PQ::QuantColor& qc = palette[color_idx];
+
+    DRAWBOT_ColorRGBA fill_color{};
+    fill_color.red   = static_cast<float>(qc.r) / 255.0f;
+    fill_color.green = static_cast<float>(qc.g) / 255.0f;
+    fill_color.blue  = static_cast<float>(qc.b) / 255.0f;
+    fill_color.alpha = 1.0f;
+
+    const PF_Rect& title_frame = event_extra->effect_win.param_title_frame;
+    const A_long height = title_frame.bottom - title_frame.top;
+    if (height <= 2) {
+        return err;
+    }
+    const A_long box_size_px = (std::min)(static_cast<A_long>(12), (std::max)(static_cast<A_long>(6), height - 4));
+    const float   box_size_f = static_cast<float>(box_size_px);
+    const float   origin_x   = static_cast<float>(title_frame.right - box_size_px - 6);
+    const float   origin_y   = static_cast<float>(title_frame.top) + (static_cast<float>(height) - box_size_f) * 0.5f;
+
+    DRAWBOT_Suites drawbot_suites{};
+    DRAWBOT_DrawRef draw_ref = nullptr;
+    DRAWBOT_SupplierRef supplier_ref = nullptr;
+    DRAWBOT_SurfaceRef surface_ref = nullptr;
+    DRAWBOT_PathRef path_ref = nullptr;
+    DRAWBOT_BrushRef brush_ref = nullptr;
+
+    ERR(AEFX_AcquireDrawbotSuites(in_data, out_data, &drawbot_suites));
+
+    PF_EffectCustomUISuite1 *custom_ui_suite = nullptr;
+    ERR(AEFX_AcquireSuite(
+            in_data,
+            out_data,
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1,
+            "EffectCustomUISuite",
+            reinterpret_cast<void**>(&custom_ui_suite)));
+
+    if (!err && custom_ui_suite) {
+        ERR(custom_ui_suite->PF_GetDrawingReference(event_extra->contextH, &draw_ref));
+        ERR2(AEFX_ReleaseSuite(
+                in_data,
+                out_data,
+                kPFEffectCustomUISuite,
+                kPFEffectCustomUISuiteVersion1,
+                "EffectCustomUISuite"));
+    }
+
+    if (!err) {
+        ERR(drawbot_suites.drawbot_suiteP->GetSupplier(draw_ref, &supplier_ref));
+    }
+    if (!err) {
+        ERR(drawbot_suites.drawbot_suiteP->GetSurface(draw_ref, &surface_ref));
+    }
+
+    if (!err) {
+        ERR(drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &path_ref));
+        if (!err) {
+            DRAWBOT_RectF32 rectF{
+                origin_x + 0.5f,
+                origin_y + 0.5f,
+                box_size_f,
+                box_size_f
+            };
+            ERR(drawbot_suites.path_suiteP->AddRect(path_ref, &rectF));
+        }
+    }
+
+    if (!err) {
+        ERR(drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &fill_color, &brush_ref));
+    }
+    if (!err) {
+        ERR(drawbot_suites.surface_suiteP->FillPath(surface_ref, brush_ref, path_ref, kDRAWBOT_FillType_Default));
+    }
+
+    if (brush_ref) {
+        ERR2(drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(brush_ref)));
+    }
+    if (path_ref) {
+        ERR2(drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(path_ref)));
+    }
+
+    ERR2(AEFX_ReleaseDrawbotSuites(in_data, out_data));
+
+    if (!err) {
+        event_extra->evt_out_flags |= PF_EO_HANDLED_EVENT;
+    }
+
+    return err;
 }
 
 
@@ -423,6 +634,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*1: Black",
         "Enable",
@@ -432,6 +644,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*2: Medium Green",
         "Enable",
@@ -441,6 +654,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*3: Light Green",
         "Enable",
@@ -450,6 +664,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*4: Dark Blue",
         "Enable",
@@ -459,6 +674,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*5: Light Blue",
         "Enable",
@@ -468,6 +684,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*6: Dark Red",
         "Enable",
@@ -477,6 +694,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*7: Cyan",
         "Enable",
@@ -486,6 +704,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*8: Medium Red",
         "Enable",
@@ -495,6 +714,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*9: Light Red",
         "Enable",
@@ -504,6 +724,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*10: Dark Yellow",
         "Enable",
@@ -513,6 +734,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*11: Light Yellow",
         "Enable",
@@ -522,6 +744,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*12: Dark Green",
         "Enable",
@@ -531,6 +754,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*13: Magenta",
         "Enable",
@@ -540,6 +764,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*14: Gray",
         "Enable",
@@ -549,6 +774,7 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*15: White",
         "Enable",
@@ -586,6 +812,16 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+
+    PF_CustomUIInfo ci{};
+    ci.events = PF_CustomEFlag_EFFECT;
+    ci.comp_ui_width = ci.comp_ui_height = 0;
+    ci.comp_ui_alignment = PF_UIAlignment_NONE;
+    ci.layer_ui_width = ci.layer_ui_height = 0;
+    ci.layer_ui_alignment = PF_UIAlignment_NONE;
+    ci.preview_ui_width = ci.preview_ui_height = 0;
+    ci.preview_ui_alignment = PF_UIAlignment_NONE;
+    ERR((*(in_data->inter.register_ui))(in_data->effect_ref, &ci));
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
@@ -1583,6 +1819,34 @@ SetPaletteFlagValue(
 }
 
 
+static PF_Err
+HandleEvent(
+    PF_InData     *in_data,
+    PF_OutData    *out_data,
+    PF_ParamDef   *params[],
+    PF_LayerDef   *output,
+    PF_EventExtra *extra)
+{
+    PF_Err err = PF_Err_NONE;
+
+    (void)output;
+
+    if (!extra) {
+        return err;
+    }
+
+    if (extra->e_type == PF_Event_DRAW &&
+        extra->effect_win.area == PF_EA_PARAM_TITLE &&
+        IsPaletteFlagIndex(extra->effect_win.index)) {
+        MyDebugLog("Event: Draw Palette Swatch index=%d",
+            static_cast<int>(extra->effect_win.index));
+        err = DrawPaletteSwatch(in_data, out_data, params, extra);
+    }
+
+    return err;
+}
+
+
 PF_Err
 EffectMain(
     PF_Cmd         cmd,
@@ -1811,6 +2075,12 @@ EffectMain(
 
                 MyDebugLog("EVENT: e_type=%d", (int)ev->e_type);
 
+                err = HandleEvent(
+                    in_dataP,
+                    out_data,
+                    params,
+                    output,
+                    ev);
 
                 break;
             }
