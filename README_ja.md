@@ -80,9 +80,9 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 *   `platform/Mac/MSX1PaletteQuantizer.xcodeproj` を Xcode で開きます。
 *   `MSX1PaletteQuantizer` ターゲットをビルドして `MSX1PaletteQuantizer.plugin` を生成します。
 
-## LinuxでのCLIビルド手順（コンテナ向け、検証は限定的）
+## LinuxでのCLIビルド手順
 
-Adobe SDK が不要な環境（例: コンテナ化した Linux 環境）で `msx1pq_cli` のみをビルドする手順です。ディストリビューション全体では未検証です。
+Adobe SDK が不要な環境で `msx1pq_cli` のみをビルドする手順です。
 
 1. ビルド用ツールチェーンをインストール（Ubuntu 例）:
    ```bash
