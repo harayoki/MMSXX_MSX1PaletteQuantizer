@@ -682,7 +682,7 @@ ParamsSetup (
     def.flags |= PF_ParamFlag_CANNOT_TIME_VARY;
     def.ui_flags |= PF_PUI_CONTROL;
     def.ui_height = 32;
-    PF_ADD_NULL("Palette swatches", MSX1PQ_PARAM_SWATCH_ROW);
+    PF_ADD_NULL("Palette sample", MSX1PQ_PARAM_SWATCH_ROW);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
