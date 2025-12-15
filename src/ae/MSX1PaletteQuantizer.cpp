@@ -567,6 +567,24 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Rand +1",
+        "Rand +1",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Rand -1",
+        "Rand -1",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE
+    );
+
+    AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
@@ -1507,6 +1525,63 @@ UpdateParameterUI(
     return err;
 }
 
+static PF_Err
+RefreshPaletteFlagsUI(
+    PF_InData   *in_data,
+    PF_OutData  *out_data)
+{
+    PF_Err err = PF_Err_NONE;
+
+    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+        in_data,
+        kPFParamUtilsSuite,
+        kPFParamUtilsSuiteVersion3,
+        out_data);
+
+    PF_ParamDef tmp;
+    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+         i <= MSX1PQ_PARAM_COLOR_FLAG_15 && !err;
+         ++i) {
+        ERR( CheckoutParam(
+                in_data,
+                static_cast<PF_ParamIndex>(i),
+                tmp) );
+        if (!err) {
+            paramUtils->PF_UpdateParamUI(
+                in_data->effect_ref,
+                static_cast<PF_ParamIndex>(i),
+                &tmp);
+            ERR( CheckinParam(in_data, tmp) );
+        }
+    }
+
+    return err;
+}
+
+static PF_Err
+SetPaletteFlagValue(
+    PF_InData    *in_data,
+    PF_ParamDef  *params[],
+    PF_ParamIndex index,
+    A_Boolean     value)
+{
+    PF_Err err = PF_Err_NONE;
+    PF_ParamDef temp_param;
+
+    ERR( CheckoutParam(in_data, index, temp_param) );
+    if (!err) {
+        if (temp_param.param_type == PF_Param_CHECKBOX) {
+            temp_param.u.bd.value = value;
+            temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+            params[index]->u.bd.value = value;
+            params[index]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        }
+        ERR( CheckinParam(in_data, temp_param) );
+    }
+
+    return err;
+}
+
 
 PF_Err
 EffectMain(
@@ -1581,16 +1656,16 @@ EffectMain(
                     UpdateParameterUI(in_dataP, out_data, params);
                 } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS)
                 {
-                    // ... (乱数生成ロジックはそのまま) ...
+                    // ... (?????????????) ...
 
                     A_long changed_count = 0;
-                    PF_ParamDef temp_param; // 一時的なPF_ParamDef
+                    PF_ParamDef temp_param; // ????PF_ParamDef
 
                     for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
                          i <= MSX1PQ_PARAM_COLOR_FLAG_15;
                          ++i)
                     {
-                        // 1. パラメータをチェックアウトして、現在の値を取得
+                        // 1. ???????????????????????
                         ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
 
                         if (temp_param.param_type != PF_Param_CHECKBOX) {
@@ -1603,66 +1678,113 @@ EffectMain(
 
                         if (old_v != new_v)
                         {
-                            // 2. チェックアウトした構造体に新しい値を設定
+                            // 2. ????????????????????
                             temp_param.u.bd.value = new_v;
                             temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
-                            // params[] 側にも値とフラグを反映しておく（UI更新の確実性向上）
+                            // params[] ???????????????? UI ????????
                             params[i]->u.bd.value = new_v;
                             params[i]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
 
-                            // 3. パラメータをチェックインして、AEに値を反映させる
-                            //    PF_CHECKIN_PARAM は新しい値を書き込む役割も果たします
+                            // 3. ???????????????AE????????
+                            //    PF_CHECKIN_PARAM ????????????????
                             ERR( CheckinParam(in_dataP, temp_param) );
 
                             changed_count++;
                             MyDebugLog("RND: changed i=%d new=%d (using CHECKOUT/CHECKIN)", (int)i, (int)new_v);
                         } else {
-                            // 値が変わらなくても、必ずチェックインする
+                            // ????????????????????
                             ERR( CheckinParam(in_dataP, temp_param) );
                         }
-
-                        // NOTE: 1個だけ更新する 'break;' は削除して、全て更新できるようにした方が実用的です。
                     }
 
                     if (changed_count > 0) {
-                        // ... (out_data->out_flags の設定はそのまま) ...
-
-                        // ★★★ 追加: PF_UpdateParamUI の強制呼び出し ★★★
-                        // NOTE: 乱数処理ループ内でiが最後に更新された値 (16～30) を使用
-
-                        AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
-                            in_dataP,
-                            kPFParamUtilsSuite,
-                            kPFParamUtilsSuiteVersion3,
-                            out_data);
-
-                        PF_ParamDef tmp; // 一時的なパラメータ定義
-
-                        // NOTE: 乱数処理が成功し、iの値が最後まで到達している前提
-                        for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1; i <= MSX1PQ_PARAM_COLOR_FLAG_15; ++i)
-                        {
-                            // 1. Checkin 後の現在のパラメータ定義を取得
-                            ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, tmp) );
-
-                            // 2. UIの更新を要求（UIフラグは変更せず、単にUIに通知する）
-                            //    tmp.ui_flags = params[i]->ui_flags; // 既にparams[]には最新のUIフラグが入っているはず
-
-                            paramUtils->PF_UpdateParamUI(
-                                in_dataP->effect_ref,
-                                (PF_ParamIndex)i,
-                                &tmp);
-
-                            // 3. チェックアウトしたものをチェックインし直す
-                            ERR( CheckinParam(in_dataP, tmp) );
+                        ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                        if (!err) {
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI; // ?????????
                         }
-                        // ★★★ PF_UpdateParamUI 終了 ★★★
-
-                        out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
-                        out_data->out_flags |= PF_OutFlag_REFRESH_UI;
-                        out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI; // これは念のため残す
                     }
 
                     MyDebugLog("RANDOMIZE done changed_count=%d", (int)changed_count);
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE) {
+                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
+                    A_long candidate_count = 0;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const bool enabled = (temp_param.u.bd.value != 0);
+                        ERR( CheckinParam(in_dataP, temp_param) );
+
+                        if (!enabled && candidate_count < static_cast<A_long>(MSX1PQ::kNumBasicColors)) {
+                            candidates[candidate_count++] = static_cast<PF_ParamIndex>(i);
+                        }
+                    }
+
+                    if (candidate_count > 0) {
+                        std::uniform_int_distribution<A_long> pick(0, candidate_count - 1);
+                        const PF_ParamIndex target = candidates[pick(gen)];
+
+                        ERR( SetPaletteFlagValue(in_dataP, params, target, TRUE) );
+                        if (!err) {
+                            ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                            MyDebugLog("RND+1: enabled index=%d", static_cast<int>(target));
+                        }
+                    } else {
+                        MyDebugLog("RND+1: no disabled color to enable");
+                    }
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE) {
+                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
+                    A_long candidate_count = 0;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const bool enabled = (temp_param.u.bd.value != 0);
+                        ERR( CheckinParam(in_dataP, temp_param) );
+
+                        if (enabled && candidate_count < static_cast<A_long>(MSX1PQ::kNumBasicColors)) {
+                            candidates[candidate_count++] = static_cast<PF_ParamIndex>(i);
+                        }
+                    }
+
+                    if (candidate_count > 0) {
+                        std::uniform_int_distribution<A_long> pick(0, candidate_count - 1);
+                        const PF_ParamIndex target = candidates[pick(gen)];
+
+                        ERR( SetPaletteFlagValue(in_dataP, params, target, FALSE) );
+                        if (!err) {
+                            ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                            MyDebugLog("RND-1: disabled index=%d", static_cast<int>(target));
+                        }
+                    } else {
+                        MyDebugLog("RND-1: no enabled color to disable");
+                    }
                 }
                 break;
             }

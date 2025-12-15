@@ -60,6 +60,8 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_COLOR_FLAG_14,
     MSX1PQ_PARAM_COLOR_FLAG_15,
     MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS, // Button: randomize palette flags
+    MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE,   // Button: random enable +1
+    MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE,  // Button: random disable -1
     MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END, // Topic end
 
     MSX1PQ_PARAM_NUM_PARAMS
