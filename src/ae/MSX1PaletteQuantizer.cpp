@@ -18,6 +18,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <random>
+#include <cstring>
 
 
 #ifndef MSX1PQ_IMPL_AEFX_SUITE_HELPER
@@ -118,6 +119,9 @@ PF_Err AEFX_ReleaseDrawbotSuites(
 
 
 #ifdef AE_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
 #include <Windows.h>
 static inline void MyDebugLog(const char* fmt, ...)
 {
@@ -213,120 +217,161 @@ static inline PF_Err CheckinParam(
     return PF_CHECKIN_PARAM(in_data, &param);
 }
 
-static bool IsPaletteFlagIndex(PF_ParamIndex index)
-{
-    return index >= MSX1PQ_PARAM_COLOR_FLAG_1 &&
-           index <= MSX1PQ_PARAM_COLOR_FLAG_15;
-}
 
-static PF_Err DrawPaletteSwatch(
-    PF_InData      *in_data,
-    PF_OutData     *out_data,
-    PF_ParamDef    *params[],
-    PF_EventExtra  *event_extra)
+static PF_Err DrawSwatchRow(
+    PF_InData     *in_data,
+    PF_OutData    *out_data,
+    PF_ParamDef   *params[],
+    PF_EventExtra *event_extra)
 {
-    PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    if (!event_extra || !params || !in_data || !out_data) {
+        return PF_Err_NONE;
+    }
+    if (event_extra->e_type != PF_Event_DRAW ||
+        event_extra->effect_win.index != MSX1PQ_PARAM_SWATCH_ROW) {
+        return PF_Err_NONE;
+    }
 
-    if (!event_extra || !IsPaletteFlagIndex(event_extra->effect_win.index)) {
-        return err;
+    MyDebugLog("DrawSwatchRow: area=%d index=%d event=%d",
+               event_extra->effect_win.area,
+               event_extra->effect_win.index,
+               event_extra->e_type);
+
+    const PF_Rect* frame_ptr = &event_extra->effect_win.current_frame;
+    const PF_Rect& title_frame = event_extra->effect_win.param_title_frame;
+    if (frame_ptr->bottom <= frame_ptr->top) {
+        frame_ptr = &title_frame;
     }
-    if (event_extra->effect_win.area != PF_EA_PARAM_TITLE ||
-        event_extra->e_type != PF_Event_DRAW) {
-        return err;
-    }
+    const PF_Rect& frame = *frame_ptr;
+    const float height   = static_cast<float>(frame.bottom - frame.top);
+    const float width    = static_cast<float>(frame.right - frame.left);
+    const float window_height = std::max(height, 20.0f);
+    const float margin   = 4.0f;
+    const float max_box_by_height = window_height - 4.0f;
+    const float available_width = std::max(width - margin * 2.0f, 0.0f);
+    const float box_space = std::max(available_width - (MSX1PQ::kNumBasicColors - 1) * margin, 0.0f);
+    const float max_box_by_width = box_space / MSX1PQ::kNumBasicColors;
+    const float box_size = std::max(4.0f, std::min(14.0f, std::min(max_box_by_height, max_box_by_width)));
+    MyDebugLog("DrawSwatchRow: frame=(%d,%d,%d,%d) size=(%.1f,%.1f) window_h=%.1f box_size=%.1f title_frame=(%d,%d,%d,%d)",
+               frame.left, frame.top, frame.right, frame.bottom, width, height, window_height, box_size,
+               title_frame.left, title_frame.top, title_frame.right, title_frame.bottom);
 
     const A_long color_system = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
     const MSX1PQ::QuantColor* palette = get_basic_palette(static_cast<int>(color_system));
-    const A_long color_idx = static_cast<A_long>(event_extra->effect_win.index - MSX1PQ_PARAM_COLOR_FLAG_1);
-    const MSX1PQ::QuantColor& qc = palette[color_idx];
-
-    DRAWBOT_ColorRGBA fill_color{};
-    fill_color.red   = static_cast<float>(qc.r) / 255.0f;
-    fill_color.green = static_cast<float>(qc.g) / 255.0f;
-    fill_color.blue  = static_cast<float>(qc.b) / 255.0f;
-    fill_color.alpha = 1.0f;
-
-    const PF_Rect& title_frame = event_extra->effect_win.param_title_frame;
-    const A_long height = title_frame.bottom - title_frame.top;
-    if (height <= 2) {
-        return err;
+    if (!palette) {
+        return PF_Err_NONE;
     }
-    const A_long box_size_px = (std::min)(static_cast<A_long>(12), (std::max)(static_cast<A_long>(6), height - 4));
-    const float   box_size_f = static_cast<float>(box_size_px);
-    const float   origin_x   = static_cast<float>(title_frame.right - box_size_px - 6);
-    const float   origin_y   = static_cast<float>(title_frame.top) + (static_cast<float>(height) - box_size_f) * 0.5f;
 
     DRAWBOT_Suites drawbot_suites{};
-    DRAWBOT_DrawRef draw_ref = nullptr;
-    DRAWBOT_SupplierRef supplier_ref = nullptr;
-    DRAWBOT_SurfaceRef surface_ref = nullptr;
-    DRAWBOT_PathRef path_ref = nullptr;
-    DRAWBOT_BrushRef brush_ref = nullptr;
-
-    ERR(AEFX_AcquireDrawbotSuites(in_data, out_data, &drawbot_suites));
+    if (AEFX_AcquireDrawbotSuites(in_data, out_data, &drawbot_suites) != PF_Err_NONE) {
+        MyDebugLog("DrawSwatchRow: AcquireDrawbotSuites failed");
+        return PF_Err_NONE;
+    }
 
     PF_EffectCustomUISuite1 *custom_ui_suite = nullptr;
-    ERR(AEFX_AcquireSuite(
+    DRAWBOT_DrawRef draw_ref = nullptr;
+    if (AEFX_AcquireSuite(
             in_data,
             out_data,
             kPFEffectCustomUISuite,
             kPFEffectCustomUISuiteVersion1,
             "EffectCustomUISuite",
-            reinterpret_cast<void**>(&custom_ui_suite)));
-
-    if (!err && custom_ui_suite) {
-        ERR(custom_ui_suite->PF_GetDrawingReference(event_extra->contextH, &draw_ref));
-        ERR2(AEFX_ReleaseSuite(
-                in_data,
-                out_data,
-                kPFEffectCustomUISuite,
-                kPFEffectCustomUISuiteVersion1,
-                "EffectCustomUISuite"));
+            reinterpret_cast<void**>(&custom_ui_suite)) == PF_Err_NONE &&
+        custom_ui_suite) {
+        (void)custom_ui_suite->PF_GetDrawingReference(event_extra->contextH, &draw_ref);
+        (void)AEFX_ReleaseSuite(
+            in_data,
+            out_data,
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1,
+            "EffectCustomUISuite");
     }
 
-    if (!err) {
-        ERR(drawbot_suites.drawbot_suiteP->GetSupplier(draw_ref, &supplier_ref));
-    }
-    if (!err) {
-        ERR(drawbot_suites.drawbot_suiteP->GetSurface(draw_ref, &surface_ref));
+    if (!draw_ref) {
+        (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+        return PF_Err_NONE;
     }
 
-    if (!err) {
-        ERR(drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &path_ref));
-        if (!err) {
-            DRAWBOT_RectF32 rectF{
-                origin_x + 0.5f,
-                origin_y + 0.5f,
-                box_size_f,
-                box_size_f
-            };
-            ERR(drawbot_suites.path_suiteP->AddRect(path_ref, &rectF));
+    DRAWBOT_SupplierRef supplier_ref = nullptr;
+    DRAWBOT_SurfaceRef surface_ref   = nullptr;
+    if (drawbot_suites.drawbot_suiteP->GetSupplier(draw_ref, &supplier_ref) != PF_Err_NONE ||
+        drawbot_suites.drawbot_suiteP->GetSurface(draw_ref, &surface_ref) != PF_Err_NONE) {
+        MyDebugLog("DrawSwatchRow: GetSupplier/GetSurface failed");
+        (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+        return PF_Err_NONE;
+    }
+
+    float x = static_cast<float>(frame.left) + margin;
+    const float y = (height > box_size + margin)
+        ? static_cast<float>(frame.top) + (height - box_size) * 0.5f
+        : static_cast<float>(frame.top) + margin;
+
+    DRAWBOT_BrushRef bg_brush_ref = nullptr;
+    DRAWBOT_PathRef bg_path_ref = nullptr;
+    DRAWBOT_ColorRGBA bg_color{};
+    bg_color.red = bg_color.green = bg_color.blue = 0.1f;
+    bg_color.alpha = 1.0f;
+
+    DRAWBOT_RectF32 bg_rect{
+        static_cast<float>(frame.left) + 0.5f,
+        static_cast<float>(frame.top) + 0.5f,
+        static_cast<float>(frame.right - frame.left),
+        static_cast<float>(window_height < 18.0f ? 18.0f : window_height)
+    };
+
+    if (drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &bg_path_ref) == PF_Err_NONE) {
+        (void)drawbot_suites.path_suiteP->AddRect(bg_path_ref, &bg_rect);
+        if (drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &bg_color, &bg_brush_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.surface_suiteP->FillPath(surface_ref, bg_brush_ref, bg_path_ref, kDRAWBOT_FillType_Default);
         }
     }
 
-    if (!err) {
-        ERR(drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &fill_color, &brush_ref));
+    if (bg_brush_ref) {
+        (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(bg_brush_ref));
     }
-    if (!err) {
-        ERR(drawbot_suites.surface_suiteP->FillPath(surface_ref, brush_ref, path_ref, kDRAWBOT_FillType_Default));
-    }
-
-    if (brush_ref) {
-        ERR2(drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(brush_ref)));
-    }
-    if (path_ref) {
-        ERR2(drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(path_ref)));
+    if (bg_path_ref) {
+        (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(bg_path_ref));
     }
 
-    ERR2(AEFX_ReleaseDrawbotSuites(in_data, out_data));
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        DRAWBOT_PathRef path_ref = nullptr;
+        DRAWBOT_BrushRef brush_ref = nullptr;
+        DRAWBOT_RectF32 rectF{ x + 0.5f, y + 0.5f, box_size, box_size };
 
-    if (!err) {
-        event_extra->evt_out_flags |= PF_EO_HANDLED_EVENT;
+        if (drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &path_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.path_suiteP->AddRect(path_ref, &rectF);
+        }
+        else {
+            MyDebugLog("DrawSwatchRow: NewPath failed index=%d", i);
+        }
+
+        DRAWBOT_ColorRGBA c{};
+        c.red   = static_cast<float>(palette[i].r) / 255.0f;
+        c.green = static_cast<float>(palette[i].g) / 255.0f;
+        c.blue  = static_cast<float>(palette[i].b) / 255.0f;
+        c.alpha = 1.0f;
+
+        if (path_ref &&
+            drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &c, &brush_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.surface_suiteP->FillPath(surface_ref, brush_ref, path_ref, kDRAWBOT_FillType_Default);
+        } else if (path_ref) {
+            MyDebugLog("DrawSwatchRow: NewBrush failed index=%d", i);
+        }
+
+        if (brush_ref) {
+            (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(brush_ref));
+        }
+        if (path_ref) {
+            (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(path_ref));
+        }
+
+        x += box_size + margin;
     }
 
-    return err;
+    event_extra->evt_out_flags |= PF_EO_HANDLED_EVENT;
+    (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+    return PF_Err_NONE;
 }
-
 
 } // namespace
 
@@ -634,7 +679,12 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
+    def.flags |= PF_ParamFlag_CANNOT_TIME_VARY;
+    def.ui_flags |= PF_PUI_CONTROL;
+    def.ui_height = 32;
+    PF_ADD_NULL("Palette swatches", MSX1PQ_PARAM_SWATCH_ROW);
+
+    AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOX(
         "*1: Black",
         "Enable",
@@ -644,7 +694,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*2: Medium Green",
         "Enable",
@@ -654,7 +703,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*3: Light Green",
         "Enable",
@@ -664,7 +712,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*4: Dark Blue",
         "Enable",
@@ -674,7 +721,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*5: Light Blue",
         "Enable",
@@ -684,7 +730,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*6: Dark Red",
         "Enable",
@@ -694,7 +739,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*7: Cyan",
         "Enable",
@@ -704,7 +748,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*8: Medium Red",
         "Enable",
@@ -714,7 +757,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*9: Light Red",
         "Enable",
@@ -724,7 +766,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*10: Dark Yellow",
         "Enable",
@@ -734,7 +775,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*11: Light Yellow",
         "Enable",
@@ -744,7 +784,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*12: Dark Green",
         "Enable",
@@ -754,7 +793,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*13: Magenta",
         "Enable",
@@ -764,7 +802,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*14: Gray",
         "Enable",
@@ -774,7 +811,6 @@ ParamsSetup (
     );
 
     AEFX_CLR_STRUCT(def);
-    def.ui_flags |= PF_PUI_TOPIC;
     PF_ADD_CHECKBOX(
         "*15: White",
         "Enable",
@@ -1836,11 +1872,9 @@ HandleEvent(
     }
 
     if (extra->e_type == PF_Event_DRAW &&
-        extra->effect_win.area == PF_EA_PARAM_TITLE &&
-        IsPaletteFlagIndex(extra->effect_win.index)) {
-        MyDebugLog("Event: Draw Palette Swatch index=%d",
-            static_cast<int>(extra->effect_win.index));
-        err = DrawPaletteSwatch(in_data, out_data, params, extra);
+        extra->effect_win.index == MSX1PQ_PARAM_SWATCH_ROW) {
+        MyDebugLog("HandleEvent: draw index=%d area=%d", extra->effect_win.index, extra->effect_win.area);
+        err = DrawSwatchRow(in_data, out_data, params, extra);
     }
 
     return err;
