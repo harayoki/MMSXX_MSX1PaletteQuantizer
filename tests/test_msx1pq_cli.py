@@ -83,6 +83,10 @@ class Msx1pqCliTestCase(unittest.TestCase):
         cmd = [str(self.cli_path), "--input", str(input_path), "--output", str(output_dir)] + extra_args
         return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
+    def _run_cli_inputs(self, input_paths: list[Path], output_dir: Path, extra_args: list[str]):
+        cmd = [str(self.cli_path), "--inputs", *map(str, input_paths), "--output", str(output_dir)] + extra_args
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+
     def test_basic_png_output(self):
         output_dir = self.output_root / "basic_force"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -190,6 +194,29 @@ class Msx1pqCliTestCase(unittest.TestCase):
         self.assertTrue(
             expected_first.exists() and expected_second.exists(),
             f"SC2 outputs missing. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
+    def test_multiple_inputs_mode(self):
+        output_dir = self.output_root / "multi_inputs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        inputs_dir = self.output_root / "multi_input_sources"
+        first_input = self._write_sample_png(inputs_dir, "multi_first.png")
+        second_input = self._write_sample_png(inputs_dir, "multi_second.png")
+
+        prefix = "multi_"
+        suffix = "_processed"
+        result = self._run_cli_inputs(
+            [first_input, second_input],
+            output_dir,
+            ["--out-prefix", prefix, "--out-suffix", suffix, "--force"],
+        )
+
+        expected_first = output_dir / f"{prefix}{first_input.stem}{suffix}{first_input.suffix}"
+        expected_second = output_dir / f"{prefix}{second_input.stem}{suffix}{second_input.suffix}"
+        self.assertTrue(
+            expected_first.exists() and expected_second.exists(),
+            f"Multiple input outputs missing. stdout={result.stdout}, stderr={result.stderr}",
         )
 
     def test_randomized_parameter_runs(self):
