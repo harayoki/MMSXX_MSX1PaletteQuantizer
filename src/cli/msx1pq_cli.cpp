@@ -20,6 +20,7 @@ namespace fs = std::filesystem;
 
 struct CliOptions {
     fs::path input_path;
+    std::vector<fs::path> input_paths;
     fs::path output_dir;
     std::string output_prefix;
     std::string output_suffix;
@@ -108,9 +109,11 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
     if (lang == UsageLanguage::Japanese) {
         std::cout << "MMSXX - MSX1 Palette Quantizer\n"
                   << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
+                  << "使い方(複数入力): " << prog << " --inputs <ファイル...> --output <ディレクトリ> [オプション]\n"
                   << "1つの画像またはフォルダ内の複数の画像を受け取り、MSX1(TMS9918)の表示ルールに則った画像に変換します。\n"
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
+                  << "  --inputs <ファイル...>            複数の入力PNGファイルを指定(オプションはすべて共通)\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
                   << "  --out-prefix <文字列>          出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --out-suffix <文字列>          出力ファイル名の末尾（拡張子の前）に付与する接尾辞を指定\n"
@@ -141,9 +144,11 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
 
     std::cout << "MMSXX - MSX1 Palette Quantizer\n"
               << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
+              << "Usage (multiple inputs): " << prog << " --inputs <files...> --output <dir> [options]\n"
               << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
               << "Options:\n"
               << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
+              << "  --inputs <files...>         Specify multiple input PNG files (all options are shared)\n"
               << "  --output, -o <dir>           Specify the output directory\n"
               << "  --out-prefix <string>       Prefix to add to output file names\n"
               << "  --out-suffix <string>       Suffix to add before the output file extension\n"
@@ -240,6 +245,25 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
 
         if (arg == "--input" || arg == "-i") {
             opts.input_path = require_value(arg);
+        } else if (arg == "--inputs") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing values for --inputs");
+            }
+
+            int parsed_count = 0;
+            while (i + 1 < argc) {
+                const std::string next = argv[i + 1];
+                if (!next.empty() && next[0] == '-') {
+                    break;
+                }
+                ++i;
+                opts.input_paths.emplace_back(next);
+                ++parsed_count;
+            }
+
+            if (parsed_count == 0) {
+                throw std::runtime_error("Missing values for --inputs");
+            }
         } else if (arg == "--output" || arg == "-o") {
             opts.output_dir = require_value(arg);
         } else if (arg == "--out-prefix") {
@@ -346,8 +370,13 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         }
     }
 
-    if (opts.input_path.empty() || opts.output_dir.empty()) {
-        throw std::runtime_error("--input and --output are required");
+    if ((!opts.input_paths.empty() && !opts.input_path.empty()) ||
+        (opts.input_paths.empty() && opts.input_path.empty())) {
+        throw std::runtime_error("Specify either --input or --inputs");
+    }
+
+    if (opts.output_dir.empty()) {
+        throw std::runtime_error("--output is required");
     }
 
     const int enabled_colors = static_cast<int>(std::count(
@@ -656,9 +685,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!fs::exists(opts.input_path)) {
-        std::cerr << "Input path does not exist: " << opts.input_path << "\n";
-        return 1;
+    std::vector<fs::path> input_targets;
+    if (!opts.input_paths.empty()) {
+        input_targets = opts.input_paths;
+    } else {
+        input_targets.push_back(opts.input_path);
+    }
+
+    for (const auto& target : input_targets) {
+        if (!fs::exists(target)) {
+            std::cerr << "Input path does not exist: " << target << "\n";
+            return 1;
+        }
     }
 
     if (!opts.pre_lut_path.empty()) {
@@ -675,10 +713,14 @@ int main(int argc, char** argv) {
         fs::create_directories(opts.output_dir);
     }
 
-    const auto inputs = collect_inputs(opts.input_path);
-    if (inputs.empty()) {
-        std::cerr << "No PNG files to process in: " << opts.input_path << "\n";
-        return 1;
+    std::vector<fs::path> inputs;
+    for (const auto& target : input_targets) {
+        const auto collected = collect_inputs(target);
+        if (collected.empty()) {
+            std::cerr << "No PNG files to process in: " << target << "\n";
+            return 1;
+        }
+        inputs.insert(inputs.end(), collected.begin(), collected.end());
     }
 
     int success_count = 0;
