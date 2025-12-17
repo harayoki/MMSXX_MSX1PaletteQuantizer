@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -13,7 +14,7 @@ namespace MSX1PQCore {
 // AE 依存を排除した enum 定義
 enum MSX1PQ_DistanceMode {
     MSX1PQ_DIST_MODE_RGB = 1,
-    MSX1PQ_DIST_MODE_HSB = 2
+    MSX1PQ_DIST_MODE_HSV = 2
 };
 
 enum MSX1PQ_EightDotMode {
@@ -31,13 +32,21 @@ enum MSX1PQ_ColorSystem {
 };
 
 struct QuantInfo {
+    QuantInfo()
+    {
+        palette_enabled.fill(true);
+    }
+
     bool  use_dither{};
     bool  use_palette_color{};
     int   use_8dot2col{};
-    bool  use_hsb{};
+    bool  use_hsv{};
     float w_h{};
     float w_s{};
     float w_b{};
+    float w_r{1.0f};
+    float w_g{1.0f};
+    float w_b_rgb{1.0f};
     int   pre_posterize{8};
     float pre_sat{};
     float pre_gamma{};
@@ -48,6 +57,7 @@ struct QuantInfo {
     const std::uint8_t* pre_lut{nullptr};
     const float* pre_lut3d{nullptr};
     int pre_lut3d_size{0};
+    std::array<bool, MSX1PQ::kNumBasicColors> palette_enabled;
 };
 
 bool load_pre_lut(const std::string& path,
@@ -63,10 +73,10 @@ constexpr T clamp_value(const T& v, const T& lo, const T& hi)
     return (v < lo) ? lo : (v > hi ? hi : v);
 }
 
-void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+void rgb_to_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                 float &h, float &s, float &v);
 
-void hsb_to_rgb(float h, float s, float v,
+void hsv_to_rgb(float h, float s, float v,
                 std::uint8_t &r8, std::uint8_t &g8, std::uint8_t &b8);
 
 void apply_preprocess(const QuantInfo *qi,
@@ -75,14 +85,22 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &b8);
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        int num_colors);
+                        float w_r, float w_g, float w_b,
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
-int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+int nearest_basic_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                      float w_r, float w_g, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
+
+int nearest_palette_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_h, float w_s, float w_b,
-                        int num_colors);
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
-int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                      float w_h, float w_s, float w_b);
+int nearest_basic_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                      float w_h, float w_s, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled);
 
 const MSX1PQ::QuantColor* get_basic_palette(int color_system);
 

@@ -25,18 +25,30 @@ https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer/blob/main/docs/CLI_guide_
 
 バッチファイル内の各行は直接コマンドを実行する際の参考としても利用できます。
 
-## basic sc2/sc5 viewer
+## basic sc2 viewer
 
 `basic_sc2_viewer.exe` は 複数の画像生データファイルとBASIC製のビューアーを収めたdskイメージを生成するツールです。
-msx1pq_cli.exe が書き出したsc2/sc5ファイルを引数に渡すと、MSXエミュレーター等で実行できるdskイメージを生成します。
+msx1pq_cli.exe が書き出したsc2を引数に渡すと、MSXエミュレーター等で実行できるdskイメージを生成します。
+MSX2で起動した場合もMSX1の色味に近づけて表示する処理が入っています。
 実際の2DDディスクに書き込めば実機でも実行可能と思われますが、動作確認はしていません。
-なお、SC5対応は廃止予定で、今後はSC4対応に変更予定です。
-また、将来的に入力ファイルとしてsc2の代わりにPNG画像を直接受け入れられるようになる予定です。
+将来的に入力ファイルとしてsc2の代わりにPNG画像を直接受け入れられるようになる予定です。
 使い方は`basic_sc2_viewer.exe -h` でヘルプを参照してください。
+
+※ WebMSXで動作確認しています。
+
+## create sc2 32k rom
+
+`create_sc2_32k_rom.exe` を使うと2枚のsc2ファイルを同梱したビューアー付きのROMを作る事ができます。dsk版より起動が早いです。
+クイックなMSX1ドット絵共有にお使いください。なおROMデータは独自の調査により得た情報で
+マシン語バイナリが動くフォーマットで作られていますが、実際に物理的なROMに焼いて動くかどうかは試せていないので分かりません。
+使い方は`create_sc2_32k_rom.exe -h` でヘルプを参照してください。
+
+※ WebMSXで動作確認しています。
 
 # ドキュメント
 詳しくは以下のURLを確認してください。
 https://github.com/harayoki/MMSXX_MSX1PaletteQuantizer
+
 
 ---
 

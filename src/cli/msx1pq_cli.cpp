@@ -10,6 +10,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <array>
 
 #include "../core/MSX1PQCore.h"
 #include "../core/MSX1PQPalettes.h"
@@ -19,10 +20,15 @@ namespace fs = std::filesystem;
 
 struct CliOptions {
     fs::path input_path;
+    std::vector<fs::path> input_paths;
     fs::path output_dir;
     std::string output_prefix;
     std::string output_suffix;
     bool force{false};
+
+    std::array<bool, 16> palette_enabled{{
+        true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true}};
 
     int color_system{MSX1PQCore::MSX1PQ_COLOR_SYS_MSX1};
     bool out_sc2{false};
@@ -31,10 +37,13 @@ struct CliOptions {
     bool use_dark_dither{true};
     bool use_preprocess{true};
     int use_8dot2col{MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1};
-    bool use_hsb{true};
+    bool use_hsv{false};
     float weight_h{1.0f};
     float weight_s{0.5f};
     float weight_b{0.75f};
+    float weight_r{1.0f};
+    float weight_g{1.0f};
+    float weight_b_rgb{1.0f};
     int pre_posterize{16};
     float pre_sat{0.0f};
     float pre_gamma{1.0f};
@@ -63,7 +72,7 @@ enum class UsageLanguage {
     Japanese,
 };
 
-constexpr const char* kVersion = "v0.7b";
+constexpr const char* kVersion = "v0.8b";
 
 std::optional<std::string> get_env_value(const char* name) {
 #ifdef _MSC_VER
@@ -100,9 +109,11 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
     if (lang == UsageLanguage::Japanese) {
         std::cout << "MMSXX - MSX1 Palette Quantizer\n"
                   << "使い方: " << prog << " --input <ファイル|ディレクトリ> --output <ディレクトリ> [オプション]\n"
+                  << "使い方(複数入力): " << prog << " --inputs <ファイル...> --output <ディレクトリ> [オプション]\n"
                   << "1つの画像またはフォルダ内の複数の画像を受け取り、MSX1(TMS9918)の表示ルールに則った画像に変換します。\n"
                   << "オプション:\n"
                   << "  --input, -i <ファイル|ディレクトリ>  入力PNGファイルまたはディレクトリを指定\n"
+                  << "  --inputs <ファイル...>            複数の入力PNGファイルを指定(オプションはすべて共通)\n"
                   << "  --output, -o <ディレクトリ>       出力先ディレクトリを指定\n"
                   << "  --out-prefix <文字列>          出力ファイル名の先頭に付与する接頭辞を指定\n"
                   << "  --out-suffix <文字列>          出力ファイル名の末尾（拡張子の前）に付与する接尾辞を指定\n"
@@ -112,13 +123,15 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --dark-dither / --no-dark-dither (デフォルト: ダークディザーパレットを使用)\n"
                   << "  --no-preprocess             前処理をスキップ\n"
                   << "  --8dot <none|fast|basic|best|best-attr|best-trans> (デフォルト: best)\n"
-                  << "  --distance <rgb|hsb>         (デフォルト: hsb)\n"
-                  << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+                  << "  --distance <rgb|hsv>         (デフォルト: rgb)\n"
+                  << "  --weight-h <0-1> --weight-s <0-1> --weight-v <0-1>\n"
+                  << "  --weight-r <0-1> --weight-g <0-1> --weight-b <0-1>\n"
                   << "  --pre-posterize <0-255>      前処理でポスタリゼーションを適用 (デフォルト: 16 1以下は処理なし)\n"
                   << "  --pre-sat <0-10>             処理前に彩度を高く補正 (デフォルト: 0.0)\n"
                   << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
                   << "  --pre-contrast <0-10>        処理前にコントラストを調整 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
@@ -131,9 +144,11 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
 
     std::cout << "MMSXX - MSX1 Palette Quantizer\n"
               << "Usage: " << prog << " --input <file|dir> --output <dir> [options]\n"
+              << "Usage (multiple inputs): " << prog << " --inputs <files...> --output <dir> [options]\n"
               << "Convert a single image or multiple images in a folder into images that comply with MSX1 (TMS9918) display rules.\n"
               << "Options:\n"
               << "  --input, -i <file|dir>       Specify the input PNG file or directory\n"
+              << "  --inputs <files...>         Specify multiple input PNG files (all options are shared)\n"
               << "  --output, -o <dir>           Specify the output directory\n"
               << "  --out-prefix <string>       Prefix to add to output file names\n"
               << "  --out-suffix <string>       Suffix to add before the output file extension\n"
@@ -144,13 +159,15 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --dark-dither / --no-dark-dither (default: use dark dither palettes)\n"
               << "  --no-preprocess             Skip preprocessing adjustments\n"
               << "  --8dot <none|fast|basic|best|best-attr|best-trans> (default: best)\n"
-              << "  --distance <rgb|hsb>         (default: hsb)\n"
-              << "  --weight-h <0-1> --weight-s <0-1> --weight-b <0-1>\n"
+              << "  --distance <rgb|hsv>         (default: rgb)\n"
+              << "  --weight-h <0-1> --weight-s <0-1> --weight-v <0-1>\n"
+              << "  --weight-r <0-1> --weight-g <0-1> --weight-b <0-1>\n"
               << "  --pre-posterize <0-255>      Apply posterization before processing (default: 16,  skipped if <= 1)\n"
               << "  --pre-sat <0-10>             Increase saturation before processing (default: 0.0)\n"
               << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
               << "  --pre-contrast <0-10>        Adjust contrast before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
@@ -186,6 +203,37 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         return false;
     }
 
+    auto parse_disable_token = [&](const std::string& token) {
+        auto dash_pos = token.find('-');
+        if (dash_pos == std::string::npos) {
+            int idx = std::stoi(token);
+            if (idx < 1 || idx >= static_cast<int>(opts.palette_enabled.size())) {
+                throw std::runtime_error("Color index for disable-colors must be between 1 and 15");
+            }
+            opts.palette_enabled[static_cast<size_t>(idx)] = false;
+            return;
+        }
+
+        std::string start_str = token.substr(0, dash_pos);
+        std::string end_str = token.substr(dash_pos + 1);
+        if (start_str.empty() || end_str.empty()) {
+            throw std::runtime_error("Invalid range format for disable-colors. Use start-end, e.g., 3-5");
+        }
+
+        int start = std::stoi(start_str);
+        int end = std::stoi(end_str);
+        if (start > end) {
+            throw std::runtime_error("disable-colors range start must be <= end");
+        }
+        if (start < 1 || end >= static_cast<int>(opts.palette_enabled.size())) {
+            throw std::runtime_error("Color index for disable-colors must be between 1 and 15");
+        }
+
+        for (int idx = start; idx <= end; ++idx) {
+            opts.palette_enabled[static_cast<size_t>(idx)] = false;
+        }
+    };
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         auto require_value = [&](const std::string& name) -> std::string {
@@ -197,6 +245,25 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
 
         if (arg == "--input" || arg == "-i") {
             opts.input_path = require_value(arg);
+        } else if (arg == "--inputs") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing values for --inputs");
+            }
+
+            int parsed_count = 0;
+            while (i + 1 < argc) {
+                const std::string next = argv[i + 1];
+                if (!next.empty() && next[0] == '-') {
+                    break;
+                }
+                ++i;
+                opts.input_paths.emplace_back(next);
+                ++parsed_count;
+            }
+
+            if (parsed_count == 0) {
+                throw std::runtime_error("Missing values for --inputs");
+            }
         } else if (arg == "--output" || arg == "-o") {
             opts.output_dir = require_value(arg);
         } else if (arg == "--out-prefix") {
@@ -235,18 +302,43 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         } else if (arg == "--distance") {
             std::string value = require_value(arg);
             if (value == "rgb") {
-                opts.use_hsb = false;
-            } else if (value == "hsb") {
-                opts.use_hsb = true;
+                opts.use_hsv = false;
+            } else if (value == "hsv") {
+                opts.use_hsv = true;
             } else {
                 throw std::runtime_error("Unknown distance mode: " + value);
+            }
+        } else if (arg == "--disable-colors") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing values for --disable-colors");
+            }
+
+            int parsed_count = 0;
+            while (i + 1 < argc) {
+                const std::string next = argv[i + 1];
+                if (!next.empty() && next[0] == '-') {
+                    break;
+                }
+                ++i;
+                parse_disable_token(next);
+                ++parsed_count;
+            }
+
+            if (parsed_count == 0) {
+                throw std::runtime_error("Missing values for --disable-colors");
             }
         } else if (arg == "--weight-h") {
             opts.weight_h = std::stof(require_value(arg));
         } else if (arg == "--weight-s") {
             opts.weight_s = std::stof(require_value(arg));
-        } else if (arg == "--weight-b") {
+        } else if (arg == "--weight-v") {
             opts.weight_b = std::stof(require_value(arg));
+        } else if (arg == "--weight-r") {
+            opts.weight_r = std::stof(require_value(arg));
+        } else if (arg == "--weight-g") {
+            opts.weight_g = std::stof(require_value(arg));
+        } else if (arg == "--weight-b") {
+            opts.weight_b_rgb = std::stof(require_value(arg));
         } else if (arg == "--pre-posterize") {
             opts.pre_posterize = std::stoi(require_value(arg));
         } else if (arg == "--pre-sat") {
@@ -278,8 +370,19 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         }
     }
 
-    if (opts.input_path.empty() || opts.output_dir.empty()) {
-        throw std::runtime_error("--input and --output are required");
+    if ((!opts.input_paths.empty() && !opts.input_path.empty()) ||
+        (opts.input_paths.empty() && opts.input_path.empty())) {
+        throw std::runtime_error("Specify either --input or --inputs");
+    }
+
+    if (opts.output_dir.empty()) {
+        throw std::runtime_error("--output is required");
+    }
+
+    const int enabled_colors = static_cast<int>(std::count(
+        opts.palette_enabled.begin(), opts.palette_enabled.end(), true));
+    if (enabled_colors < 1) {
+        throw std::runtime_error("At least one palette color must remain enabled");
     }
 
     if (opts.out_sc2 &&
@@ -318,10 +421,13 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.use_dither      = opts.use_dither;
     qi.use_palette_color = opts.use_palette_color;
     qi.use_8dot2col    = opts.use_8dot2col;
-    qi.use_hsb         = opts.use_hsb;
+    qi.use_hsv         = opts.use_hsv;
     qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
     qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
     qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);
+    qi.w_r             = MSX1PQCore::clamp01f(opts.weight_r);
+    qi.w_g             = MSX1PQCore::clamp01f(opts.weight_g);
+    qi.w_b_rgb         = MSX1PQCore::clamp01f(opts.weight_b_rgb);
     qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
     qi.pre_sat         = opts.pre_sat;
     qi.pre_gamma       = opts.pre_gamma;
@@ -332,6 +438,13 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
     qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
     qi.pre_lut3d_size  = opts.pre_lut3d_size;
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const std::size_t src_idx = static_cast<std::size_t>(i + 1);
+        if (src_idx < opts.palette_enabled.size()) {
+            qi.palette_enabled[static_cast<std::size_t>(i)] = opts.palette_enabled[src_idx];
+        }
+    }
 
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
@@ -572,9 +685,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!fs::exists(opts.input_path)) {
-        std::cerr << "Input path does not exist: " << opts.input_path << "\n";
-        return 1;
+    std::vector<fs::path> input_targets;
+    if (!opts.input_paths.empty()) {
+        input_targets = opts.input_paths;
+    } else {
+        input_targets.push_back(opts.input_path);
+    }
+
+    for (const auto& target : input_targets) {
+        if (!fs::exists(target)) {
+            std::cerr << "Input path does not exist: " << target << "\n";
+            return 1;
+        }
     }
 
     if (!opts.pre_lut_path.empty()) {
@@ -591,10 +713,14 @@ int main(int argc, char** argv) {
         fs::create_directories(opts.output_dir);
     }
 
-    const auto inputs = collect_inputs(opts.input_path);
-    if (inputs.empty()) {
-        std::cerr << "No PNG files to process in: " << opts.input_path << "\n";
-        return 1;
+    std::vector<fs::path> inputs;
+    for (const auto& target : input_targets) {
+        const auto collected = collect_inputs(target);
+        if (collected.empty()) {
+            std::cerr << "No PNG files to process in: " << target << "\n";
+            return 1;
+        }
+        inputs.insert(inputs.end(), collected.begin(), collected.end());
     }
 
     int success_count = 0;
