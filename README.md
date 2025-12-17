@@ -85,7 +85,7 @@ These steps build only the `msx1pq_cli` tool for environments without the Adobe 
    ```bash
    make -C platform/Linux
    ```
-3. The executable will be placed in `bin/msx1pq_cli`.
+3. The executable will be placed in `platform/Linux/bin/msx1pq_cli`.
 
 ## Build Instructions for Xcode (Mac)
 

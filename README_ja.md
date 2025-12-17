@@ -92,7 +92,7 @@ Adobe SDK が不要な環境で `msx1pq_cli` のみをビルドする手順で�
    ```bash
    make -C platform/Linux
    ```
-3. 実行ファイルは `bin/msx1pq_cli` に生成されます。
+3. 実行ファイルは `platform/Linux/bin/msx1pq_cli` に生成されます。
 
 ## Windows版 msx1pq_cli の自動テストの実行方法
 
