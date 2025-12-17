@@ -104,6 +104,8 @@ void apply_black_edge_sharpen(
     }
 
     const float black_threshold = 0.2f; // 0-1 range
+    const float black_detect_threshold = 0.05f; // Detect only near-full black
+    const int   spread_radius = 2; // Spread mask 1-2 pixels from black areas
     const float sharpen_amount  = clamped_strength * 0.2f;
 
     auto luminance = [](const PixelT& p) {
@@ -123,6 +125,7 @@ void apply_black_edge_sharpen(
     const std::size_t buffer_size = static_cast<std::size_t>(width) *
                                     static_cast<std::size_t>(height);
     std::vector<BlurSample> blur_buffer(buffer_size);
+    std::vector<float> base_mask(buffer_size, 0.0f);
 
     auto clamp_coord = [](int v, int lo, int hi) {
         return (v < lo) ? lo : (v > hi ? hi : v);
@@ -133,8 +136,10 @@ void apply_black_edge_sharpen(
             float sum_r = 0.0f;
             float sum_g = 0.0f;
             float sum_b = 0.0f;
-            float min_luma = 1.0f;
             int count = 0;
+
+            const PixelT& center = data[static_cast<std::ptrdiff_t>(y) * row_pitch + x];
+            const float center_luma = luminance(center);
 
             for (int dy = -1; dy <= 1; ++dy) {
                 int sy = clamp_coord(y + dy, 0, height - 1);
@@ -147,22 +152,48 @@ void apply_black_edge_sharpen(
                     sum_r += static_cast<float>(src.red);
                     sum_g += static_cast<float>(src.green);
                     sum_b += static_cast<float>(src.blue);
-                    min_luma = std::min(min_luma, luminance(src));
                     ++count;
                 }
             }
 
             const float inv_count = 1.0f / static_cast<float>(count);
-            const float mask = clamp01f((black_threshold - min_luma) / black_threshold);
-
+            const float mask = (center_luma <= black_detect_threshold) ? 1.0f : 0.0f;
             const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
                                     static_cast<std::size_t>(x);
             blur_buffer[idx] = {
                 sum_r * inv_count,
                 sum_g * inv_count,
                 sum_b * inv_count,
-                mask,
+                0.0f,
             };
+            base_mask[idx] = mask;
+        }
+    }
+
+    std::vector<float> spread_mask(buffer_size, 0.0f);
+    for (std::int32_t y = 0; y < height; ++y) {
+        for (std::int32_t x = 0; x < width; ++x) {
+            float max_mask = 0.0f;
+
+            for (int dy = -spread_radius; dy <= spread_radius; ++dy) {
+                int sy = clamp_coord(y + dy, 0, height - 1);
+                for (int dx = -spread_radius; dx <= spread_radius; ++dx) {
+                    int sx = clamp_coord(x + dx, 0, width - 1);
+
+                    const int dist = std::max(std::abs(dx), std::abs(dy));
+                    const float falloff = clamp01f(static_cast<float>(spread_radius + 1 - dist) /
+                        static_cast<float>(spread_radius + 1));
+
+                    const std::size_t idx = static_cast<std::size_t>(sy) * static_cast<std::size_t>(width) +
+                                            static_cast<std::size_t>(sx);
+                    max_mask = std::max(max_mask, base_mask[idx] * falloff);
+                }
+            }
+
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            spread_mask[idx] = max_mask;
+            blur_buffer[idx].mask = max_mask;
         }
     }
 
