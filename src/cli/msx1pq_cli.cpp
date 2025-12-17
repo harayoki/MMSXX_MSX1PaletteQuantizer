@@ -49,6 +49,7 @@ struct CliOptions {
     float pre_gamma{1.0f};
     float pre_contrast{1.0f};
     float pre_hue{0.0f};
+    float pre_sharpen_black{0.0f};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
     std::vector<float> pre_lut3d_data;
@@ -131,6 +132,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
                   << "  --pre-contrast <0-10>        処理前にコントラストを調整 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --pre-sharpen-black <0-10>   黒周辺のみシャープ化 (デフォルト: 0.0 おすすめ: 1.0)\n"
                   << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
@@ -167,6 +169,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
               << "  --pre-contrast <0-10>        Adjust contrast before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --pre-sharpen-black <0-10>   Sharpen only near black areas before processing (default: 0.0, recommended: 1.0)\n"
               << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  -f, --force                  Overwrite without confirmation\n"
@@ -349,6 +352,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_contrast = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
+        } else if (arg == "--pre-sharpen-black") {
+            opts.pre_sharpen_black = std::stof(require_value(arg));
         } else if (arg == "--pre-lut") {
             opts.pre_lut_path = require_value(arg);
         } else if (arg == "--force" || arg == "-f") {
@@ -433,6 +438,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     qi.pre_gamma       = opts.pre_gamma;
     qi.pre_contrast    = opts.pre_contrast;
     qi.pre_hue         = opts.pre_hue;
+    qi.pre_sharpen_black = MSX1PQCore::clamp_value(opts.pre_sharpen_black, 0.0f, 10.0f);
     qi.use_dark_dither = opts.use_dark_dither;
     qi.color_system    = opts.color_system;
     qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
@@ -444,6 +450,16 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         if (src_idx < opts.palette_enabled.size()) {
             qi.palette_enabled[static_cast<std::size_t>(i)] = opts.palette_enabled[src_idx];
         }
+    }
+
+    if (opts.use_preprocess && qi.pre_sharpen_black > 0.0f) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        MSX1PQCore::apply_black_edge_sharpen(
+            pixels.data(),
+            pitch,
+            static_cast<std::int32_t>(width),
+            static_cast<std::int32_t>(height),
+            qi.pre_sharpen_black);
     }
 
     for (unsigned y = 0; y < height; ++y) {
