@@ -3,7 +3,8 @@ VRAM 転送する最小サンプル。
 
 - 起動時: SCREEN 8 へ切り替え、バンク2を page2(0x8000–0xBFFF) に割り当て。
   16 KiB 分を ROM(0x8000) から直接 VRAM 0 へ転送。
-- スペースキー押下: page2 のバンクを 3↔2 でトグルし、再度 ROM→VRAM 転送。
+- スペースキー押下: 切り替え前のバンクを一度転送してから page2 を 3↔2 でトグルし、
+  再度 ROM→VRAM 転送。
 
 Bank 構成 (16 KiB 単位):
     0: ROM ヘッダ + メインコード (entry = 0x4010、page1 固定)
@@ -79,6 +80,9 @@ def build_boot_bank() -> bytes:
     CALL(b, 0x009F)  # CHGET
     CP.n8(b, 0x20)
     JR_NZ(b, "main_loop")
+
+    # 切り替え前のバンクももう一度表示
+    LOAD_AND_SHOW.call(b)
 
     # C の下位1bitをXORして 2<->3 を切替
     LD.A_C(b)
