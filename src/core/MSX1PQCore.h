@@ -4,12 +4,15 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "MSX1PQPalettes.h"
 
 namespace MSX1PQCore {
+
+struct RgbaPixel;
 
 // ParamsSetup() の追加順と必ず一致させること
 // AE 依存を排除した enum 定義
@@ -30,6 +33,18 @@ enum MSX1PQ_EightDotMode {
 enum MSX1PQ_ColorSystem {
     MSX1PQ_COLOR_SYS_MSX1 = 1,
     MSX1PQ_COLOR_SYS_MSX2 = 2
+};
+
+enum class AnchorPosition {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
 };
 
 struct QuantInfo {
@@ -67,6 +82,22 @@ bool load_pre_lut(const std::string& path,
                   std::vector<std::uint8_t>& out1d,
                   std::vector<float>& out3d,
                   int& lut3d_size);
+
+std::optional<AnchorPosition> parse_anchor(const std::string& value);
+
+void apply_horizontal_offset(std::vector<RgbaPixel>& pixels,
+                             unsigned width,
+                             unsigned height,
+                             int offset_x,
+                             const RgbaPixel& bg);
+
+void fit_to_canvas(std::vector<RgbaPixel>& pixels,
+                   unsigned& width,
+                   unsigned& height,
+                   int canvas_w,
+                   int canvas_h,
+                   AnchorPosition anchor,
+                   const RgbaPixel& bg);
 
 float clamp01f(float v);
 

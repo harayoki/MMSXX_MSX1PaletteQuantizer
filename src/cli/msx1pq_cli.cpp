@@ -69,23 +69,12 @@ struct CliOptions {
     int background_color{1};
     int offset_x{0};
 
-    enum class AnchorPosition {
-        TopLeft,
-        TopCenter,
-        TopRight,
-        CenterLeft,
-        Center,
-        CenterRight,
-        BottomLeft,
-        BottomCenter,
-        BottomRight,
-    };
-
-    AnchorPosition anchor{AnchorPosition::Center};
+    MSX1PQCore::AnchorPosition anchor{MSX1PQCore::AnchorPosition::Center};
     std::map<std::size_t, int> index_offset_overrides;
 };
 
 using MSX1PQCore::RgbaPixel;
+using AnchorPosition = MSX1PQCore::AnchorPosition;
 
 namespace {
 
@@ -234,20 +223,6 @@ std::optional<int> parse_8dot_mode(const std::string& value) {
     if (it != kMap.end()) {
         return it->second;
     }
-    return std::nullopt;
-}
-
-std::optional<CliOptions::AnchorPosition> parse_anchor(const std::string& value) {
-    const std::string lower = to_lower_copy(value);
-    if (lower == "tl") return CliOptions::AnchorPosition::TopLeft;
-    if (lower == "tc") return CliOptions::AnchorPosition::TopCenter;
-    if (lower == "tr") return CliOptions::AnchorPosition::TopRight;
-    if (lower == "cl") return CliOptions::AnchorPosition::CenterLeft;
-    if (lower == "c")  return CliOptions::AnchorPosition::Center;
-    if (lower == "cr") return CliOptions::AnchorPosition::CenterRight;
-    if (lower == "bl") return CliOptions::AnchorPosition::BottomLeft;
-    if (lower == "bc") return CliOptions::AnchorPosition::BottomCenter;
-    if (lower == "br") return CliOptions::AnchorPosition::BottomRight;
     return std::nullopt;
 }
 
@@ -417,7 +392,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             size.height = std::stoi(require_value(arg));
             opts.fit_size = size;
         } else if (arg == "--anchor") {
-            auto parsed = parse_anchor(require_value(arg));
+            auto parsed = MSX1PQCore::parse_anchor(require_value(arg));
             if (!parsed) {
                 throw std::runtime_error("Unknown anchor");
             }
@@ -536,131 +511,6 @@ RgbaPixel get_background_pixel(int color_index, int color_system) {
     px.blue = color.b;
     px.alpha = 255;
     return px;
-}
-
-void apply_horizontal_offset(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, int offset_x, const RgbaPixel& bg) {
-    if (offset_x == 0) {
-        return;
-    }
-
-    std::vector<RgbaPixel> shifted(pixels.size(), bg);
-    for (unsigned y = 0; y < height; ++y) {
-        for (unsigned x = 0; x < width; ++x) {
-            const int dest_x = static_cast<int>(x) + offset_x;
-            if (dest_x < 0 || dest_x >= static_cast<int>(width)) {
-                continue;
-            }
-            shifted[static_cast<std::size_t>(y * width + static_cast<unsigned>(dest_x))] = pixels[static_cast<std::size_t>(y * width + x)];
-        }
-    }
-
-    pixels.swap(shifted);
-}
-
-void fit_to_canvas(std::vector<RgbaPixel>& pixels,
-                   unsigned& width,
-                   unsigned& height,
-                   int canvas_w,
-                   int canvas_h,
-                   CliOptions::AnchorPosition anchor,
-                   const RgbaPixel& bg) {
-    const int src_w = static_cast<int>(width);
-    const int src_h = static_cast<int>(height);
-
-    const bool wider = src_w > canvas_w;
-    const bool taller = src_h > canvas_h;
-
-    int copy_w = wider ? canvas_w : src_w;
-    int copy_h = taller ? canvas_h : src_h;
-
-    const auto horizontal_anchor = [&](CliOptions::AnchorPosition pos) {
-        switch (pos) {
-        case CliOptions::AnchorPosition::TopLeft:
-        case CliOptions::AnchorPosition::CenterLeft:
-        case CliOptions::AnchorPosition::BottomLeft:
-            return -1;
-        case CliOptions::AnchorPosition::TopCenter:
-        case CliOptions::AnchorPosition::Center:
-        case CliOptions::AnchorPosition::BottomCenter:
-            return 0;
-        default:
-            return 1;
-        }
-    };
-    const auto vertical_anchor = [&](CliOptions::AnchorPosition pos) {
-        switch (pos) {
-        case CliOptions::AnchorPosition::TopLeft:
-        case CliOptions::AnchorPosition::TopCenter:
-        case CliOptions::AnchorPosition::TopRight:
-            return -1;
-        case CliOptions::AnchorPosition::CenterLeft:
-        case CliOptions::AnchorPosition::Center:
-        case CliOptions::AnchorPosition::CenterRight:
-            return 0;
-        default:
-            return 1;
-        }
-    };
-
-    const int h_anchor = horizontal_anchor(anchor);
-    const int v_anchor = vertical_anchor(anchor);
-
-    int src_x = 0;
-    int src_y = 0;
-    int dst_x = 0;
-    int dst_y = 0;
-
-    if (wider) {
-        if (h_anchor < 0) {
-            src_x = 0;
-        } else if (h_anchor == 0) {
-            src_x = (src_w - canvas_w) / 2;
-        } else {
-            src_x = src_w - canvas_w;
-        }
-    } else {
-        if (h_anchor < 0) {
-            dst_x = 0;
-        } else if (h_anchor == 0) {
-            dst_x = (canvas_w - src_w) / 2;
-        } else {
-            dst_x = canvas_w - src_w;
-        }
-    }
-
-    if (taller) {
-        if (v_anchor < 0) {
-            src_y = 0;
-        } else if (v_anchor == 0) {
-            src_y = (src_h - canvas_h) / 2;
-        } else {
-            src_y = src_h - canvas_h;
-        }
-    } else {
-        if (v_anchor < 0) {
-            dst_y = 0;
-        } else if (v_anchor == 0) {
-            dst_y = (canvas_h - src_h) / 2;
-        } else {
-            dst_y = canvas_h - src_h;
-        }
-    }
-
-    std::vector<RgbaPixel> canvas(static_cast<std::size_t>(canvas_w * canvas_h), bg);
-    for (int y = 0; y < copy_h; ++y) {
-        for (int x = 0; x < copy_w; ++x) {
-            const int src_idx_x = src_x + x;
-            const int src_idx_y = src_y + y;
-            const int dst_idx_x = dst_x + x;
-            const int dst_idx_y = dst_y + y;
-            canvas[static_cast<std::size_t>(dst_idx_y * canvas_w + dst_idx_x)] =
-                pixels[static_cast<std::size_t>(src_idx_y * width + src_idx_x)];
-        }
-    }
-
-    pixels.swap(canvas);
-    width = static_cast<unsigned>(canvas_w);
-    height = static_cast<unsigned>(canvas_h);
 }
 
 void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
@@ -838,16 +688,16 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
     };
 
     const auto fit_to_size = opts.fit_size;
-    const CliOptions::AnchorPosition anchor = opts.anchor;
+    const AnchorPosition anchor = opts.anchor;
     const int background_color = opts.background_color;
     const int offset_x = resolve_value_override(opts.index_offset_overrides, input_index, opts.offset_x);
 
     const RgbaPixel bg_pixel = get_background_pixel(background_color, opts.color_system);
 
-    apply_horizontal_offset(pixels, width, height, offset_x, bg_pixel);
+    MSX1PQCore::apply_horizontal_offset(pixels, width, height, offset_x, bg_pixel);
 
     if (fit_to_size) {
-        fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
+        MSX1PQCore::fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
     }
 
     quantize_image(pixels, width, height, opts);
