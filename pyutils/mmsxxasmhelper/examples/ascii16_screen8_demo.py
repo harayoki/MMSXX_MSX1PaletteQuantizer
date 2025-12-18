@@ -24,6 +24,7 @@ try:
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
+        enaslt_macro,
         place_msx_rom_header_macro,
         store_stack_pointer_macro,
     )
@@ -34,6 +35,7 @@ except ImportError:
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
+        enaslt_macro,
         place_msx_rom_header_macro,
         store_stack_pointer_macro,
     )
@@ -79,6 +81,9 @@ def build_boot_bank() -> bytes:
 
     # ブート直後にスタックポインタを安全な領域へ退避
     store_stack_pointer_macro(b)
+
+    # ENASLOT を呼び出してバンクアクセスを有効化
+    enaslt_macro(b)
 
     # SCREEN 8 初期化
     LD.A_n8(b, 8)
