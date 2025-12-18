@@ -20,6 +20,7 @@ __all__ = [
     "init_screen2_macro",
     "set_screen_mode_macro",
     "set_screen_colors_macro",
+    "enaslt_macro",
     "ldirvm_macro",
     "test_fill_vram_macro",
     # "with_register_preserve",
@@ -91,6 +92,8 @@ LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
+ENASLT = 0x0024  # スロット切り替え
+RSLREG = 0x0138  # 現在のスロット情報取得
 
 # カラー関連システム変数 (MSX1/2 共通)
 FORCLR = 0xF3E9  # 前景色
@@ -141,6 +144,31 @@ def restore_stack_pointer_macro(b: Block) -> None:
     """一時 RAM 領域に保存したスタックポインタ(SP)の値を復元するマクロ。"""
     LD.HL_mn16(b, SP_TEMP_RAM)
     LD.SP_HL(b)
+
+
+@with_register_preserve
+def enaslt_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+    """ENASLT (#0024) を呼び出してスロットを有効化するマクロ。
+
+    現在のスロット情報を ``RSLREG`` で取得し、ページ 2 (0x8000–0xBFFF)
+    を対象に ENASLT を実行する。レジスタ変更: A, HL。
+    """
+
+    b.emit(
+        0xCD,
+        RSLREG & 0xFF,
+        (RSLREG >> 8) & 0xFF,  # CALL 0138h
+        0x0F,  # RRCA
+        0x0F,  # RRCA
+        0xE6,
+        0x03,  # AND 03h
+        0x21,
+        0x00,
+        0x80,  # LD HL,8000h
+        0xCD,
+        ENASLT & 0xFF,
+        (ENASLT >> 8) & 0xFF,  # CALL 0024h
+    )
 
 
 def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
