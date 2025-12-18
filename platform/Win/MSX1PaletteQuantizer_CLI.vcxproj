@@ -152,13 +152,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\src\cli\lodepng.h" />
+    <ClInclude Include="..\..\src\core\lodepng.h" />
     <ClInclude Include="..\..\src\core\MSX1PQCore.h" />
     <ClInclude Include="..\..\src\core\MSX1PQOutput.h" />
     <ClInclude Include="..\..\src\core\MSX1PQPalettes.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\src\cli\lodepng.cpp" />
+    <ClCompile Include="..\..\src\core\lodepng.cpp" />
     <ClCompile Include="..\..\src\cli\msx1pq_cli.cpp" />
     <ClCompile Include="..\..\src\core\MSX1PQCore.cpp" />
     <ClCompile Include="..\..\src\core\MSX1PQOutput.cpp" />
