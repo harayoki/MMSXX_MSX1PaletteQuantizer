@@ -327,6 +327,17 @@ void apply_preprocess(const QuantInfo *qi,
 {
     if (!qi) return;
 
+    // Cut off to black before other preprocessing when requested.
+    if (qi->pre_black_cutoff > 0.0f) {
+        const float luma = (0.2126f * static_cast<float>(r8) +
+                            0.7152f * static_cast<float>(g8) +
+                            0.0722f * static_cast<float>(b8)) /
+            255.0f;
+        if (luma < qi->pre_black_cutoff) {
+            r8 = g8 = b8 = 0;
+        }
+    }
+
     if (qi->pre_lut3d && qi->pre_lut3d_size > 1) {
         const int lut_size = qi->pre_lut3d_size;
         const float scale  = static_cast<float>(lut_size - 1);

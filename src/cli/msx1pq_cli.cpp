@@ -702,7 +702,8 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         }
     }
 
-    if (opts.use_preprocess && qi.pre_sharpen_black > 0.0f) {
+    if (opts.use_preprocess &&
+        (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f)) {
         const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
         MSX1PQCore::apply_black_edge_sharpen(
             pixels.data(),
