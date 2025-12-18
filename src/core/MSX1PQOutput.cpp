@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <limits>
 
-#include "../cli/lodepng.h"
+#include "lodepng.h"
 
 namespace MSX1PQCore {
 

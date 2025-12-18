@@ -17,7 +17,7 @@
 #include "../core/MSX1PQCore.h"
 #include "../core/MSX1PQOutput.h"
 #include "../core/MSX1PQPalettes.h"
-#include "lodepng.h"
+#include "../core/lodepng.h"
 
 namespace fs = std::filesystem;
 
