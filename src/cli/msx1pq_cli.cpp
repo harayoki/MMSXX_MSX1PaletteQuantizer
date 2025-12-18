@@ -842,6 +842,7 @@ bool write_palette_png(const fs::path& output_path,
     state.info_raw.bitdepth  = 8;
     state.info_png.color.colortype = LCT_PALETTE;
     state.info_png.color.bitdepth  = 8;
+    state.encoder.auto_convert     = 0; // Preserve explicit 8-bit palette output
 
     const auto add_palette_entry = [&](std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) {
         lodepng_palette_add(&state.info_png.color, r, g, b, a);
