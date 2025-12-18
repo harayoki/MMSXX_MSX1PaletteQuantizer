@@ -25,9 +25,15 @@ def _parse_png_metadata(png_bytes: bytes):
         offset += 12 + length
 
         if chunk_type == b"IHDR":
-            width, height, bit_depth, color_type = struct.unpack(
-                ">IIBB5x", chunk_data + b"\x00" * (13 - len(chunk_data))
-            )
+            (
+                width,
+                height,
+                bit_depth,
+                color_type,
+                _compression,
+                _filter,
+                _interlace,
+            ) = struct.unpack(">IIBBBBB", chunk_data)
         elif chunk_type == b"PLTE":
             if length % 3 != 0:
                 raise ValueError("Invalid PLTE chunk length")
