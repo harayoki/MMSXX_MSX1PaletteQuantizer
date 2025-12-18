@@ -552,9 +552,9 @@ get_basic_palette(int color_system) {
     std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> palette{};
 
     if (color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2) {
-        std::copy_n(std::begin(MSX1PQ::kBasicColorsMsx2), MSX1PQ::kNumBasicColors, palette.begin());
+        std::copy_n(MSX1PQ::kBasicColorsMsx2, MSX1PQ::kNumBasicColors, palette.begin());
     } else {
-        std::copy_n(std::begin(MSX1PQ::kQuantColors), MSX1PQ::kNumBasicColors, palette.begin());
+        std::copy_n(MSX1PQ::kQuantColors, MSX1PQ::kNumBasicColors, palette.begin());
     }
 
     return palette;
