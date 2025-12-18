@@ -59,12 +59,16 @@ def build_boot_bank() -> bytes:
         LD.A_C(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
+        block.emit(0xC5)  # PUSH BC (C を退避)
+
         # ROM page2(0x8000) -> VRAM 0 へコピー（LDIRVM）
         LD.HL_n16(block, 0x8000)
         LD.DE_n16(block, VRAM_DEST)
         LD.BC_n16(block, PAGE_SIZE)
         # BIOS LDIRVM は HL=RAM, DE=VRAM, BC=サイズ
         CALL(block, LDIRVM)
+
+        block.emit(0xC1)  # POP BC (C を復帰)
 
         block.emit(0xC9)  # RET
 
