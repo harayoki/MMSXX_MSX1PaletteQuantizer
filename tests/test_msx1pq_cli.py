@@ -9,6 +9,49 @@ from pathlib import Path
 import unittest
 
 
+def _parse_png_metadata(png_bytes: bytes):
+    signature = b"\x89PNG\r\n\x1a\n"
+    if not png_bytes.startswith(signature):
+        raise ValueError("Invalid PNG signature")
+
+    offset = len(signature)
+    width = height = bit_depth = color_type = None
+    palette: list[tuple[int, int, int]] = []
+
+    while offset < len(png_bytes):
+        length = struct.unpack(">I", png_bytes[offset : offset + 4])[0]
+        chunk_type = png_bytes[offset + 4 : offset + 8]
+        chunk_data = png_bytes[offset + 8 : offset + 8 + length]
+        offset += 12 + length
+
+        if chunk_type == b"IHDR":
+            (
+                width,
+                height,
+                bit_depth,
+                color_type,
+                _compression,
+                _filter,
+                _interlace,
+            ) = struct.unpack(">IIBBBBB", chunk_data)
+        elif chunk_type == b"PLTE":
+            if length % 3 != 0:
+                raise ValueError("Invalid PLTE chunk length")
+            palette = [
+                tuple(chunk_data[i : i + 3]) for i in range(0, length, 3)
+            ]
+        elif chunk_type == b"IEND":
+            break
+
+    return {
+        "width": width,
+        "height": height,
+        "bit_depth": bit_depth,
+        "color_type": color_type,
+        "palette": palette,
+    }
+
+
 def _make_sample_png_bytes() -> bytes:
     width, height = 256, 192
     # Colorful pattern for visual confirmation
@@ -156,6 +199,31 @@ class Msx1pqCliTestCase(unittest.TestCase):
             f"Prefixed/suffixed output missing. stdout={result.stdout}, stderr={result.stderr}",
         )
 
+    def test_edge_emphasis_output(self):
+        output_dir = self.output_root / "edge_emphasis"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        prefix = "edge_"
+        result = self._run_cli(
+            self.input_image,
+            output_dir,
+            [
+                "--out-prefix",
+                prefix,
+                "--pre-sharpen-black",
+                "1.5",
+                "--distance",
+                "rgb",
+                "--force",
+            ],
+        )
+
+        expected_output = output_dir / f"{prefix}{self.input_image.name}"
+        self.assertTrue(
+            expected_output.exists(),
+            f"Edge emphasis output missing. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
     def test_sc2_output_and_palette_options(self):
         output_dir = self.output_root / "sc2_palette92_best_attr"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -276,6 +344,51 @@ class Msx1pqCliTestCase(unittest.TestCase):
                     f"stdout={result.stdout}, stderr={result.stderr}, args={args}"
                 ),
             )
+
+    def test_palette_png_scaling_and_palette_order(self):
+        output_dir = self.output_root / "palette_scale"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        result = self._run_cli(
+            self.input_image, output_dir, ["--scale", "3", "--force"]
+        )
+
+        expected_output = output_dir / self.input_image.name
+        self.assertTrue(
+            expected_output.exists(),
+            f"Scaled palette PNG missing. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
+        metadata = _parse_png_metadata(expected_output.read_bytes())
+
+        self.assertEqual(3, metadata["color_type"])
+        self.assertEqual((256 * 3, 192 * 3), (metadata["width"], metadata["height"]))
+        self.assertEqual(8, metadata["bit_depth"])
+
+        expected_palette = [
+            (0, 0, 0),  # index 0 transparent black
+            (0, 0, 0),  # 1: 黒
+            (62, 184, 73),  # 2: 緑
+            (116, 208, 125),  # 3: 薄緑
+            (89, 85, 224),  # 4: 紫
+            (128, 118, 241),  # 5: 薄紫
+            (185, 94, 81),  # 6: 赤
+            (101, 219, 239),  # 7: 水色
+            (219, 101, 89),  # 8: 赤紫
+            (255, 137, 125),  # 9: ピンク
+            (204, 195, 94),  # 10: 黄土色
+            (222, 208, 135),  # 11: 明るい黄色
+            (58, 162, 65),  # 12: 深緑
+            (183, 102, 181),  # 13: 赤紫
+            (204, 204, 204),  # 14: 灰色
+            (255, 255, 255),  # 15: 白
+        ]
+
+        self.assertEqual(
+            expected_palette,
+            metadata["palette"],
+            f"Palette entries mismatch. stdout={result.stdout}, stderr={result.stderr}",
+        )
 
 
 if __name__ == "__main__":

@@ -4,8 +4,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <optional>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <sstream>
@@ -13,8 +15,9 @@
 #include <array>
 
 #include "../core/MSX1PQCore.h"
+#include "../core/MSX1PQOutput.h"
 #include "../core/MSX1PQPalettes.h"
-#include "lodepng.h"
+#include "../core/lodepng.h"
 
 namespace fs = std::filesystem;
 
@@ -49,19 +52,29 @@ struct CliOptions {
     float pre_gamma{1.0f};
     float pre_contrast{1.0f};
     float pre_hue{0.0f};
+    float pre_black_cutoff{0.0f};
+    float pre_sharpen_black{0.0f};
     fs::path pre_lut_path;
     std::vector<std::uint8_t> pre_lut_data;
     std::vector<float> pre_lut3d_data;
     int pre_lut3d_size{0};
+    int scale{1};
+
+    struct FitSize {
+        int width{0};
+        int height{0};
+    };
+
+    std::optional<FitSize> fit_size;
+    int background_color{1};
+    int offset_x{0};
+
+    MSX1PQCore::AnchorPosition anchor{MSX1PQCore::AnchorPosition::Center};
+    std::map<std::size_t, int> index_offset_overrides;
 };
 
-struct RgbaPixel {
-    std::uint8_t red;
-    std::uint8_t green;
-    std::uint8_t blue;
-    std::uint8_t alpha;
-};
-static_assert(sizeof(RgbaPixel) == 4, "RgbaPixel must be tightly packed");
+using MSX1PQCore::RgbaPixel;
+using AnchorPosition = MSX1PQCore::AnchorPosition;
 
 namespace {
 
@@ -131,8 +144,16 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-gamma <0-10>           処理前にガンマを適用 (デフォルト: 1.0)\n"
                   << "  --pre-contrast <0-10>        処理前にコントラストを調整 (デフォルト: 1.0)\n"
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
+                  << "  --pre-black-cutoff <0-1>     黒エッジ強調前に指定輝度未満を黒にする (デフォルト: 0.0)\n"
+                  << "  --pre-sharpen-black <0-10>   黒周辺のみシャープ化 (デフォルト: 0.0 おすすめ: 1.0)\n"
                   << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
+                  << "  --scale <1-4>                出力PNGを整数倍で拡大 (デフォルト: 1)\n"
+                  << "  --fit-size <W> <H>         入力を指定サイズに調整 (デフォルト: 指定なし)\n"
+                  << "  --anchor <TL|TC|TR|CL|C|CR|BL|BC|BR>  クリッピング/余白の基準位置 (デフォルト: C)\n"
+                  << "  --bg-color <1-15>           余白やシフトで使う背景色パレット番号 (デフォルト: 1)\n"
+                  << "  --offset-x <-7-7>           調整前に左右へオフセット (デフォルト: 0)\n"
+                  << "  --offset-x-index <idx> <-7-7> 個別INDEXごとにオフセットを上書き\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
@@ -167,8 +188,16 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-gamma <0-10>           Apply a gamma curve before processing (default: 1.0)\n"
               << "  --pre-contrast <0-10>        Adjust contrast before processing (default: 1.0)\n"
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
+              << "  --pre-black-cutoff <0-1>     Set pixels below this luminance to black before edge enhance (default: 0.0)\n"
+              << "  --pre-sharpen-black <0-10>   Sharpen only near black areas before processing (default: 0.0, recommended: 1.0)\n"
               << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
+              << "  --scale <1-4>                Scale output PNG by an integer factor (default: 1)\n"
+              << "  --fit-size <W> <H>           Adjust input to the specified size (default: none)\n"
+              << "  --anchor <TL|TC|TR|CL|C|CR|BL|BC|BR>  Anchor point for cropping/padding (default: C)\n"
+              << "  --bg-color <1-15>            Background palette index for padding/offset (default: 1)\n"
+              << "  --offset-x <-7-7>            Horizontal offset before adjustment (default: 0)\n"
+              << "  --offset-x-index <idx> <-7-7> Override horizontal offset per INDEX\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
@@ -349,8 +378,32 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_contrast = std::stof(require_value(arg));
         } else if (arg == "--pre-hue") {
             opts.pre_hue = std::stof(require_value(arg));
+        } else if (arg == "--pre-black-cutoff") {
+            opts.pre_black_cutoff = std::stof(require_value(arg));
+        } else if (arg == "--pre-sharpen-black") {
+            opts.pre_sharpen_black = std::stof(require_value(arg));
         } else if (arg == "--pre-lut") {
             opts.pre_lut_path = require_value(arg);
+        } else if (arg == "--scale") {
+            opts.scale = std::stoi(require_value(arg));
+        } else if (arg == "--fit-size") {
+            CliOptions::FitSize size;
+            size.width = std::stoi(require_value(arg));
+            size.height = std::stoi(require_value(arg));
+            opts.fit_size = size;
+        } else if (arg == "--anchor") {
+            auto parsed = MSX1PQCore::parse_anchor(require_value(arg));
+            if (!parsed) {
+                throw std::runtime_error("Unknown anchor");
+            }
+            opts.anchor = *parsed;
+        } else if (arg == "--bg-color") {
+            opts.background_color = std::stoi(require_value(arg));
+        } else if (arg == "--offset-x") {
+            opts.offset_x = std::stoi(require_value(arg));
+        } else if (arg == "--offset-x-index") {
+            const std::size_t idx = static_cast<std::size_t>(std::stoul(require_value(arg)));
+            opts.index_offset_overrides[idx] = std::stoi(require_value(arg));
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
         } else if (arg == "--version" || arg == "-v") {
@@ -385,6 +438,35 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         throw std::runtime_error("At least one palette color must remain enabled");
     }
 
+    if (opts.scale < 1 || opts.scale > 4) {
+        throw std::runtime_error("--scale must be between 1 and 4");
+    }
+
+    auto validate_color = [](int color) {
+        if (color < 1 || color > 15) {
+            throw std::runtime_error("Background color must be between 1 and 15");
+        }
+    };
+    auto validate_offset = [](int offset) {
+        if (offset < -7 || offset > 7) {
+            throw std::runtime_error("Horizontal offset must be between -7 and 7");
+        }
+    };
+    auto validate_fit_size = [](const CliOptions::FitSize& size) {
+        if (size.width <= 0 || size.height <= 0) {
+            throw std::runtime_error("Fit size width and height must be positive integers");
+        }
+    };
+
+    validate_color(opts.background_color);
+    validate_offset(opts.offset_x);
+    if (opts.fit_size) {
+        validate_fit_size(*opts.fit_size);
+    }
+    for (const auto& [_, offset] : opts.index_offset_overrides) {
+        validate_offset(offset);
+    }
+
     if (opts.out_sc2 &&
         opts.use_8dot2col == MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
         throw std::runtime_error("--out-sc2 requires --8dot != none");
@@ -416,28 +498,45 @@ bool confirm_overwrite(const fs::path& path) {
     return c == 'y';
 }
 
-void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
+RgbaPixel get_background_pixel(int color_index, int color_system) {
+    const MSX1PQ::QuantColor* palette = MSX1PQCore::get_basic_palette(color_system);
+    const std::size_t palette_idx = static_cast<std::size_t>(std::clamp(
+        color_index - 1,
+        0,
+        static_cast<int>(MSX1PQ::kNumBasicColors - 1)));
+    const auto& color = palette[palette_idx];
+    RgbaPixel px{};
+    px.red = color.r;
+    px.green = color.g;
+    px.blue = color.b;
+    px.alpha = 255;
+    return px;
+}
+
+MSX1PQCore::QuantInfo build_quant_info(const CliOptions& opts) {
     MSX1PQCore::QuantInfo qi{};
-    qi.use_dither      = opts.use_dither;
+    qi.use_dither        = opts.use_dither;
     qi.use_palette_color = opts.use_palette_color;
-    qi.use_8dot2col    = opts.use_8dot2col;
-    qi.use_hsv         = opts.use_hsv;
-    qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
-    qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
-    qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);
-    qi.w_r             = MSX1PQCore::clamp01f(opts.weight_r);
-    qi.w_g             = MSX1PQCore::clamp01f(opts.weight_g);
-    qi.w_b_rgb         = MSX1PQCore::clamp01f(opts.weight_b_rgb);
-    qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
-    qi.pre_sat         = opts.pre_sat;
-    qi.pre_gamma       = opts.pre_gamma;
-    qi.pre_contrast    = opts.pre_contrast;
-    qi.pre_hue         = opts.pre_hue;
-    qi.use_dark_dither = opts.use_dark_dither;
-    qi.color_system    = opts.color_system;
-    qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
-    qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
-    qi.pre_lut3d_size  = opts.pre_lut3d_size;
+    qi.use_8dot2col      = opts.use_8dot2col;
+    qi.use_hsv           = opts.use_hsv;
+    qi.w_h               = MSX1PQCore::clamp01f(opts.weight_h);
+    qi.w_s               = MSX1PQCore::clamp01f(opts.weight_s);
+    qi.w_b               = MSX1PQCore::clamp01f(opts.weight_b);
+    qi.w_r               = MSX1PQCore::clamp01f(opts.weight_r);
+    qi.w_g               = MSX1PQCore::clamp01f(opts.weight_g);
+    qi.w_b_rgb           = MSX1PQCore::clamp01f(opts.weight_b_rgb);
+    qi.pre_posterize     = std::clamp(opts.pre_posterize, 0, 255);
+    qi.pre_sat           = opts.pre_sat;
+    qi.pre_gamma         = opts.pre_gamma;
+    qi.pre_contrast      = opts.pre_contrast;
+    qi.pre_hue           = opts.pre_hue;
+    qi.pre_black_cutoff  = MSX1PQCore::clamp_value(opts.pre_black_cutoff, 0.0f, 1.0f);
+    qi.pre_sharpen_black = MSX1PQCore::clamp_value(opts.pre_sharpen_black, 0.0f, 10.0f);
+    qi.use_dark_dither   = opts.use_dark_dither;
+    qi.color_system      = opts.color_system;
+    qi.pre_lut           = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
+    qi.pre_lut3d         = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
+    qi.pre_lut3d_size    = opts.pre_lut3d_size;
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
         const std::size_t src_idx = static_cast<std::size_t>(i + 1);
@@ -446,153 +545,38 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         }
     }
 
-    for (unsigned y = 0; y < height; ++y) {
-        for (unsigned x = 0; x < width; ++x) {
-            RgbaPixel& px = pixels[y * width + x];
-            std::uint8_t r = px.red;
-            std::uint8_t g = px.green;
-            std::uint8_t b = px.blue;
-
-            if (opts.use_preprocess) {
-                MSX1PQCore::apply_preprocess(&qi, r, g, b);
-            }
-            const MSX1PQ::QuantColor& qc = MSX1PQCore::quantize_pixel(
-                qi,
-                r,
-                g,
-                b,
-                static_cast<std::int32_t>(x),
-                static_cast<std::int32_t>(y));
-
-            px.red   = qc.r;
-            px.green = qc.g;
-            px.blue  = qc.b;
-        }
-    }
-
-    if (!qi.use_palette_color &&
-        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
-        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
-        const std::int32_t w = static_cast<std::int32_t>(width);
-        const std::int32_t h = static_cast<std::int32_t>(height);
-
-        switch (qi.use_8dot2col) {
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
-            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
-            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
-            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
-            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
-            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        default:
-            break;
-        }
-    }
+    return qi;
 }
 
-bool write_png(const fs::path& output_path, const std::vector<RgbaPixel>& pixels, unsigned width, unsigned height) {
-    std::vector<unsigned char> raw;
-    raw.reserve(pixels.size() * 4);
-    for (const auto& p : pixels) {
-        raw.push_back(p.red);
-        raw.push_back(p.green);
-        raw.push_back(p.blue);
-        raw.push_back(p.alpha);
+bool write_palette_png(const fs::path& output_path,
+                       const std::vector<RgbaPixel>& pixels,
+                       unsigned width,
+                       unsigned height,
+                       int color_system) {
+    std::vector<unsigned char> png;
+    const unsigned error = MSX1PQCore::encode_palette_png(pixels, width, height, color_system, png);
+    if (error) {
+        std::cerr << "Failed to encode PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
+        return false;
     }
 
-    const unsigned error = lodepng::encode(output_path.string(), raw, width, height);
-    if (error) {
-        std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
+    const unsigned save_error = lodepng::save_file(png, output_path.string());
+    if (save_error) {
+        std::cerr << "Failed to save PNG: " << output_path << " (" << lodepng_error_text(save_error) << ")\n";
         return false;
     }
     return true;
 }
 
-constexpr int kSc2Width = 256;
-constexpr int kSc2Height = 192;
 bool write_sc2(const fs::path& output_path,
                const std::vector<RgbaPixel>& pixels,
                unsigned width,
                unsigned height,
                int color_system) {
-    std::vector<RgbaPixel> canvas(static_cast<size_t>(kSc2Width * kSc2Height));
-
-    RgbaPixel bg{};
-    bg.red = 0;
-    bg.green = 0;
-    bg.blue = 0;
-    bg.alpha = 255;
-
-    for (int y = 0; y < kSc2Height; ++y) {
-        for (int x = 0; x < kSc2Width; ++x) {
-            if (y < static_cast<int>(height) && x < static_cast<int>(width)) {
-                canvas[static_cast<size_t>(y * kSc2Width + x)] = pixels[static_cast<size_t>(y * width + x)];
-            } else {
-                canvas[static_cast<size_t>(y * kSc2Width + x)] = bg;
-            }
-        }
-    }
-
-    std::vector<std::uint8_t> vram(0x4000, 0);
-
-    for (int ty = 0; ty < 24; ++ty) {
-        for (int tx = 0; tx < 32; ++tx) {
-            const int ty_mod = ty & 7;
-            const int char_index = ty_mod * 32 + tx;
-
-            const int pattern_base = (ty < 8) ? 0x0000 : (ty < 16 ? 0x0800 : 0x1000);
-            const int color_base = (ty < 8) ? 0x2000 : (ty < 16 ? 0x2800 : 0x3000);
-
-            const std::size_t name_addr = static_cast<std::size_t>(0x1800 + ty * 32 + tx);
-            vram[name_addr] = static_cast<std::uint8_t>(char_index);
-
-            for (int ry = 0; ry < 8; ++ry) {
-                const int y_base = ty * 8 + ry;
-
-                int color_min = 16;
-                int color_max = -1;
-
-                for (int rx = 0; rx < 8; ++rx) {
-                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
-                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
-                    color_min = std::min(color_min, basic_idx);
-                    color_max = std::max(color_max, basic_idx);
-                }
-
-                if (color_max < 0) {
-                    color_min = 0;
-                    color_max = 0;
-                }
-
-                const int bg_color = color_min + 1;
-                const int fg_color = (color_max >= 0) ? (color_max + 1) : bg_color;
-
-                std::uint8_t pattern_byte = 0;
-                for (int rx = 0; rx < 8; ++rx) {
-                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
-                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
-                    const int color_code = basic_idx + 1;
-                    pattern_byte <<= 1;
-                    if (color_code == fg_color) {
-                        pattern_byte |= 0x01;
-                    }
-                }
-
-                const std::size_t pattern_addr = static_cast<std::size_t>(pattern_base + char_index * 8 + ry);
-                const std::size_t color_addr = static_cast<std::size_t>(color_base + char_index * 8 + ry);
-
-                vram[pattern_addr] = pattern_byte;
-                vram[color_addr] = static_cast<std::uint8_t>((fg_color << 4) | (bg_color & 0x0F));
-            }
-        }
+    std::vector<std::uint8_t> sc2;
+    if (!MSX1PQCore::build_sc2_binary(pixels, width, height, color_system, sc2)) {
+        std::cerr << "Failed to build SC2 data: " << output_path << "\n";
+        return false;
     }
 
     std::ofstream ofs(output_path, std::ios::binary);
@@ -601,22 +585,7 @@ bool write_sc2(const fs::path& output_path,
         return false;
     }
 
-    unsigned char header[7];
-    header[0] = 0xFE;
-    header[1] = 0x00;
-    header[2] = 0x00;
-    header[3] = 0xFF;
-    header[4] = 0x3F;
-    header[5] = 0x00;
-    header[6] = 0x00;
-
-    ofs.write(reinterpret_cast<const char*>(header), 7);
-    if (!ofs) {
-        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
-        return false;
-    }
-
-    ofs.write(reinterpret_cast<const char*>(vram.data()), static_cast<std::streamsize>(vram.size()));
+    ofs.write(reinterpret_cast<const char*>(sc2.data()), static_cast<std::streamsize>(sc2.size()));
     if (!ofs) {
         std::cerr << "Failed to write SC2 data: " << output_path << "\n";
         return false;
@@ -625,7 +594,7 @@ bool write_sc2(const fs::path& output_path,
     return true;
 }
 
-bool process_file(const fs::path& input, const fs::path& output, const CliOptions& opts) {
+bool process_file(const fs::path& input, const fs::path& output, const CliOptions& opts, std::size_t input_index) {
     std::vector<unsigned char> raw;
     unsigned width = 0;
     unsigned height = 0;
@@ -649,11 +618,35 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
         pixels[i].alpha = raw[i * 4 + 3];
     }
 
-    quantize_image(pixels, width, height, opts);
+    const auto resolve_value_override = [](const auto& map, std::size_t idx, const auto& default_value) {
+        const auto it = map.find(idx);
+        if (it != map.end()) {
+            return it->second;
+        }
+        return default_value;
+    };
+
+    const auto fit_to_size = opts.fit_size;
+    const AnchorPosition anchor = opts.anchor;
+    const int background_color = opts.background_color;
+    const int offset_x = resolve_value_override(opts.index_offset_overrides, input_index, opts.offset_x);
+
+    const RgbaPixel bg_pixel = get_background_pixel(background_color, opts.color_system);
+
+    MSX1PQCore::apply_horizontal_offset(pixels, width, height, offset_x, bg_pixel);
+
+    if (fit_to_size) {
+        MSX1PQCore::fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
+    }
+
+    const MSX1PQCore::QuantInfo qi = build_quant_info(opts);
+    MSX1PQCore::quantize_image(pixels, width, height, qi, opts.use_preprocess);
     if (opts.out_sc2) {
         return write_sc2(output, pixels, width, height, opts.color_system);
     }
-    return write_png(output, pixels, width, height);
+
+    MSX1PQCore::scale_pixels(pixels, width, height, opts.scale);
+    return write_palette_png(output, pixels, width, height, opts.color_system);
 }
 
 std::vector<fs::path> collect_inputs(const fs::path& input_path) {
@@ -724,7 +717,8 @@ int main(int argc, char** argv) {
     }
 
     int success_count = 0;
-    for (const auto& input : inputs) {
+    for (std::size_t input_index = 0; input_index < inputs.size(); ++input_index) {
+        const auto& input = inputs[input_index];
         fs::path output_filename = input.filename();
         if (!opts.output_prefix.empty()) {
             output_filename = fs::path(opts.output_prefix + output_filename.string());
@@ -752,7 +746,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if (process_file(input, out_path, opts)) {
+        if (process_file(input, out_path, opts, input_index)) {
             std::cout << "Processed: " << input << " -> " << out_path << "\n";
             ++success_count;
         }

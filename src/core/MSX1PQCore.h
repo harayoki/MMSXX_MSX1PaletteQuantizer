@@ -1,14 +1,18 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "MSX1PQPalettes.h"
 
 namespace MSX1PQCore {
+
+struct RgbaPixel;
 
 // ParamsSetup() の追加順と必ず一致させること
 // AE 依存を排除した enum 定義
@@ -29,6 +33,18 @@ enum MSX1PQ_EightDotMode {
 enum MSX1PQ_ColorSystem {
     MSX1PQ_COLOR_SYS_MSX1 = 1,
     MSX1PQ_COLOR_SYS_MSX2 = 2
+};
+
+enum class AnchorPosition {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
 };
 
 struct QuantInfo {
@@ -52,6 +68,8 @@ struct QuantInfo {
     float pre_gamma{};
     float pre_contrast{};
     float pre_hue{};
+    float pre_black_cutoff{};
+    float pre_sharpen_black{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
     const std::uint8_t* pre_lut{nullptr};
@@ -64,6 +82,22 @@ bool load_pre_lut(const std::string& path,
                   std::vector<std::uint8_t>& out1d,
                   std::vector<float>& out3d,
                   int& lut3d_size);
+
+std::optional<AnchorPosition> parse_anchor(const std::string& value);
+
+void apply_horizontal_offset(std::vector<RgbaPixel>& pixels,
+                             unsigned width,
+                             unsigned height,
+                             int offset_x,
+                             const RgbaPixel& bg);
+
+void fit_to_canvas(std::vector<RgbaPixel>& pixels,
+                   unsigned& width,
+                   unsigned& height,
+                   int canvas_w,
+                   int canvas_h,
+                   AnchorPosition anchor,
+                   const RgbaPixel& bg);
 
 float clamp01f(float v);
 
@@ -83,6 +117,157 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &r8,
                       std::uint8_t &g8,
                       std::uint8_t &b8);
+
+template<typename PixelT>
+void apply_black_edge_sharpen(
+    PixelT* data,
+    std::ptrdiff_t row_pitch,
+    std::int32_t   width,
+    std::int32_t   height,
+    float          strength,
+    float          black_cutoff)
+{
+    if (!data || width <= 1 || height <= 1) {
+        return;
+    }
+
+    const float clamped_strength = clamp_value(strength, 0.0f, 10.0f);
+    const float clamped_cutoff   = clamp_value(black_cutoff, 0.0f, 1.0f);
+    if (clamped_strength <= 0.0f && clamped_cutoff <= 0.0f) {
+        return;
+    }
+
+    const float black_detect_threshold = 0.05f; // Detect only near-full black
+    const int   spread_radius = 2; // Spread mask 1-2 pixels from black areas
+    const float sharpen_amount  = clamped_strength * 0.4f;
+
+    auto luminance = [](const PixelT& p) {
+        return (0.2126f * static_cast<float>(p.red) +
+                0.7152f * static_cast<float>(p.green) +
+                0.0722f * static_cast<float>(p.blue)) /
+            255.0f;
+    };
+
+    if (clamped_cutoff > 0.0f) {
+        for (std::int32_t y = 0; y < height; ++y) {
+            PixelT* row = data + static_cast<std::ptrdiff_t>(y) * row_pitch;
+            for (std::int32_t x = 0; x < width; ++x) {
+                PixelT& p = row[x];
+                if (luminance(p) < clamped_cutoff) {
+                    p.red   = 0;
+                    p.green = 0;
+                    p.blue  = 0;
+                }
+            }
+        }
+    }
+
+    struct BlurSample {
+        float r;
+        float g;
+        float b;
+        float mask;
+    };
+
+    const std::size_t buffer_size = static_cast<std::size_t>(width) *
+                                    static_cast<std::size_t>(height);
+    std::vector<BlurSample> blur_buffer(buffer_size);
+    std::vector<float> base_mask(buffer_size, 0.0f);
+
+    auto clamp_coord = [](int v, int lo, int hi) {
+        return (v < lo) ? lo : (v > hi ? hi : v);
+    };
+
+    for (std::int32_t y = 0; y < height; ++y) {
+        for (std::int32_t x = 0; x < width; ++x) {
+            float sum_r = 0.0f;
+            float sum_g = 0.0f;
+            float sum_b = 0.0f;
+            int count = 0;
+
+            const PixelT& center = data[static_cast<std::ptrdiff_t>(y) * row_pitch + x];
+            const float center_luma = luminance(center);
+
+            for (int dy = -1; dy <= 1; ++dy) {
+                int sy = clamp_coord(y + dy, 0, height - 1);
+                const PixelT* row = data + static_cast<std::ptrdiff_t>(sy) * row_pitch;
+
+                for (int dx = -1; dx <= 1; ++dx) {
+                    int sx = clamp_coord(x + dx, 0, width - 1);
+                    const PixelT& src = row[sx];
+
+                    sum_r += static_cast<float>(src.red);
+                    sum_g += static_cast<float>(src.green);
+                    sum_b += static_cast<float>(src.blue);
+                    ++count;
+                }
+            }
+
+            const float inv_count = 1.0f / static_cast<float>(count);
+            const float mask = (center_luma <= black_detect_threshold) ? 1.0f : 0.0f;
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            blur_buffer[idx] = {
+                sum_r * inv_count,
+                sum_g * inv_count,
+                sum_b * inv_count,
+                0.0f,
+            };
+            base_mask[idx] = mask;
+        }
+    }
+
+    std::vector<float> spread_mask(buffer_size, 0.0f);
+    for (std::int32_t y = 0; y < height; ++y) {
+        for (std::int32_t x = 0; x < width; ++x) {
+            float max_mask = 0.0f;
+
+            for (int dy = -spread_radius; dy <= spread_radius; ++dy) {
+                int sy = clamp_coord(y + dy, 0, height - 1);
+                for (int dx = -spread_radius; dx <= spread_radius; ++dx) {
+                    int sx = clamp_coord(x + dx, 0, width - 1);
+
+                    const int dist = std::max(std::abs(dx), std::abs(dy));
+                    const float falloff = clamp01f(static_cast<float>(spread_radius + 1 - dist) /
+                        static_cast<float>(spread_radius + 1));
+
+                    const std::size_t idx = static_cast<std::size_t>(sy) * static_cast<std::size_t>(width) +
+                                            static_cast<std::size_t>(sx);
+                    max_mask = std::max(max_mask, base_mask[idx] * falloff);
+                }
+            }
+
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            spread_mask[idx] = max_mask;
+            blur_buffer[idx].mask = max_mask;
+        }
+    }
+
+    auto sharpen_channel = [&](std::uint8_t src, float blurred, float mask) {
+        float high = static_cast<float>(src) - blurred;
+        float adjusted = static_cast<float>(src) + high * sharpen_amount * mask;
+        return static_cast<std::uint8_t>(
+            clamp_value(adjusted + 0.5f, 0.0f, 255.0f));
+    };
+
+    for (std::int32_t y = 0; y < height; ++y) {
+        PixelT* row = data + static_cast<std::ptrdiff_t>(y) * row_pitch;
+        for (std::int32_t x = 0; x < width; ++x) {
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            const BlurSample& blur = blur_buffer[idx];
+            if (blur.mask <= 0.0f) {
+                continue;
+            }
+
+            PixelT& dst = row[x];
+            dst.red   = sharpen_channel(dst.red,   blur.r, blur.mask);
+            dst.green = sharpen_channel(dst.green, blur.g, blur.mask);
+            dst.blue  = sharpen_channel(dst.blue,  blur.b, blur.mask);
+        }
+    }
+}
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_r, float w_g, float w_b,
@@ -114,6 +299,12 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
                                   std::int32_t x,
                                   std::int32_t y);
 
+void quantize_image(std::vector<RgbaPixel>& pixels,
+                    unsigned width,
+                    unsigned height,
+                    const QuantInfo& qi,
+                    bool use_preprocess);
+
 // ------------------------------------------------------------
 // 横8ドット内2色制限
 // ------------------------------------------------------------
@@ -125,6 +316,14 @@ static const double TRANSITION_LAMBDA = 1.0; // 左右遷移ペナルティ
 
 // Helper for transition penalty
 int transition_cost_pair(int prevA, int prevB, int a, int b);
+
+// Ensure foreground color uses the larger palette number
+inline void normalize_foreground_background(int& background, int& foreground)
+{
+    if (background > foreground) {
+        std::swap(background, foreground);
+    }
+}
 
 template<typename PixelT>
 void apply_8dot2col_basic1(
@@ -185,6 +384,8 @@ void apply_8dot2col_basic1(
             }
             if (top1 < 0) continue;
             if (top2 < 0) top2 = top1;
+
+            normalize_foreground_background(top1, top2);
 
             // 3) Top2 以外は “どちらに近いか” で寄せる
             for (int i = 0; i < block_w; ++i) {
@@ -436,6 +637,8 @@ void apply_8dot2col_best1(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
+                        normalize_foreground_background(a, b);
+
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -472,6 +675,8 @@ void apply_8dot2col_best1(
                         }
                     }
                 }
+
+                normalize_foreground_background(best_a, best_b);
 
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
@@ -598,6 +803,8 @@ void apply_8dot2col_attr_best(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
+                        normalize_foreground_background(a, b);
+
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -637,6 +844,8 @@ void apply_8dot2col_attr_best(
                         }
                     }
                 }
+
+                normalize_foreground_background(best_a, best_b);
 
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
@@ -766,6 +975,8 @@ void apply_8dot2col_attr_best_penalty(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
+                        normalize_foreground_background(a, b);
+
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -805,6 +1016,8 @@ void apply_8dot2col_attr_best_penalty(
                         }
                     }
                 }
+
+                normalize_foreground_background(best_a, best_b);
 
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
