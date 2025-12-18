@@ -2,8 +2,8 @@
 VRAM 転送する最小サンプル。
 
 - 起動時: SCREEN 8 へ切り替え、バンク2を page2(0x8000–0xBFFF) に割り当て。
-  16 KiB 分を RAM 0xC000 へコピーし、LDIRVM で VRAM 0 へ転送。
-- スペースキー押下: page2 のバンクを 3↔2 でトグルし、再度 0xC000→VRAM 転送。
+  16 KiB 分を ROM(0x8000) から直接 VRAM 0 へ転送。
+- スペースキー押下: page2 のバンクを 3↔2 でトグルし、再度 ROM→VRAM 転送。
 
 Bank 構成 (16 KiB 単位):
     0: ROM ヘッダ + メインコード (entry = 0x4010、page1 固定)
@@ -19,28 +19,21 @@ import sys
 from pathlib import Path
 
 try:
-    from mmsxxasmhelper.core import CALL, Block, CP, Func, JP, JR, JR_NZ, JR_Z, LD, XOR
+    from mmsxxasmhelper.core import CALL, Block, CP, Func, JR, JR_NZ, JR_Z, LD, XOR
     from mmsxxasmhelper.msxutils import CHGMOD, LDIRVM, place_msx_rom_header_macro
-    from mmsxxasmhelper.utils import debug_trap, pad_bytes
+    from mmsxxasmhelper.utils import pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    from mmsxxasmhelper.core import CALL, Block, CP, Func, JP, JR, JR_NZ, JR_Z, LD, XOR
+    from mmsxxasmhelper.core import CALL, Block, CP, Func, JR, JR_NZ, JR_Z, LD, XOR
     from mmsxxasmhelper.msxutils import CHGMOD, LDIRVM, place_msx_rom_header_macro
-    from mmsxxasmhelper.utils import debug_trap, pad_bytes
+    from mmsxxasmhelper.utils import pad_bytes
 
 
 ASCII16_PAGE2_REG = 0x7000  # 0x8000–0xBFFF を切替
 PAGE_SIZE = 0x4000  # 16 KiB
-RAM_COPY_ADDR = 0xC000
 VRAM_DEST = 0x0000
 BANK_DATA_0 = 2
 BANK_DATA_1 = 3
-
-
-def emit_ldir(b: Block) -> None:
-    """LDIR を素直に emit するヘルパ。"""
-
-    b.emit(0xED, 0xB0)
 
 
 def build_boot_bank() -> bytes:
@@ -55,14 +48,8 @@ def build_boot_bank() -> bytes:
         LD.A_C(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
-        # ROM page2 -> RAM 0xC000 へ 16 KiB コピー
+        # ROM page2(0x8000) -> VRAM 0 へコピー（LDIRVM）
         LD.HL_n16(block, 0x8000)
-        LD.DE_n16(block, RAM_COPY_ADDR)
-        LD.BC_n16(block, PAGE_SIZE)
-        emit_ldir(block)
-
-        # RAM 0xC000 -> VRAM 0 へコピー（LDIRVM）
-        LD.HL_n16(block, RAM_COPY_ADDR)
         LD.DE_n16(block, VRAM_DEST)
         LD.BC_n16(block, PAGE_SIZE)
         # BIOS LDIRVM は HL=RAM, DE=VRAM, BC=サイズ
