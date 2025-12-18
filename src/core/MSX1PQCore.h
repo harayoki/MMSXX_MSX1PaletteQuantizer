@@ -264,6 +264,14 @@ static const double TRANSITION_LAMBDA = 1.0; // 左右遷移ペナルティ
 // Helper for transition penalty
 int transition_cost_pair(int prevA, int prevB, int a, int b);
 
+// Ensure foreground color uses the larger palette number
+inline void normalize_foreground_background(int& background, int& foreground)
+{
+    if (background > foreground) {
+        std::swap(background, foreground);
+    }
+}
+
 template<typename PixelT>
 void apply_8dot2col_basic1(
     PixelT* data,
@@ -323,6 +331,8 @@ void apply_8dot2col_basic1(
             }
             if (top1 < 0) continue;
             if (top2 < 0) top2 = top1;
+
+            normalize_foreground_background(top1, top2);
 
             // 3) Top2 以外は “どちらに近いか” で寄せる
             for (int i = 0; i < block_w; ++i) {
@@ -574,6 +584,8 @@ void apply_8dot2col_best1(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
+                        normalize_foreground_background(a, b);
+
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -610,6 +622,8 @@ void apply_8dot2col_best1(
                         }
                     }
                 }
+
+                normalize_foreground_background(best_a, best_b);
 
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
@@ -736,6 +750,8 @@ void apply_8dot2col_attr_best(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
+                        normalize_foreground_background(a, b);
+
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -775,6 +791,8 @@ void apply_8dot2col_attr_best(
                         }
                     }
                 }
+
+                normalize_foreground_background(best_a, best_b);
 
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
@@ -904,6 +922,8 @@ void apply_8dot2col_attr_best_penalty(
                         int a = unique_indices[ua];
                         int b = unique_indices[ub];
 
+                        normalize_foreground_background(a, b);
+
                         long err_block = 0;
                         for (int k = 0; k < BASIC_COLORS; ++k) {
                             int cnt = block_counts[k];
@@ -943,6 +963,8 @@ void apply_8dot2col_attr_best_penalty(
                         }
                     }
                 }
+
+                normalize_foreground_background(best_a, best_b);
 
                 for (int i = 0; i < block_w; ++i) {
                     int src_idx = idx_list[i];
