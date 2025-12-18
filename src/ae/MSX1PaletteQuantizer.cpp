@@ -665,7 +665,21 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 6: Sharpen near black",
+        "Pre 6: Black cutoff",
+        0,
+        1,
+        0,
+        1,
+        0,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_BLACK_CUTOFF
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 7: Sharpen near black",
         0,
         10,
         0,
@@ -982,6 +996,7 @@ template<typename PixelT>
 static void BuildPreSharpenBuffer(
     const PF_EffectWorld *world,
     float                 strength,
+    float                 black_cutoff,
     std::vector<PixelT>  &buffer,
     const PixelT*        &out_ptr,
     std::ptrdiff_t       &out_pitch)
@@ -989,7 +1004,7 @@ static void BuildPreSharpenBuffer(
     out_ptr = nullptr;
     out_pitch = 0;
 
-    if (!world || strength <= 0.0f) {
+    if (!world || (strength <= 0.0f && black_cutoff <= 0.0f)) {
         return;
     }
 
@@ -1021,7 +1036,8 @@ static void BuildPreSharpenBuffer(
         static_cast<std::ptrdiff_t>(width),
         static_cast<std::int32_t>(width),
         static_cast<std::int32_t>(height),
-        strength);
+        strength,
+        black_cutoff);
 
     out_ptr   = buffer.data();
     out_pitch = static_cast<std::ptrdiff_t>(width);
@@ -1248,6 +1264,8 @@ Render (
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
     qi.pre_contrast  = static_cast<float>(params[MSX1PQ_PARAM_PRE_CONTRAST]->u.fs_d.value);
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
+    qi.pre_black_cutoff = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_PRE_BLACK_CUTOFF]->u.fs_d.value));
     qi.pre_sharpen_black = clamp_value(
         static_cast<float>(params[MSX1PQ_PARAM_PRE_SHARPEN_BLACK]->u.fs_d.value),
         0.0f,
@@ -1287,11 +1305,12 @@ Render (
             refcon.global_y0 = output->extent_hint.top;
 
             std::vector<MSX1PQ_Pixel_BGRA_8u> sharpen_buffer;
-            if (qi.pre_sharpen_black > 0.0f) {
+            if (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f) {
                 BuildPreSharpenBuffer(
                     reinterpret_cast<PF_EffectWorld*>(
                         &params[MSX1PQ_PARAM_INPUT]->u.ld),
                     qi.pre_sharpen_black,
+                    qi.pre_black_cutoff,
                     sharpen_buffer,
                     refcon.pre_sharpen_bgra,
                     refcon.pre_sharpen_pitch);
@@ -1335,11 +1354,12 @@ Render (
         refcon.global_y0 = output->extent_hint.top;
 
         std::vector<PF_Pixel8> sharpen_buffer;
-        if (qi.pre_sharpen_black > 0.0f) {
+        if (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f) {
             BuildPreSharpenBuffer(
                 reinterpret_cast<PF_EffectWorld*>(
                     &params[MSX1PQ_PARAM_INPUT]->u.ld),
                 qi.pre_sharpen_black,
+                qi.pre_black_cutoff,
                 sharpen_buffer,
                 refcon.pre_sharpen_argb,
                 refcon.pre_sharpen_pitch);
@@ -1647,6 +1667,13 @@ SmartRender(
 
         ERR( CheckoutParam(
                 in_dataP,
+                MSX1PQ_PARAM_PRE_BLACK_CUTOFF,
+                param) );
+        qi.pre_black_cutoff = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
                 MSX1PQ_PARAM_PRE_SHARPEN_BLACK,
                 param) );
         qi.pre_sharpen_black = clamp_value(
@@ -1759,10 +1786,11 @@ SmartRender(
             refcon.global_y0 = aligned_rect.top;
 
             std::vector<PF_Pixel8> sharpen_buffer;
-            if (qi.pre_sharpen_black > 0.0f) {
+            if (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f) {
                 BuildPreSharpenBuffer(
                     &input_roi,
                     qi.pre_sharpen_black,
+                    qi.pre_black_cutoff,
                     sharpen_buffer,
                     refcon.pre_sharpen_argb,
                     refcon.pre_sharpen_pitch);

@@ -53,6 +53,7 @@ struct QuantInfo {
     float pre_gamma{};
     float pre_contrast{};
     float pre_hue{};
+    float pre_black_cutoff{};
     float pre_sharpen_black{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
@@ -92,18 +93,19 @@ void apply_black_edge_sharpen(
     std::ptrdiff_t row_pitch,
     std::int32_t   width,
     std::int32_t   height,
-    float          strength)
+    float          strength,
+    float          black_cutoff)
 {
     if (!data || width <= 1 || height <= 1) {
         return;
     }
 
     const float clamped_strength = clamp_value(strength, 0.0f, 10.0f);
-    if (clamped_strength <= 0.0f) {
+    const float clamped_cutoff   = clamp_value(black_cutoff, 0.0f, 1.0f);
+    if (clamped_strength <= 0.0f && clamped_cutoff <= 0.0f) {
         return;
     }
 
-    const float black_threshold = 0.2f; // 0-1 range
     const float black_detect_threshold = 0.05f; // Detect only near-full black
     const int   spread_radius = 2; // Spread mask 1-2 pixels from black areas
     const float sharpen_amount  = clamped_strength * 0.4f;
@@ -114,6 +116,20 @@ void apply_black_edge_sharpen(
                 0.0722f * static_cast<float>(p.blue)) /
             255.0f;
     };
+
+    if (clamped_cutoff > 0.0f) {
+        for (std::int32_t y = 0; y < height; ++y) {
+            PixelT* row = data + static_cast<std::ptrdiff_t>(y) * row_pitch;
+            for (std::int32_t x = 0; x < width; ++x) {
+                PixelT& p = row[x];
+                if (luminance(p) < clamped_cutoff) {
+                    p.red   = 0;
+                    p.green = 0;
+                    p.blue  = 0;
+                }
+            }
+        }
+    }
 
     struct BlurSample {
         float r;

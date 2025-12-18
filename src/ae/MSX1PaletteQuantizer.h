@@ -41,6 +41,8 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_PRE_CONTRAST,    // Contrast correction
     MSX1PQ_PARAM_PRE_HUE,         // Hue rotation
 
+    MSX1PQ_PARAM_PRE_BLACK_CUTOFF, // Cut off luminance before black edge sharpen
+
     MSX1PQ_PARAM_PRE_SHARPEN_BLACK, // Sharpen near black areas
 
     MSX1PQ_PARAM_USE_PALETTE_COLOR, // Use 92-color palette directly
