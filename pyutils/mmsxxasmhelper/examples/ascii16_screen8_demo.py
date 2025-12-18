@@ -21,12 +21,22 @@ from pathlib import Path
 
 try:
     from mmsxxasmhelper.core import CALL, Block, CP, Func, JR, JR_NZ, JR_Z, LD, XOR
-    from mmsxxasmhelper.msxutils import CHGMOD, LDIRVM, place_msx_rom_header_macro
+    from mmsxxasmhelper.msxutils import (
+        CHGMOD,
+        LDIRVM,
+        place_msx_rom_header_macro,
+        store_stack_pointer_macro,
+    )
     from mmsxxasmhelper.utils import pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from mmsxxasmhelper.core import CALL, Block, CP, Func, JR, JR_NZ, JR_Z, LD, XOR
-    from mmsxxasmhelper.msxutils import CHGMOD, LDIRVM, place_msx_rom_header_macro
+    from mmsxxasmhelper.msxutils import (
+        CHGMOD,
+        LDIRVM,
+        place_msx_rom_header_macro,
+        store_stack_pointer_macro,
+    )
     from mmsxxasmhelper.utils import pad_bytes
 
 
@@ -62,6 +72,9 @@ def build_boot_bank() -> bytes:
 
     # ---- メイン ----
     b.label("main")
+
+    # ブート直後にスタックポインタを安全な領域へ退避
+    store_stack_pointer_macro(b)
 
     # SCREEN 8 初期化
     LD.A_n8(b, 8)
