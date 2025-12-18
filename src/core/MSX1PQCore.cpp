@@ -1,4 +1,5 @@
 #include "MSX1PQCore.h"
+#include "MSX1PQOutput.h"
 
 #include <algorithm>
 #include <array>
@@ -41,6 +42,155 @@ std::string get_lower_extension(const std::string& path)
         return std::string();
     }
     return to_lower_copy(path.substr(dot));
+}
+
+} // namespace
+
+std::optional<AnchorPosition> parse_anchor(const std::string& value)
+{
+    const std::string lower = to_lower_copy(value);
+    if (lower == "tl") return AnchorPosition::TopLeft;
+    if (lower == "tc") return AnchorPosition::TopCenter;
+    if (lower == "tr") return AnchorPosition::TopRight;
+    if (lower == "cl") return AnchorPosition::CenterLeft;
+    if (lower == "c")  return AnchorPosition::Center;
+    if (lower == "cr") return AnchorPosition::CenterRight;
+    if (lower == "bl") return AnchorPosition::BottomLeft;
+    if (lower == "bc") return AnchorPosition::BottomCenter;
+    if (lower == "br") return AnchorPosition::BottomRight;
+    return std::nullopt;
+}
+
+void apply_horizontal_offset(std::vector<RgbaPixel>& pixels,
+                             unsigned width,
+                             unsigned height,
+                             int offset_x,
+                             const RgbaPixel& bg)
+{
+    if (offset_x == 0) {
+        return;
+    }
+
+    std::vector<RgbaPixel> shifted(pixels.size(), bg);
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            const int dest_x = static_cast<int>(x) + offset_x;
+            if (dest_x < 0 || dest_x >= static_cast<int>(width)) {
+                continue;
+            }
+            shifted[static_cast<std::size_t>(y * width + static_cast<unsigned>(dest_x))] =
+                pixels[static_cast<std::size_t>(y * width + x)];
+        }
+    }
+
+    pixels.swap(shifted);
+}
+
+void fit_to_canvas(std::vector<RgbaPixel>& pixels,
+                   unsigned& width,
+                   unsigned& height,
+                   int canvas_w,
+                   int canvas_h,
+                   AnchorPosition anchor,
+                   const RgbaPixel& bg)
+{
+    const int src_w = static_cast<int>(width);
+    const int src_h = static_cast<int>(height);
+
+    const bool wider = src_w > canvas_w;
+    const bool taller = src_h > canvas_h;
+
+    int copy_w = wider ? canvas_w : src_w;
+    int copy_h = taller ? canvas_h : src_h;
+
+    const auto horizontal_anchor = [&](AnchorPosition pos) {
+        switch (pos) {
+        case AnchorPosition::TopLeft:
+        case AnchorPosition::CenterLeft:
+        case AnchorPosition::BottomLeft:
+            return -1;
+        case AnchorPosition::TopCenter:
+        case AnchorPosition::Center:
+        case AnchorPosition::BottomCenter:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+    const auto vertical_anchor = [&](AnchorPosition pos) {
+        switch (pos) {
+        case AnchorPosition::TopLeft:
+        case AnchorPosition::TopCenter:
+        case AnchorPosition::TopRight:
+            return -1;
+        case AnchorPosition::CenterLeft:
+        case AnchorPosition::Center:
+        case AnchorPosition::CenterRight:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+
+    const int h_anchor = horizontal_anchor(anchor);
+    const int v_anchor = vertical_anchor(anchor);
+
+    int src_x = 0;
+    int src_y = 0;
+    int dst_x = 0;
+    int dst_y = 0;
+
+    if (wider) {
+        if (h_anchor < 0) {
+            src_x = 0;
+        } else if (h_anchor == 0) {
+            src_x = (src_w - canvas_w) / 2;
+        } else {
+            src_x = src_w - canvas_w;
+        }
+    } else {
+        if (h_anchor < 0) {
+            dst_x = 0;
+        } else if (h_anchor == 0) {
+            dst_x = (canvas_w - src_w) / 2;
+        } else {
+            dst_x = canvas_w - src_w;
+        }
+    }
+
+    if (taller) {
+        if (v_anchor < 0) {
+            src_y = 0;
+        } else if (v_anchor == 0) {
+            src_y = (src_h - canvas_h) / 2;
+        } else {
+            src_y = src_h - canvas_h;
+        }
+    } else {
+        if (v_anchor < 0) {
+            dst_y = 0;
+        } else if (v_anchor == 0) {
+            dst_y = (canvas_h - src_h) / 2;
+        } else {
+            dst_y = canvas_h - src_h;
+        }
+    }
+
+    std::vector<RgbaPixel> canvas(static_cast<std::size_t>(canvas_w * canvas_h), bg);
+    for (int y = 0; y < copy_h; ++y) {
+        for (int x = 0; x < copy_w; ++x) {
+            const int src_idx_x = src_x + x;
+            const int src_idx_y = src_y + y;
+            const int dst_idx_x = dst_x + x;
+            const int dst_idx_y = dst_y + y;
+            canvas[static_cast<std::size_t>(dst_idx_y * canvas_w + dst_idx_x)] =
+                pixels[static_cast<std::size_t>(src_idx_y * width + src_idx_x)];
+        }
+    }
+
+    pixels.swap(canvas);
+    width = static_cast<unsigned>(canvas_w);
+    height = static_cast<unsigned>(canvas_h);
 }
 
 bool parse_cube_lut(std::istream& file, std::vector<float>& out3d, int& lut_size)
@@ -171,8 +321,6 @@ bool palette_entry_allowed(int palette_idx, int num_colors, const std::array<boo
     const int basic_idx = palette_idx % MSX1PQ::kNumBasicColors;
     return palette_enabled[static_cast<std::size_t>(basic_idx)];
 }
-
-} // namespace
 
 float clamp01f(float v)
 {
@@ -764,6 +912,76 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
             : MSX1PQ::kQuantColors;
 
     return palette[basic_idx];
+}
+
+void quantize_image(std::vector<RgbaPixel>& pixels,
+                    unsigned width,
+                    unsigned height,
+                    const QuantInfo& qi,
+                    bool use_preprocess)
+{
+    if (use_preprocess &&
+        (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f)) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        apply_black_edge_sharpen(
+            pixels.data(),
+            pitch,
+            static_cast<std::int32_t>(width),
+            static_cast<std::int32_t>(height),
+            qi.pre_sharpen_black,
+            qi.pre_black_cutoff);
+    }
+
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            RgbaPixel& px = pixels[y * width + x];
+            std::uint8_t r = px.red;
+            std::uint8_t g = px.green;
+            std::uint8_t b = px.blue;
+
+            if (use_preprocess) {
+                apply_preprocess(&qi, r, g, b);
+            }
+            const MSX1PQ::QuantColor& qc = quantize_pixel(
+                qi,
+                r,
+                g,
+                b,
+                static_cast<std::int32_t>(x),
+                static_cast<std::int32_t>(y));
+
+            px.red   = qc.r;
+            px.green = qc.g;
+            px.blue  = qc.b;
+        }
+    }
+
+    if (!qi.use_palette_color &&
+        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        const std::int32_t w = static_cast<std::int32_t>(width);
+        const std::int32_t h = static_cast<std::int32_t>(height);
+
+        switch (qi.use_8dot2col) {
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
+            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
+            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
+            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 int transition_cost_pair(int prevA, int prevB, int a, int b)

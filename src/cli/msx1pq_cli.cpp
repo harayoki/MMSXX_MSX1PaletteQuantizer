@@ -15,8 +15,9 @@
 #include <array>
 
 #include "../core/MSX1PQCore.h"
+#include "../core/MSX1PQOutput.h"
 #include "../core/MSX1PQPalettes.h"
-#include "lodepng.h"
+#include "../core/lodepng.h"
 
 namespace fs = std::filesystem;
 
@@ -68,29 +69,12 @@ struct CliOptions {
     int background_color{1};
     int offset_x{0};
 
-    enum class AnchorPosition {
-        TopLeft,
-        TopCenter,
-        TopRight,
-        CenterLeft,
-        Center,
-        CenterRight,
-        BottomLeft,
-        BottomCenter,
-        BottomRight,
-    };
-
-    AnchorPosition anchor{AnchorPosition::Center};
+    MSX1PQCore::AnchorPosition anchor{MSX1PQCore::AnchorPosition::Center};
     std::map<std::size_t, int> index_offset_overrides;
 };
 
-struct RgbaPixel {
-    std::uint8_t red;
-    std::uint8_t green;
-    std::uint8_t blue;
-    std::uint8_t alpha;
-};
-static_assert(sizeof(RgbaPixel) == 4, "RgbaPixel must be tightly packed");
+using MSX1PQCore::RgbaPixel;
+using AnchorPosition = MSX1PQCore::AnchorPosition;
 
 namespace {
 
@@ -239,20 +223,6 @@ std::optional<int> parse_8dot_mode(const std::string& value) {
     if (it != kMap.end()) {
         return it->second;
     }
-    return std::nullopt;
-}
-
-std::optional<CliOptions::AnchorPosition> parse_anchor(const std::string& value) {
-    const std::string lower = to_lower_copy(value);
-    if (lower == "tl") return CliOptions::AnchorPosition::TopLeft;
-    if (lower == "tc") return CliOptions::AnchorPosition::TopCenter;
-    if (lower == "tr") return CliOptions::AnchorPosition::TopRight;
-    if (lower == "cl") return CliOptions::AnchorPosition::CenterLeft;
-    if (lower == "c")  return CliOptions::AnchorPosition::Center;
-    if (lower == "cr") return CliOptions::AnchorPosition::CenterRight;
-    if (lower == "bl") return CliOptions::AnchorPosition::BottomLeft;
-    if (lower == "bc") return CliOptions::AnchorPosition::BottomCenter;
-    if (lower == "br") return CliOptions::AnchorPosition::BottomRight;
     return std::nullopt;
 }
 
@@ -422,7 +392,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             size.height = std::stoi(require_value(arg));
             opts.fit_size = size;
         } else if (arg == "--anchor") {
-            auto parsed = parse_anchor(require_value(arg));
+            auto parsed = MSX1PQCore::parse_anchor(require_value(arg));
             if (!parsed) {
                 throw std::runtime_error("Unknown anchor");
             }
@@ -528,10 +498,8 @@ bool confirm_overwrite(const fs::path& path) {
     return c == 'y';
 }
 
-std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> get_basic_palette(int color_system);
-
 RgbaPixel get_background_pixel(int color_index, int color_system) {
-    const auto palette = get_basic_palette(color_system);
+    const MSX1PQ::QuantColor* palette = MSX1PQCore::get_basic_palette(color_system);
     const std::size_t palette_idx = static_cast<std::size_t>(std::clamp(
         color_index - 1,
         0,
@@ -545,155 +513,30 @@ RgbaPixel get_background_pixel(int color_index, int color_system) {
     return px;
 }
 
-void apply_horizontal_offset(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, int offset_x, const RgbaPixel& bg) {
-    if (offset_x == 0) {
-        return;
-    }
-
-    std::vector<RgbaPixel> shifted(pixels.size(), bg);
-    for (unsigned y = 0; y < height; ++y) {
-        for (unsigned x = 0; x < width; ++x) {
-            const int dest_x = static_cast<int>(x) + offset_x;
-            if (dest_x < 0 || dest_x >= static_cast<int>(width)) {
-                continue;
-            }
-            shifted[static_cast<std::size_t>(y * width + static_cast<unsigned>(dest_x))] = pixels[static_cast<std::size_t>(y * width + x)];
-        }
-    }
-
-    pixels.swap(shifted);
-}
-
-void fit_to_canvas(std::vector<RgbaPixel>& pixels,
-                   unsigned& width,
-                   unsigned& height,
-                   int canvas_w,
-                   int canvas_h,
-                   CliOptions::AnchorPosition anchor,
-                   const RgbaPixel& bg) {
-    const int src_w = static_cast<int>(width);
-    const int src_h = static_cast<int>(height);
-
-    const bool wider = src_w > canvas_w;
-    const bool taller = src_h > canvas_h;
-
-    int copy_w = wider ? canvas_w : src_w;
-    int copy_h = taller ? canvas_h : src_h;
-
-    const auto horizontal_anchor = [&](CliOptions::AnchorPosition pos) {
-        switch (pos) {
-        case CliOptions::AnchorPosition::TopLeft:
-        case CliOptions::AnchorPosition::CenterLeft:
-        case CliOptions::AnchorPosition::BottomLeft:
-            return -1;
-        case CliOptions::AnchorPosition::TopCenter:
-        case CliOptions::AnchorPosition::Center:
-        case CliOptions::AnchorPosition::BottomCenter:
-            return 0;
-        default:
-            return 1;
-        }
-    };
-    const auto vertical_anchor = [&](CliOptions::AnchorPosition pos) {
-        switch (pos) {
-        case CliOptions::AnchorPosition::TopLeft:
-        case CliOptions::AnchorPosition::TopCenter:
-        case CliOptions::AnchorPosition::TopRight:
-            return -1;
-        case CliOptions::AnchorPosition::CenterLeft:
-        case CliOptions::AnchorPosition::Center:
-        case CliOptions::AnchorPosition::CenterRight:
-            return 0;
-        default:
-            return 1;
-        }
-    };
-
-    const int h_anchor = horizontal_anchor(anchor);
-    const int v_anchor = vertical_anchor(anchor);
-
-    int src_x = 0;
-    int src_y = 0;
-    int dst_x = 0;
-    int dst_y = 0;
-
-    if (wider) {
-        if (h_anchor < 0) {
-            src_x = 0;
-        } else if (h_anchor == 0) {
-            src_x = (src_w - canvas_w) / 2;
-        } else {
-            src_x = src_w - canvas_w;
-        }
-    } else {
-        if (h_anchor < 0) {
-            dst_x = 0;
-        } else if (h_anchor == 0) {
-            dst_x = (canvas_w - src_w) / 2;
-        } else {
-            dst_x = canvas_w - src_w;
-        }
-    }
-
-    if (taller) {
-        if (v_anchor < 0) {
-            src_y = 0;
-        } else if (v_anchor == 0) {
-            src_y = (src_h - canvas_h) / 2;
-        } else {
-            src_y = src_h - canvas_h;
-        }
-    } else {
-        if (v_anchor < 0) {
-            dst_y = 0;
-        } else if (v_anchor == 0) {
-            dst_y = (canvas_h - src_h) / 2;
-        } else {
-            dst_y = canvas_h - src_h;
-        }
-    }
-
-    std::vector<RgbaPixel> canvas(static_cast<std::size_t>(canvas_w * canvas_h), bg);
-    for (int y = 0; y < copy_h; ++y) {
-        for (int x = 0; x < copy_w; ++x) {
-            const int src_idx_x = src_x + x;
-            const int src_idx_y = src_y + y;
-            const int dst_idx_x = dst_x + x;
-            const int dst_idx_y = dst_y + y;
-            canvas[static_cast<std::size_t>(dst_idx_y * canvas_w + dst_idx_x)] =
-                pixels[static_cast<std::size_t>(src_idx_y * width + src_idx_x)];
-        }
-    }
-
-    pixels.swap(canvas);
-    width = static_cast<unsigned>(canvas_w);
-    height = static_cast<unsigned>(canvas_h);
-}
-
-void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
+MSX1PQCore::QuantInfo build_quant_info(const CliOptions& opts) {
     MSX1PQCore::QuantInfo qi{};
-    qi.use_dither      = opts.use_dither;
+    qi.use_dither        = opts.use_dither;
     qi.use_palette_color = opts.use_palette_color;
-    qi.use_8dot2col    = opts.use_8dot2col;
-    qi.use_hsv         = opts.use_hsv;
-    qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
-    qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
-    qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);
-    qi.w_r             = MSX1PQCore::clamp01f(opts.weight_r);
-    qi.w_g             = MSX1PQCore::clamp01f(opts.weight_g);
-    qi.w_b_rgb         = MSX1PQCore::clamp01f(opts.weight_b_rgb);
-    qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
-    qi.pre_sat         = opts.pre_sat;
-    qi.pre_gamma       = opts.pre_gamma;
-    qi.pre_contrast    = opts.pre_contrast;
-    qi.pre_hue         = opts.pre_hue;
-    qi.pre_black_cutoff = MSX1PQCore::clamp_value(opts.pre_black_cutoff, 0.0f, 1.0f);
+    qi.use_8dot2col      = opts.use_8dot2col;
+    qi.use_hsv           = opts.use_hsv;
+    qi.w_h               = MSX1PQCore::clamp01f(opts.weight_h);
+    qi.w_s               = MSX1PQCore::clamp01f(opts.weight_s);
+    qi.w_b               = MSX1PQCore::clamp01f(opts.weight_b);
+    qi.w_r               = MSX1PQCore::clamp01f(opts.weight_r);
+    qi.w_g               = MSX1PQCore::clamp01f(opts.weight_g);
+    qi.w_b_rgb           = MSX1PQCore::clamp01f(opts.weight_b_rgb);
+    qi.pre_posterize     = std::clamp(opts.pre_posterize, 0, 255);
+    qi.pre_sat           = opts.pre_sat;
+    qi.pre_gamma         = opts.pre_gamma;
+    qi.pre_contrast      = opts.pre_contrast;
+    qi.pre_hue           = opts.pre_hue;
+    qi.pre_black_cutoff  = MSX1PQCore::clamp_value(opts.pre_black_cutoff, 0.0f, 1.0f);
     qi.pre_sharpen_black = MSX1PQCore::clamp_value(opts.pre_sharpen_black, 0.0f, 10.0f);
-    qi.use_dark_dither = opts.use_dark_dither;
-    qi.color_system    = opts.color_system;
-    qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
-    qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
-    qi.pre_lut3d_size  = opts.pre_lut3d_size;
+    qi.use_dark_dither   = opts.use_dark_dither;
+    qi.color_system      = opts.color_system;
+    qi.pre_lut           = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
+    qi.pre_lut3d         = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
+    qi.pre_lut3d_size    = opts.pre_lut3d_size;
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
         const std::size_t src_idx = static_cast<std::size_t>(i + 1);
@@ -702,106 +545,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         }
     }
 
-    if (opts.use_preprocess &&
-        (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f)) {
-        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
-        MSX1PQCore::apply_black_edge_sharpen(
-            pixels.data(),
-            pitch,
-            static_cast<std::int32_t>(width),
-            static_cast<std::int32_t>(height),
-            qi.pre_sharpen_black,
-            qi.pre_black_cutoff);
-    }
-
-    for (unsigned y = 0; y < height; ++y) {
-        for (unsigned x = 0; x < width; ++x) {
-            RgbaPixel& px = pixels[y * width + x];
-            std::uint8_t r = px.red;
-            std::uint8_t g = px.green;
-            std::uint8_t b = px.blue;
-
-            if (opts.use_preprocess) {
-                MSX1PQCore::apply_preprocess(&qi, r, g, b);
-            }
-            const MSX1PQ::QuantColor& qc = MSX1PQCore::quantize_pixel(
-                qi,
-                r,
-                g,
-                b,
-                static_cast<std::int32_t>(x),
-                static_cast<std::int32_t>(y));
-
-            px.red   = qc.r;
-            px.green = qc.g;
-            px.blue  = qc.b;
-        }
-    }
-
-    if (!qi.use_palette_color &&
-        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
-        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
-        const std::int32_t w = static_cast<std::int32_t>(width);
-        const std::int32_t h = static_cast<std::int32_t>(height);
-
-        switch (qi.use_8dot2col) {
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
-            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
-            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
-            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
-            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
-            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-void scale_pixels(std::vector<RgbaPixel>& pixels, unsigned& width, unsigned& height, int scale) {
-    if (scale <= 1) {
-        return;
-    }
-
-    const unsigned new_width  = width * static_cast<unsigned>(scale);
-    const unsigned new_height = height * static_cast<unsigned>(scale);
-    std::vector<RgbaPixel> scaled(new_width * new_height);
-
-    for (unsigned y = 0; y < new_height; ++y) {
-        const unsigned src_y = y / static_cast<unsigned>(scale);
-        for (unsigned x = 0; x < new_width; ++x) {
-            const unsigned src_x = x / static_cast<unsigned>(scale);
-            scaled[y * new_width + x] = pixels[src_y * width + src_x];
-        }
-    }
-
-    pixels.swap(scaled);
-    width  = new_width;
-    height = new_height;
-}
-
-std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors>
-get_basic_palette(int color_system) {
-    std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> palette{};
-
-    const auto* source_colors =
-        (color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
-            ? MSX1PQ::kBasicColorsMsx2
-            : MSX1PQ::kQuantColors;
-
-    for (std::size_t i = 0; i < static_cast<std::size_t>(MSX1PQ::kNumBasicColors); ++i) {
-        palette[i] = source_colors[i];
-    }
-
-    return palette;
+    return qi;
 }
 
 bool write_palette_png(const fs::path& output_path,
@@ -809,56 +553,10 @@ bool write_palette_png(const fs::path& output_path,
                        unsigned width,
                        unsigned height,
                        int color_system) {
-    const auto palette = get_basic_palette(color_system);
-
-    std::vector<unsigned char> indices(pixels.size());
-    for (std::size_t i = 0; i < pixels.size(); ++i) {
-        const auto& px = pixels[i];
-        if (px.alpha == 0) {
-            indices[i] = 0;
-            continue;
-        }
-
-        std::uint32_t best_distance = std::numeric_limits<std::uint32_t>::max();
-        std::uint8_t best_index = 0;
-        for (std::size_t pal_idx = 0; pal_idx < palette.size(); ++pal_idx) {
-            const auto& pal_color = palette[pal_idx];
-            const int dr = static_cast<int>(px.red)   - static_cast<int>(pal_color.r);
-            const int dg = static_cast<int>(px.green) - static_cast<int>(pal_color.g);
-            const int db = static_cast<int>(px.blue)  - static_cast<int>(pal_color.b);
-            const std::uint32_t distance = static_cast<std::uint32_t>(dr * dr + dg * dg + db * db);
-            if (distance < best_distance) {
-                best_distance = distance;
-                best_index = static_cast<std::uint8_t>(pal_idx + 1); // palette index 1-15
-                if (distance == 0) {
-                    break;
-                }
-            }
-        }
-        indices[i] = best_index;
-    }
-
-    lodepng::State state;
-    state.info_raw.colortype = LCT_PALETTE;
-    state.info_raw.bitdepth  = 8;
-    state.info_png.color.colortype = LCT_PALETTE;
-    state.info_png.color.bitdepth  = 8;
-    state.encoder.auto_convert     = 0; // Preserve explicit 8-bit palette output
-
-    const auto add_palette_entry = [&](std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) {
-        lodepng_palette_add(&state.info_png.color, r, g, b, a);
-        lodepng_palette_add(&state.info_raw, r, g, b, a);
-    };
-
-    add_palette_entry(0, 0, 0, 0); // index 0: transparent black
-    for (const auto& color : palette) {
-        add_palette_entry(color.r, color.g, color.b, 255);
-    }
-
     std::vector<unsigned char> png;
-    const unsigned error = lodepng::encode(png, indices, width, height, state);
+    const unsigned error = MSX1PQCore::encode_palette_png(pixels, width, height, color_system, png);
     if (error) {
-        std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
+        std::cerr << "Failed to encode PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
         return false;
     }
 
@@ -870,83 +568,15 @@ bool write_palette_png(const fs::path& output_path,
     return true;
 }
 
-constexpr int kSc2Width = 256;
-constexpr int kSc2Height = 192;
 bool write_sc2(const fs::path& output_path,
                const std::vector<RgbaPixel>& pixels,
                unsigned width,
                unsigned height,
                int color_system) {
-    std::vector<RgbaPixel> canvas(static_cast<size_t>(kSc2Width * kSc2Height));
-
-    RgbaPixel bg{};
-    bg.red = 0;
-    bg.green = 0;
-    bg.blue = 0;
-    bg.alpha = 255;
-
-    for (int y = 0; y < kSc2Height; ++y) {
-        for (int x = 0; x < kSc2Width; ++x) {
-            if (y < static_cast<int>(height) && x < static_cast<int>(width)) {
-                canvas[static_cast<size_t>(y * kSc2Width + x)] = pixels[static_cast<size_t>(y * width + x)];
-            } else {
-                canvas[static_cast<size_t>(y * kSc2Width + x)] = bg;
-            }
-        }
-    }
-
-    std::vector<std::uint8_t> vram(0x4000, 0);
-
-    for (int ty = 0; ty < 24; ++ty) {
-        for (int tx = 0; tx < 32; ++tx) {
-            const int ty_mod = ty & 7;
-            const int char_index = ty_mod * 32 + tx;
-
-            const int pattern_base = (ty < 8) ? 0x0000 : (ty < 16 ? 0x0800 : 0x1000);
-            const int color_base = (ty < 8) ? 0x2000 : (ty < 16 ? 0x2800 : 0x3000);
-
-            const std::size_t name_addr = static_cast<std::size_t>(0x1800 + ty * 32 + tx);
-            vram[name_addr] = static_cast<std::uint8_t>(char_index);
-
-            for (int ry = 0; ry < 8; ++ry) {
-                const int y_base = ty * 8 + ry;
-
-                int color_min = 16;
-                int color_max = -1;
-
-                for (int rx = 0; rx < 8; ++rx) {
-                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
-                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
-                    color_min = std::min(color_min, basic_idx);
-                    color_max = std::max(color_max, basic_idx);
-                }
-
-                if (color_max < 0) {
-                    color_min = 0;
-                    color_max = 0;
-                }
-
-                const int bg_color = color_min + 1;
-                const int fg_color = (color_max >= 0) ? (color_max + 1) : bg_color;
-
-                std::uint8_t pattern_byte = 0;
-                for (int rx = 0; rx < 8; ++rx) {
-                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
-                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
-                    const int color_code = basic_idx + 1;
-                    pattern_byte <<= 1;
-                    if (color_code == fg_color) {
-                        pattern_byte |= 0x01;
-                    }
-                }
-
-                const std::size_t pattern_addr = static_cast<std::size_t>(pattern_base + char_index * 8 + ry);
-                const std::size_t color_addr = static_cast<std::size_t>(color_base + char_index * 8 + ry);
-
-                vram[pattern_addr] = pattern_byte;
-                vram[color_addr] = static_cast<std::uint8_t>((fg_color << 4) | (bg_color & 0x0F));
-            }
-        }
+    std::vector<std::uint8_t> sc2;
+    if (!MSX1PQCore::build_sc2_binary(pixels, width, height, color_system, sc2)) {
+        std::cerr << "Failed to build SC2 data: " << output_path << "\n";
+        return false;
     }
 
     std::ofstream ofs(output_path, std::ios::binary);
@@ -955,22 +585,7 @@ bool write_sc2(const fs::path& output_path,
         return false;
     }
 
-    unsigned char header[7];
-    header[0] = 0xFE;
-    header[1] = 0x00;
-    header[2] = 0x00;
-    header[3] = 0xFF;
-    header[4] = 0x3F;
-    header[5] = 0x00;
-    header[6] = 0x00;
-
-    ofs.write(reinterpret_cast<const char*>(header), 7);
-    if (!ofs) {
-        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
-        return false;
-    }
-
-    ofs.write(reinterpret_cast<const char*>(vram.data()), static_cast<std::streamsize>(vram.size()));
+    ofs.write(reinterpret_cast<const char*>(sc2.data()), static_cast<std::streamsize>(sc2.size()));
     if (!ofs) {
         std::cerr << "Failed to write SC2 data: " << output_path << "\n";
         return false;
@@ -1012,24 +627,25 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
     };
 
     const auto fit_to_size = opts.fit_size;
-    const CliOptions::AnchorPosition anchor = opts.anchor;
+    const AnchorPosition anchor = opts.anchor;
     const int background_color = opts.background_color;
     const int offset_x = resolve_value_override(opts.index_offset_overrides, input_index, opts.offset_x);
 
     const RgbaPixel bg_pixel = get_background_pixel(background_color, opts.color_system);
 
-    apply_horizontal_offset(pixels, width, height, offset_x, bg_pixel);
+    MSX1PQCore::apply_horizontal_offset(pixels, width, height, offset_x, bg_pixel);
 
     if (fit_to_size) {
-        fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
+        MSX1PQCore::fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
     }
 
-    quantize_image(pixels, width, height, opts);
+    const MSX1PQCore::QuantInfo qi = build_quant_info(opts);
+    MSX1PQCore::quantize_image(pixels, width, height, qi, opts.use_preprocess);
     if (opts.out_sc2) {
         return write_sc2(output, pixels, width, height, opts.color_system);
     }
 
-    scale_pixels(pixels, width, height, opts.scale);
+    MSX1PQCore::scale_pixels(pixels, width, height, opts.scale);
     return write_palette_png(output, pixels, width, height, opts.color_system);
 }
 
