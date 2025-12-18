@@ -299,6 +299,12 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
                                   std::int32_t x,
                                   std::int32_t y);
 
+void quantize_image(std::vector<RgbaPixel>& pixels,
+                    unsigned width,
+                    unsigned height,
+                    const QuantInfo& qi,
+                    bool use_preprocess);
+
 // ------------------------------------------------------------
 // 横8ドット内2色制限
 // ------------------------------------------------------------

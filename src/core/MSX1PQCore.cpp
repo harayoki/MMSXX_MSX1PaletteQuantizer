@@ -914,6 +914,76 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
     return palette[basic_idx];
 }
 
+void quantize_image(std::vector<RgbaPixel>& pixels,
+                    unsigned width,
+                    unsigned height,
+                    const QuantInfo& qi,
+                    bool use_preprocess)
+{
+    if (use_preprocess &&
+        (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f)) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        apply_black_edge_sharpen(
+            pixels.data(),
+            pitch,
+            static_cast<std::int32_t>(width),
+            static_cast<std::int32_t>(height),
+            qi.pre_sharpen_black,
+            qi.pre_black_cutoff);
+    }
+
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            RgbaPixel& px = pixels[y * width + x];
+            std::uint8_t r = px.red;
+            std::uint8_t g = px.green;
+            std::uint8_t b = px.blue;
+
+            if (use_preprocess) {
+                apply_preprocess(&qi, r, g, b);
+            }
+            const MSX1PQ::QuantColor& qc = quantize_pixel(
+                qi,
+                r,
+                g,
+                b,
+                static_cast<std::int32_t>(x),
+                static_cast<std::int32_t>(y));
+
+            px.red   = qc.r;
+            px.green = qc.g;
+            px.blue  = qc.b;
+        }
+    }
+
+    if (!qi.use_palette_color &&
+        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        const std::int32_t w = static_cast<std::int32_t>(width);
+        const std::int32_t h = static_cast<std::int32_t>(height);
+
+        switch (qi.use_8dot2col) {
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
+            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
+            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
+            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 int transition_cost_pair(int prevA, int prevB, int a, int b)
 {
     const int COST_SAME          = 0;

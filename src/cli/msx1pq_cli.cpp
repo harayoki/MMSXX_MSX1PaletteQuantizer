@@ -513,30 +513,30 @@ RgbaPixel get_background_pixel(int color_index, int color_system) {
     return px;
 }
 
-void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
+MSX1PQCore::QuantInfo build_quant_info(const CliOptions& opts) {
     MSX1PQCore::QuantInfo qi{};
-    qi.use_dither      = opts.use_dither;
+    qi.use_dither        = opts.use_dither;
     qi.use_palette_color = opts.use_palette_color;
-    qi.use_8dot2col    = opts.use_8dot2col;
-    qi.use_hsv         = opts.use_hsv;
-    qi.w_h             = MSX1PQCore::clamp01f(opts.weight_h);
-    qi.w_s             = MSX1PQCore::clamp01f(opts.weight_s);
-    qi.w_b             = MSX1PQCore::clamp01f(opts.weight_b);
-    qi.w_r             = MSX1PQCore::clamp01f(opts.weight_r);
-    qi.w_g             = MSX1PQCore::clamp01f(opts.weight_g);
-    qi.w_b_rgb         = MSX1PQCore::clamp01f(opts.weight_b_rgb);
-    qi.pre_posterize   = std::clamp(opts.pre_posterize, 0, 255);
-    qi.pre_sat         = opts.pre_sat;
-    qi.pre_gamma       = opts.pre_gamma;
-    qi.pre_contrast    = opts.pre_contrast;
-    qi.pre_hue         = opts.pre_hue;
-    qi.pre_black_cutoff = MSX1PQCore::clamp_value(opts.pre_black_cutoff, 0.0f, 1.0f);
+    qi.use_8dot2col      = opts.use_8dot2col;
+    qi.use_hsv           = opts.use_hsv;
+    qi.w_h               = MSX1PQCore::clamp01f(opts.weight_h);
+    qi.w_s               = MSX1PQCore::clamp01f(opts.weight_s);
+    qi.w_b               = MSX1PQCore::clamp01f(opts.weight_b);
+    qi.w_r               = MSX1PQCore::clamp01f(opts.weight_r);
+    qi.w_g               = MSX1PQCore::clamp01f(opts.weight_g);
+    qi.w_b_rgb           = MSX1PQCore::clamp01f(opts.weight_b_rgb);
+    qi.pre_posterize     = std::clamp(opts.pre_posterize, 0, 255);
+    qi.pre_sat           = opts.pre_sat;
+    qi.pre_gamma         = opts.pre_gamma;
+    qi.pre_contrast      = opts.pre_contrast;
+    qi.pre_hue           = opts.pre_hue;
+    qi.pre_black_cutoff  = MSX1PQCore::clamp_value(opts.pre_black_cutoff, 0.0f, 1.0f);
     qi.pre_sharpen_black = MSX1PQCore::clamp_value(opts.pre_sharpen_black, 0.0f, 10.0f);
-    qi.use_dark_dither = opts.use_dark_dither;
-    qi.color_system    = opts.color_system;
-    qi.pre_lut         = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
-    qi.pre_lut3d       = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
-    qi.pre_lut3d_size  = opts.pre_lut3d_size;
+    qi.use_dark_dither   = opts.use_dark_dither;
+    qi.color_system      = opts.color_system;
+    qi.pre_lut           = opts.pre_lut_data.empty() ? nullptr : opts.pre_lut_data.data();
+    qi.pre_lut3d         = opts.pre_lut3d_data.empty() ? nullptr : opts.pre_lut3d_data.data();
+    qi.pre_lut3d_size    = opts.pre_lut3d_size;
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
         const std::size_t src_idx = static_cast<std::size_t>(i + 1);
@@ -545,68 +545,7 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
         }
     }
 
-    if (opts.use_preprocess &&
-        (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f)) {
-        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
-        MSX1PQCore::apply_black_edge_sharpen(
-            pixels.data(),
-            pitch,
-            static_cast<std::int32_t>(width),
-            static_cast<std::int32_t>(height),
-            qi.pre_sharpen_black,
-            qi.pre_black_cutoff);
-    }
-
-    for (unsigned y = 0; y < height; ++y) {
-        for (unsigned x = 0; x < width; ++x) {
-            RgbaPixel& px = pixels[y * width + x];
-            std::uint8_t r = px.red;
-            std::uint8_t g = px.green;
-            std::uint8_t b = px.blue;
-
-            if (opts.use_preprocess) {
-                MSX1PQCore::apply_preprocess(&qi, r, g, b);
-            }
-            const MSX1PQ::QuantColor& qc = MSX1PQCore::quantize_pixel(
-                qi,
-                r,
-                g,
-                b,
-                static_cast<std::int32_t>(x),
-                static_cast<std::int32_t>(y));
-
-            px.red   = qc.r;
-            px.green = qc.g;
-            px.blue  = qc.b;
-        }
-    }
-
-    if (!qi.use_palette_color &&
-        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
-        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
-        const std::int32_t w = static_cast<std::int32_t>(width);
-        const std::int32_t h = static_cast<std::int32_t>(height);
-
-        switch (qi.use_8dot2col) {
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
-            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
-            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
-            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
-            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
-            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
-            break;
-        default:
-            break;
-        }
-    }
+    return qi;
 }
 
 bool write_palette_png(const fs::path& output_path,
@@ -700,7 +639,8 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
         MSX1PQCore::fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
     }
 
-    quantize_image(pixels, width, height, opts);
+    const MSX1PQCore::QuantInfo qi = build_quant_info(opts);
+    MSX1PQCore::quantize_image(pixels, width, height, qi, opts.use_preprocess);
     if (opts.out_sc2) {
         return write_sc2(output, pixels, width, height, opts.color_system);
     }
