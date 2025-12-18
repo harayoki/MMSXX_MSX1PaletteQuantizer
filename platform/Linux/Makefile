@@ -18,6 +18,7 @@ SOURCES := \
 $(CLI_DIR)/msx1pq_cli.cpp \
 $(CLI_DIR)/lodepng.cpp \
 $(CORE_DIR)/MSX1PQCore.cpp \
+$(CORE_DIR)/MSX1PQOutput.cpp \
 $(CORE_DIR)/MSX1PQPalettes.cpp
 
 .PHONY: all clean
