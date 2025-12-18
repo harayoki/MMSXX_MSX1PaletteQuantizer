@@ -1,4 +1,5 @@
 #include "MSX1PQCore.h"
+#include "MSX1PQOutput.h"
 
 #include <algorithm>
 #include <array>
@@ -41,6 +42,155 @@ std::string get_lower_extension(const std::string& path)
         return std::string();
     }
     return to_lower_copy(path.substr(dot));
+}
+
+} // namespace
+
+std::optional<AnchorPosition> parse_anchor(const std::string& value)
+{
+    const std::string lower = to_lower_copy(value);
+    if (lower == "tl") return AnchorPosition::TopLeft;
+    if (lower == "tc") return AnchorPosition::TopCenter;
+    if (lower == "tr") return AnchorPosition::TopRight;
+    if (lower == "cl") return AnchorPosition::CenterLeft;
+    if (lower == "c")  return AnchorPosition::Center;
+    if (lower == "cr") return AnchorPosition::CenterRight;
+    if (lower == "bl") return AnchorPosition::BottomLeft;
+    if (lower == "bc") return AnchorPosition::BottomCenter;
+    if (lower == "br") return AnchorPosition::BottomRight;
+    return std::nullopt;
+}
+
+void apply_horizontal_offset(std::vector<RgbaPixel>& pixels,
+                             unsigned width,
+                             unsigned height,
+                             int offset_x,
+                             const RgbaPixel& bg)
+{
+    if (offset_x == 0) {
+        return;
+    }
+
+    std::vector<RgbaPixel> shifted(pixels.size(), bg);
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            const int dest_x = static_cast<int>(x) + offset_x;
+            if (dest_x < 0 || dest_x >= static_cast<int>(width)) {
+                continue;
+            }
+            shifted[static_cast<std::size_t>(y * width + static_cast<unsigned>(dest_x))] =
+                pixels[static_cast<std::size_t>(y * width + x)];
+        }
+    }
+
+    pixels.swap(shifted);
+}
+
+void fit_to_canvas(std::vector<RgbaPixel>& pixels,
+                   unsigned& width,
+                   unsigned& height,
+                   int canvas_w,
+                   int canvas_h,
+                   AnchorPosition anchor,
+                   const RgbaPixel& bg)
+{
+    const int src_w = static_cast<int>(width);
+    const int src_h = static_cast<int>(height);
+
+    const bool wider = src_w > canvas_w;
+    const bool taller = src_h > canvas_h;
+
+    int copy_w = wider ? canvas_w : src_w;
+    int copy_h = taller ? canvas_h : src_h;
+
+    const auto horizontal_anchor = [&](AnchorPosition pos) {
+        switch (pos) {
+        case AnchorPosition::TopLeft:
+        case AnchorPosition::CenterLeft:
+        case AnchorPosition::BottomLeft:
+            return -1;
+        case AnchorPosition::TopCenter:
+        case AnchorPosition::Center:
+        case AnchorPosition::BottomCenter:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+    const auto vertical_anchor = [&](AnchorPosition pos) {
+        switch (pos) {
+        case AnchorPosition::TopLeft:
+        case AnchorPosition::TopCenter:
+        case AnchorPosition::TopRight:
+            return -1;
+        case AnchorPosition::CenterLeft:
+        case AnchorPosition::Center:
+        case AnchorPosition::CenterRight:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+
+    const int h_anchor = horizontal_anchor(anchor);
+    const int v_anchor = vertical_anchor(anchor);
+
+    int src_x = 0;
+    int src_y = 0;
+    int dst_x = 0;
+    int dst_y = 0;
+
+    if (wider) {
+        if (h_anchor < 0) {
+            src_x = 0;
+        } else if (h_anchor == 0) {
+            src_x = (src_w - canvas_w) / 2;
+        } else {
+            src_x = src_w - canvas_w;
+        }
+    } else {
+        if (h_anchor < 0) {
+            dst_x = 0;
+        } else if (h_anchor == 0) {
+            dst_x = (canvas_w - src_w) / 2;
+        } else {
+            dst_x = canvas_w - src_w;
+        }
+    }
+
+    if (taller) {
+        if (v_anchor < 0) {
+            src_y = 0;
+        } else if (v_anchor == 0) {
+            src_y = (src_h - canvas_h) / 2;
+        } else {
+            src_y = src_h - canvas_h;
+        }
+    } else {
+        if (v_anchor < 0) {
+            dst_y = 0;
+        } else if (v_anchor == 0) {
+            dst_y = (canvas_h - src_h) / 2;
+        } else {
+            dst_y = canvas_h - src_h;
+        }
+    }
+
+    std::vector<RgbaPixel> canvas(static_cast<std::size_t>(canvas_w * canvas_h), bg);
+    for (int y = 0; y < copy_h; ++y) {
+        for (int x = 0; x < copy_w; ++x) {
+            const int src_idx_x = src_x + x;
+            const int src_idx_y = src_y + y;
+            const int dst_idx_x = dst_x + x;
+            const int dst_idx_y = dst_y + y;
+            canvas[static_cast<std::size_t>(dst_idx_y * canvas_w + dst_idx_x)] =
+                pixels[static_cast<std::size_t>(src_idx_y * width + src_idx_x)];
+        }
+    }
+
+    pixels.swap(canvas);
+    width = static_cast<unsigned>(canvas_w);
+    height = static_cast<unsigned>(canvas_h);
 }
 
 bool parse_cube_lut(std::istream& file, std::vector<float>& out3d, int& lut_size)
