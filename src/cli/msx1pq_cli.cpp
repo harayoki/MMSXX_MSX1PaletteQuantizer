@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <sstream>
@@ -609,9 +610,16 @@ bool write_palette_png(const fs::path& output_path,
         add_palette_entry(color.r, color.g, color.b, 255);
     }
 
-    const unsigned error = lodepng::encode(output_path.string(), indices, width, height, state);
+    std::vector<unsigned char> png;
+    const unsigned error = lodepng::encode(png, indices, width, height, state);
     if (error) {
         std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
+        return false;
+    }
+
+    const unsigned save_error = lodepng::save_file(png, output_path.string());
+    if (save_error) {
+        std::cerr << "Failed to save PNG: " << output_path << " (" << lodepng_error_text(save_error) << ")\n";
         return false;
     }
     return true;
