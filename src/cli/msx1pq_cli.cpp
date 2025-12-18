@@ -57,6 +57,30 @@ struct CliOptions {
     std::vector<float> pre_lut3d_data;
     int pre_lut3d_size{0};
     int scale{1};
+
+    struct FitSize {
+        int width{0};
+        int height{0};
+    };
+
+    std::optional<FitSize> fit_size;
+    int background_color{1};
+    int offset_x{0};
+
+    enum class AnchorPosition {
+        TopLeft,
+        TopCenter,
+        TopRight,
+        CenterLeft,
+        Center,
+        CenterRight,
+        BottomLeft,
+        BottomCenter,
+        BottomRight,
+    };
+
+    AnchorPosition anchor{AnchorPosition::Center};
+    std::map<std::size_t, int> index_offset_overrides;
 };
 
 struct RgbaPixel {
@@ -139,6 +163,11 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
                   << "  --scale <1-4>                出力PNGを整数倍で拡大 (デフォルト: 1)\n"
+                  << "  --fit-size <W> <H>         入力を指定サイズに調整 (デフォルト: 指定なし)\n"
+                  << "  --anchor <TL|TC|TR|CL|C|CR|BL|BC|BR>  クリッピング/余白の基準位置 (デフォルト: C)\n"
+                  << "  --bg-color <1-15>           余白やシフトで使う背景色パレット番号 (デフォルト: 1)\n"
+                  << "  --offset-x <-7-7>           調整前に左右へオフセット (デフォルト: 0)\n"
+                  << "  --offset-x-index <idx> <-7-7> 個別INDEXごとにオフセットを上書き\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
@@ -177,6 +206,11 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
               << "  --scale <1-4>                Scale output PNG by an integer factor (default: 1)\n"
+              << "  --fit-size <W> <H>           Adjust input to the specified size (default: none)\n"
+              << "  --anchor <TL|TC|TR|CL|C|CR|BL|BC|BR>  Anchor point for cropping/padding (default: C)\n"
+              << "  --bg-color <1-15>            Background palette index for padding/offset (default: 1)\n"
+              << "  --offset-x <-7-7>            Horizontal offset before adjustment (default: 0)\n"
+              << "  --offset-x-index <idx> <-7-7> Override horizontal offset per INDEX\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
@@ -202,6 +236,20 @@ std::optional<int> parse_8dot_mode(const std::string& value) {
     if (it != kMap.end()) {
         return it->second;
     }
+    return std::nullopt;
+}
+
+std::optional<CliOptions::AnchorPosition> parse_anchor(const std::string& value) {
+    const std::string lower = to_lower_copy(value);
+    if (lower == "tl") return CliOptions::AnchorPosition::TopLeft;
+    if (lower == "tc") return CliOptions::AnchorPosition::TopCenter;
+    if (lower == "tr") return CliOptions::AnchorPosition::TopRight;
+    if (lower == "cl") return CliOptions::AnchorPosition::CenterLeft;
+    if (lower == "c")  return CliOptions::AnchorPosition::Center;
+    if (lower == "cr") return CliOptions::AnchorPosition::CenterRight;
+    if (lower == "bl") return CliOptions::AnchorPosition::BottomLeft;
+    if (lower == "bc") return CliOptions::AnchorPosition::BottomCenter;
+    if (lower == "br") return CliOptions::AnchorPosition::BottomRight;
     return std::nullopt;
 }
 
@@ -363,6 +411,24 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_lut_path = require_value(arg);
         } else if (arg == "--scale") {
             opts.scale = std::stoi(require_value(arg));
+        } else if (arg == "--fit-size") {
+            CliOptions::FitSize size;
+            size.width = std::stoi(require_value(arg));
+            size.height = std::stoi(require_value(arg));
+            opts.fit_size = size;
+        } else if (arg == "--anchor") {
+            auto parsed = parse_anchor(require_value(arg));
+            if (!parsed) {
+                throw std::runtime_error("Unknown anchor");
+            }
+            opts.anchor = *parsed;
+        } else if (arg == "--bg-color") {
+            opts.background_color = std::stoi(require_value(arg));
+        } else if (arg == "--offset-x") {
+            opts.offset_x = std::stoi(require_value(arg));
+        } else if (arg == "--offset-x-index") {
+            const std::size_t idx = static_cast<std::size_t>(std::stoul(require_value(arg)));
+            opts.index_offset_overrides[idx] = std::stoi(require_value(arg));
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
         } else if (arg == "--version" || arg == "-v") {
@@ -401,6 +467,31 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         throw std::runtime_error("--scale must be between 1 and 4");
     }
 
+    auto validate_color = [](int color) {
+        if (color < 1 || color > 15) {
+            throw std::runtime_error("Background color must be between 1 and 15");
+        }
+    };
+    auto validate_offset = [](int offset) {
+        if (offset < -7 || offset > 7) {
+            throw std::runtime_error("Horizontal offset must be between -7 and 7");
+        }
+    };
+    auto validate_fit_size = [](const CliOptions::FitSize& size) {
+        if (size.width <= 0 || size.height <= 0) {
+            throw std::runtime_error("Fit size width and height must be positive integers");
+        }
+    };
+
+    validate_color(opts.background_color);
+    validate_offset(opts.offset_x);
+    if (opts.fit_size) {
+        validate_fit_size(*opts.fit_size);
+    }
+    for (const auto& [_, offset] : opts.index_offset_overrides) {
+        validate_offset(offset);
+    }
+
     if (opts.out_sc2 &&
         opts.use_8dot2col == MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
         throw std::runtime_error("--out-sc2 requires --8dot != none");
@@ -430,6 +521,148 @@ bool confirm_overwrite(const fs::path& path) {
     }
     char c = static_cast<char>(std::tolower(line[0]));
     return c == 'y';
+}
+
+std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> get_basic_palette(int color_system);
+
+RgbaPixel get_background_pixel(int color_index, int color_system) {
+    const auto palette = get_basic_palette(color_system);
+    const std::size_t palette_idx = static_cast<std::size_t>(std::clamp(
+        color_index - 1,
+        0,
+        static_cast<int>(MSX1PQ::kNumBasicColors - 1)));
+    const auto& color = palette[palette_idx];
+    RgbaPixel px{};
+    px.red = color.r;
+    px.green = color.g;
+    px.blue = color.b;
+    px.alpha = 255;
+    return px;
+}
+
+void apply_horizontal_offset(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, int offset_x, const RgbaPixel& bg) {
+    if (offset_x == 0) {
+        return;
+    }
+
+    std::vector<RgbaPixel> shifted(pixels.size(), bg);
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            const int dest_x = static_cast<int>(x) + offset_x;
+            if (dest_x < 0 || dest_x >= static_cast<int>(width)) {
+                continue;
+            }
+            shifted[static_cast<std::size_t>(y * width + static_cast<unsigned>(dest_x))] = pixels[static_cast<std::size_t>(y * width + x)];
+        }
+    }
+
+    pixels.swap(shifted);
+}
+
+void fit_to_canvas(std::vector<RgbaPixel>& pixels,
+                   unsigned& width,
+                   unsigned& height,
+                   int canvas_w,
+                   int canvas_h,
+                   CliOptions::AnchorPosition anchor,
+                   const RgbaPixel& bg) {
+    const int src_w = static_cast<int>(width);
+    const int src_h = static_cast<int>(height);
+
+    const bool wider = src_w > canvas_w;
+    const bool taller = src_h > canvas_h;
+
+    int copy_w = wider ? canvas_w : src_w;
+    int copy_h = taller ? canvas_h : src_h;
+
+    const auto horizontal_anchor = [&](CliOptions::AnchorPosition pos) {
+        switch (pos) {
+        case CliOptions::AnchorPosition::TopLeft:
+        case CliOptions::AnchorPosition::CenterLeft:
+        case CliOptions::AnchorPosition::BottomLeft:
+            return -1;
+        case CliOptions::AnchorPosition::TopCenter:
+        case CliOptions::AnchorPosition::Center:
+        case CliOptions::AnchorPosition::BottomCenter:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+    const auto vertical_anchor = [&](CliOptions::AnchorPosition pos) {
+        switch (pos) {
+        case CliOptions::AnchorPosition::TopLeft:
+        case CliOptions::AnchorPosition::TopCenter:
+        case CliOptions::AnchorPosition::TopRight:
+            return -1;
+        case CliOptions::AnchorPosition::CenterLeft:
+        case CliOptions::AnchorPosition::Center:
+        case CliOptions::AnchorPosition::CenterRight:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+
+    const int h_anchor = horizontal_anchor(anchor);
+    const int v_anchor = vertical_anchor(anchor);
+
+    int src_x = 0;
+    int src_y = 0;
+    int dst_x = 0;
+    int dst_y = 0;
+
+    if (wider) {
+        if (h_anchor < 0) {
+            src_x = 0;
+        } else if (h_anchor == 0) {
+            src_x = (src_w - canvas_w) / 2;
+        } else {
+            src_x = src_w - canvas_w;
+        }
+    } else {
+        if (h_anchor < 0) {
+            dst_x = 0;
+        } else if (h_anchor == 0) {
+            dst_x = (canvas_w - src_w) / 2;
+        } else {
+            dst_x = canvas_w - src_w;
+        }
+    }
+
+    if (taller) {
+        if (v_anchor < 0) {
+            src_y = 0;
+        } else if (v_anchor == 0) {
+            src_y = (src_h - canvas_h) / 2;
+        } else {
+            src_y = src_h - canvas_h;
+        }
+    } else {
+        if (v_anchor < 0) {
+            dst_y = 0;
+        } else if (v_anchor == 0) {
+            dst_y = (canvas_h - src_h) / 2;
+        } else {
+            dst_y = canvas_h - src_h;
+        }
+    }
+
+    std::vector<RgbaPixel> canvas(static_cast<std::size_t>(canvas_w * canvas_h), bg);
+    for (int y = 0; y < copy_h; ++y) {
+        for (int x = 0; x < copy_w; ++x) {
+            const int src_idx_x = src_x + x;
+            const int src_idx_y = src_y + y;
+            const int dst_idx_x = dst_x + x;
+            const int dst_idx_y = dst_y + y;
+            canvas[static_cast<std::size_t>(dst_idx_y * canvas_w + dst_idx_x)] =
+                pixels[static_cast<std::size_t>(src_idx_y * width + src_idx_x)];
+        }
+    }
+
+    pixels.swap(canvas);
+    width = static_cast<unsigned>(canvas_w);
+    height = static_cast<unsigned>(canvas_h);
 }
 
 void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned height, const CliOptions& opts) {
@@ -734,7 +967,7 @@ bool write_sc2(const fs::path& output_path,
     return true;
 }
 
-bool process_file(const fs::path& input, const fs::path& output, const CliOptions& opts) {
+bool process_file(const fs::path& input, const fs::path& output, const CliOptions& opts, std::size_t input_index) {
     std::vector<unsigned char> raw;
     unsigned width = 0;
     unsigned height = 0;
@@ -756,6 +989,27 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
         pixels[i].green = raw[i * 4 + 1];
         pixels[i].blue  = raw[i * 4 + 2];
         pixels[i].alpha = raw[i * 4 + 3];
+    }
+
+    const auto resolve_value_override = [](const auto& map, std::size_t idx, const auto& default_value) {
+        const auto it = map.find(idx);
+        if (it != map.end()) {
+            return it->second;
+        }
+        return default_value;
+    };
+
+    const auto fit_to_size = opts.fit_size;
+    const CliOptions::AnchorPosition anchor = opts.anchor;
+    const int background_color = opts.background_color;
+    const int offset_x = resolve_value_override(opts.index_offset_overrides, input_index, opts.offset_x);
+
+    const RgbaPixel bg_pixel = get_background_pixel(background_color, opts.color_system);
+
+    apply_horizontal_offset(pixels, width, height, offset_x, bg_pixel);
+
+    if (fit_to_size) {
+        fit_to_canvas(pixels, width, height, fit_to_size->width, fit_to_size->height, anchor, bg_pixel);
     }
 
     quantize_image(pixels, width, height, opts);
@@ -835,7 +1089,8 @@ int main(int argc, char** argv) {
     }
 
     int success_count = 0;
-    for (const auto& input : inputs) {
+    for (std::size_t input_index = 0; input_index < inputs.size(); ++input_index) {
+        const auto& input = inputs[input_index];
         fs::path output_filename = input.filename();
         if (!opts.output_prefix.empty()) {
             output_filename = fs::path(opts.output_prefix + output_filename.string());
@@ -863,7 +1118,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if (process_file(input, out_path, opts)) {
+        if (process_file(input, out_path, opts, input_index)) {
             std::cout << "Processed: " << input << " -> " << out_path << "\n";
             ++success_count;
         }
