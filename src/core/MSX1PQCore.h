@@ -106,7 +106,7 @@ void apply_black_edge_sharpen(
     const float black_threshold = 0.2f; // 0-1 range
     const float black_detect_threshold = 0.05f; // Detect only near-full black
     const int   spread_radius = 2; // Spread mask 1-2 pixels from black areas
-    const float sharpen_amount  = clamped_strength * 0.2f;
+    const float sharpen_amount  = clamped_strength * 0.4f;
 
     auto luminance = [](const PixelT& p) {
         return (0.2126f * static_cast<float>(p.red) +
