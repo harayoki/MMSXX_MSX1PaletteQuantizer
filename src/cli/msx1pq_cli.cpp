@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -53,6 +54,7 @@ struct CliOptions {
     std::vector<std::uint8_t> pre_lut_data;
     std::vector<float> pre_lut3d_data;
     int pre_lut3d_size{0};
+    int scale{1};
 };
 
 struct RgbaPixel {
@@ -133,6 +135,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
                   << "  --pre-hue <-180-180>         処理前に色相を変更 (デフォルト: 0.0)\n"
                   << "  --disable-colors <番号|範囲>... パレット番号(1-15)を無効化。例: --disable-colors 2 4 7-8 15 (最低2色が必要)\n"
                   << "  --pre-lut <ファイル>           処理前にRGB LUT(256行のRGB値)や.cube 3D LUTを適用\n"
+                  << "  --scale <1-4>                出力PNGを整数倍で拡大 (デフォルト: 1)\n"
                   << "  --palette92                  (開発用) ディザ処理を行わず92色パレットで出力\n"
                   << "  -f, --force                  上書き時に確認しない\n"
                   << "  -v, --version                バージョン情報を表示\n"
@@ -169,6 +172,7 @@ void print_usage(const char* prog, UsageLanguage lang = UsageLanguage::Japanese)
               << "  --pre-hue <-180-180>         Adjust hue before processing (default: 0.0)\n"
               << "  --disable-colors <index|range>... Disable palette indices (1-15). e.g. --disable-colors 2 4 7-8 15. At least two colors must remain enabled\n"
               << "  --pre-lut <file>             Apply RGB LUT (256 rows) or .cube 3D LUT before processing\n"
+              << "  --scale <1-4>                Scale output PNG by an integer factor (default: 1)\n"
               << "  -f, --force                  Overwrite without confirmation\n"
               << "  -v, --version                Show version information\n"
               << "  -h, --help                   Show usage based on locale (Japanese if detected)\n"
@@ -351,6 +355,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
             opts.pre_hue = std::stof(require_value(arg));
         } else if (arg == "--pre-lut") {
             opts.pre_lut_path = require_value(arg);
+        } else if (arg == "--scale") {
+            opts.scale = std::stoi(require_value(arg));
         } else if (arg == "--force" || arg == "-f") {
             opts.force = true;
         } else if (arg == "--version" || arg == "-v") {
@@ -383,6 +389,10 @@ bool parse_arguments(int argc, char** argv, CliOptions& opts) {
         opts.palette_enabled.begin(), opts.palette_enabled.end(), true));
     if (enabled_colors < 1) {
         throw std::runtime_error("At least one palette color must remain enabled");
+    }
+
+    if (opts.scale < 1 || opts.scale > 4) {
+        throw std::runtime_error("--scale must be between 1 and 4");
     }
 
     if (opts.out_sc2 &&
@@ -498,17 +508,92 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     }
 }
 
-bool write_png(const fs::path& output_path, const std::vector<RgbaPixel>& pixels, unsigned width, unsigned height) {
-    std::vector<unsigned char> raw;
-    raw.reserve(pixels.size() * 4);
-    for (const auto& p : pixels) {
-        raw.push_back(p.red);
-        raw.push_back(p.green);
-        raw.push_back(p.blue);
-        raw.push_back(p.alpha);
+void scale_pixels(std::vector<RgbaPixel>& pixels, unsigned& width, unsigned& height, int scale) {
+    if (scale <= 1) {
+        return;
     }
 
-    const unsigned error = lodepng::encode(output_path.string(), raw, width, height);
+    const unsigned new_width  = width * static_cast<unsigned>(scale);
+    const unsigned new_height = height * static_cast<unsigned>(scale);
+    std::vector<RgbaPixel> scaled(new_width * new_height);
+
+    for (unsigned y = 0; y < new_height; ++y) {
+        const unsigned src_y = y / static_cast<unsigned>(scale);
+        for (unsigned x = 0; x < new_width; ++x) {
+            const unsigned src_x = x / static_cast<unsigned>(scale);
+            scaled[y * new_width + x] = pixels[src_y * width + src_x];
+        }
+    }
+
+    pixels.swap(scaled);
+    width  = new_width;
+    height = new_height;
+}
+
+std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors>
+get_basic_palette(int color_system) {
+    std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> palette{};
+
+    if (color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2) {
+        std::copy_n(std::begin(MSX1PQ::kBasicColorsMsx2), MSX1PQ::kNumBasicColors, palette.begin());
+    } else {
+        std::copy_n(std::begin(MSX1PQ::kQuantColors), MSX1PQ::kNumBasicColors, palette.begin());
+    }
+
+    return palette;
+}
+
+bool write_palette_png(const fs::path& output_path,
+                       const std::vector<RgbaPixel>& pixels,
+                       unsigned width,
+                       unsigned height,
+                       int color_system) {
+    const auto palette = get_basic_palette(color_system);
+
+    std::vector<unsigned char> indices(pixels.size());
+    for (std::size_t i = 0; i < pixels.size(); ++i) {
+        const auto& px = pixels[i];
+        if (px.alpha == 0) {
+            indices[i] = 0;
+            continue;
+        }
+
+        std::uint32_t best_distance = std::numeric_limits<std::uint32_t>::max();
+        std::uint8_t best_index = 0;
+        for (std::size_t pal_idx = 0; pal_idx < palette.size(); ++pal_idx) {
+            const auto& pal_color = palette[pal_idx];
+            const int dr = static_cast<int>(px.red)   - static_cast<int>(pal_color.r);
+            const int dg = static_cast<int>(px.green) - static_cast<int>(pal_color.g);
+            const int db = static_cast<int>(px.blue)  - static_cast<int>(pal_color.b);
+            const std::uint32_t distance = static_cast<std::uint32_t>(dr * dr + dg * dg + db * db);
+            if (distance < best_distance) {
+                best_distance = distance;
+                best_index = static_cast<std::uint8_t>(pal_idx + 1); // palette index 1-15
+                if (distance == 0) {
+                    break;
+                }
+            }
+        }
+        indices[i] = best_index;
+    }
+
+    lodepng::State state;
+    state.info_raw.colortype = LCT_PALETTE;
+    state.info_raw.bitdepth  = 8;
+    state.info_png.color.colortype = LCT_PALETTE;
+    state.info_png.color.bitdepth  = 8;
+
+    const auto add_palette_entry = [&](std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) {
+        lodepng_palette_add(&state.info_png.color, r, g, b, a);
+        lodepng_palette_add(&state.info_raw, r, g, b, a);
+    };
+
+    add_palette_entry(0, 0, 0, 0); // index 0: transparent black
+    for (const auto& color : palette) {
+        add_palette_entry(color.r, color.g, color.b, 255);
+    }
+
+    const unsigned error = lodepng::encode(output_path.string(), indices, width, height, state);
     if (error) {
         std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
         return false;
@@ -653,7 +738,9 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
     if (opts.out_sc2) {
         return write_sc2(output, pixels, width, height, opts.color_system);
     }
-    return write_png(output, pixels, width, height);
+
+    scale_pixels(pixels, width, height, opts.scale);
+    return write_palette_png(output, pixels, width, height, opts.color_system);
 }
 
 std::vector<fs::path> collect_inputs(const fs::path& input_path) {
