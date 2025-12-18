@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -52,6 +53,7 @@ struct QuantInfo {
     float pre_gamma{};
     float pre_contrast{};
     float pre_hue{};
+    float pre_sharpen_black{};
     bool  use_dark_dither{};
     int   color_system{MSX1PQ_COLOR_SYS_MSX1};
     const std::uint8_t* pre_lut{nullptr};
@@ -83,6 +85,142 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &r8,
                       std::uint8_t &g8,
                       std::uint8_t &b8);
+
+template<typename PixelT>
+void apply_black_edge_sharpen(
+    PixelT* data,
+    std::ptrdiff_t row_pitch,
+    std::int32_t   width,
+    std::int32_t   height,
+    float          strength)
+{
+    if (!data || width <= 1 || height <= 1) {
+        return;
+    }
+
+    const float clamped_strength = clamp_value(strength, 0.0f, 10.0f);
+    if (clamped_strength <= 0.0f) {
+        return;
+    }
+
+    const float black_threshold = 0.2f; // 0-1 range
+    const float black_detect_threshold = 0.05f; // Detect only near-full black
+    const int   spread_radius = 2; // Spread mask 1-2 pixels from black areas
+    const float sharpen_amount  = clamped_strength * 0.4f;
+
+    auto luminance = [](const PixelT& p) {
+        return (0.2126f * static_cast<float>(p.red) +
+                0.7152f * static_cast<float>(p.green) +
+                0.0722f * static_cast<float>(p.blue)) /
+            255.0f;
+    };
+
+    struct BlurSample {
+        float r;
+        float g;
+        float b;
+        float mask;
+    };
+
+    const std::size_t buffer_size = static_cast<std::size_t>(width) *
+                                    static_cast<std::size_t>(height);
+    std::vector<BlurSample> blur_buffer(buffer_size);
+    std::vector<float> base_mask(buffer_size, 0.0f);
+
+    auto clamp_coord = [](int v, int lo, int hi) {
+        return (v < lo) ? lo : (v > hi ? hi : v);
+    };
+
+    for (std::int32_t y = 0; y < height; ++y) {
+        for (std::int32_t x = 0; x < width; ++x) {
+            float sum_r = 0.0f;
+            float sum_g = 0.0f;
+            float sum_b = 0.0f;
+            int count = 0;
+
+            const PixelT& center = data[static_cast<std::ptrdiff_t>(y) * row_pitch + x];
+            const float center_luma = luminance(center);
+
+            for (int dy = -1; dy <= 1; ++dy) {
+                int sy = clamp_coord(y + dy, 0, height - 1);
+                const PixelT* row = data + static_cast<std::ptrdiff_t>(sy) * row_pitch;
+
+                for (int dx = -1; dx <= 1; ++dx) {
+                    int sx = clamp_coord(x + dx, 0, width - 1);
+                    const PixelT& src = row[sx];
+
+                    sum_r += static_cast<float>(src.red);
+                    sum_g += static_cast<float>(src.green);
+                    sum_b += static_cast<float>(src.blue);
+                    ++count;
+                }
+            }
+
+            const float inv_count = 1.0f / static_cast<float>(count);
+            const float mask = (center_luma <= black_detect_threshold) ? 1.0f : 0.0f;
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            blur_buffer[idx] = {
+                sum_r * inv_count,
+                sum_g * inv_count,
+                sum_b * inv_count,
+                0.0f,
+            };
+            base_mask[idx] = mask;
+        }
+    }
+
+    std::vector<float> spread_mask(buffer_size, 0.0f);
+    for (std::int32_t y = 0; y < height; ++y) {
+        for (std::int32_t x = 0; x < width; ++x) {
+            float max_mask = 0.0f;
+
+            for (int dy = -spread_radius; dy <= spread_radius; ++dy) {
+                int sy = clamp_coord(y + dy, 0, height - 1);
+                for (int dx = -spread_radius; dx <= spread_radius; ++dx) {
+                    int sx = clamp_coord(x + dx, 0, width - 1);
+
+                    const int dist = std::max(std::abs(dx), std::abs(dy));
+                    const float falloff = clamp01f(static_cast<float>(spread_radius + 1 - dist) /
+                        static_cast<float>(spread_radius + 1));
+
+                    const std::size_t idx = static_cast<std::size_t>(sy) * static_cast<std::size_t>(width) +
+                                            static_cast<std::size_t>(sx);
+                    max_mask = std::max(max_mask, base_mask[idx] * falloff);
+                }
+            }
+
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            spread_mask[idx] = max_mask;
+            blur_buffer[idx].mask = max_mask;
+        }
+    }
+
+    auto sharpen_channel = [&](std::uint8_t src, float blurred, float mask) {
+        float high = static_cast<float>(src) - blurred;
+        float adjusted = static_cast<float>(src) + high * sharpen_amount * mask;
+        return static_cast<std::uint8_t>(
+            clamp_value(adjusted + 0.5f, 0.0f, 255.0f));
+    };
+
+    for (std::int32_t y = 0; y < height; ++y) {
+        PixelT* row = data + static_cast<std::ptrdiff_t>(y) * row_pitch;
+        for (std::int32_t x = 0; x < width; ++x) {
+            const std::size_t idx = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                                    static_cast<std::size_t>(x);
+            const BlurSample& blur = blur_buffer[idx];
+            if (blur.mask <= 0.0f) {
+                continue;
+            }
+
+            PixelT& dst = row[x];
+            dst.red   = sharpen_channel(dst.red,   blur.r, blur.mask);
+            dst.green = sharpen_channel(dst.green, blur.g, blur.mask);
+            dst.blue  = sharpen_channel(dst.blue,  blur.b, blur.mask);
+        }
+    }
+}
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                         float w_r, float w_g, float w_b,

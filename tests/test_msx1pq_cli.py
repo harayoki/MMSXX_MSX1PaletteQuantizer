@@ -193,6 +193,31 @@ class Msx1pqCliTestCase(unittest.TestCase):
             f"Prefixed/suffixed output missing. stdout={result.stdout}, stderr={result.stderr}",
         )
 
+    def test_edge_emphasis_output(self):
+        output_dir = self.output_root / "edge_emphasis"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        prefix = "edge_"
+        result = self._run_cli(
+            self.input_image,
+            output_dir,
+            [
+                "--out-prefix",
+                prefix,
+                "--pre-sharpen-black",
+                "1.5",
+                "--distance",
+                "rgb",
+                "--force",
+            ],
+        )
+
+        expected_output = output_dir / f"{prefix}{self.input_image.name}"
+        self.assertTrue(
+            expected_output.exists(),
+            f"Edge emphasis output missing. stdout={result.stdout}, stderr={result.stderr}",
+        )
+
     def test_sc2_output_and_palette_options(self):
         output_dir = self.output_root / "sc2_palette92_best_attr"
         output_dir.mkdir(parents=True, exist_ok=True)
