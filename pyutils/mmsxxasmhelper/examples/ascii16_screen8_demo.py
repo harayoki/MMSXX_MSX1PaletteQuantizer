@@ -1,16 +1,15 @@
 """ASCII16 メガロムで SCREEN 8 を初期化し、スペースキーでバンクを切り替えて
 VRAM 転送する最小サンプル。
 
-- 起動時: SCREEN 8 へ切り替え、バンク2を page2(0x8000–0xBFFF) に割り当て。
+- 起動時: SCREEN 8 へ切り替え、バンク1を page2(0x8000–0xBFFF) に割り当て。
   16 KiB 分を ROM(0x8000) から直接 VRAM 0 へ転送。
-- スペースキー押下: 切り替え前のバンクを一度転送してから page2 を 3↔2 でトグルし、
-  再度 ROM→VRAM 転送。
+- スペースキー押下: page2 を 1→2→3→1… の順で切り替え、ROM→VRAM 転送。
 
 Bank 構成 (16 KiB 単位):
     0: ROM ヘッダ + メインコード (entry = 0x4010、page1 固定)
-    1: 予備 (未使用)
-    2: 画像データ例1 (16 KiB 擬似パターン)
-    3: 画像データ例2 (16 KiB 擬似パターン)
+    1: 画像データ 赤一色
+    2: 画像データ 緑一色
+    3: 画像データ 青一色
 
 出力 ROM: dist/ascii16_screen8_demo.rom
 """
@@ -20,7 +19,7 @@ import sys
 from pathlib import Path
 
 try:
-    from mmsxxasmhelper.core import CALL, Block, CP, Func, JR, JR_NZ, JR_Z, LD, XOR
+    from mmsxxasmhelper.core import CALL, Block, CP, Func, INC, JR, JR_NZ, JR_Z, LD
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -31,7 +30,7 @@ try:
     from mmsxxasmhelper.utils import pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    from mmsxxasmhelper.core import CALL, Block, CP, Func, JR, JR_NZ, JR_Z, LD, XOR
+    from mmsxxasmhelper.core import CALL, Block, CP, Func, INC, JR, JR_NZ, JR_Z, LD
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -43,10 +42,15 @@ except ImportError:
 
 
 ASCII16_PAGE2_REG = 0x7000  # 0x8000–0xBFFF を切替
+CURRENT_BANK_ADDR = 0xC000  # 表示バンク番号の保存先 (RAM)
 PAGE_SIZE = 0x4000  # 16 KiB
 VRAM_DEST = 0x0000
-BANK_DATA_0 = 2
-BANK_DATA_1 = 3
+BANK_DATA_RED = 1
+BANK_DATA_GREEN = 2
+BANK_DATA_BLUE = 3
+COLOR_RED = 0xE0
+COLOR_GREEN = 0x1C
+COLOR_BLUE = 0x03
 
 
 def build_boot_bank() -> bytes:
@@ -89,8 +93,10 @@ def build_boot_bank() -> bytes:
     LD.A_n8(b, 8)
     CALL(b, CHGMOD)
 
-    # 初期バンク = BANK_DATA_0
-    LD.C_n8(b, BANK_DATA_0)
+    # 初期バンク = BANK_DATA_RED を RAM に保存
+    LD.A_n8(b, BANK_DATA_RED)
+    LD.mn16_A(b, CURRENT_BANK_ADDR)
+    LD.rr(b, "C", "A")
     LOAD_AND_SHOW.call(b)
 
     b.label("main_loop")
@@ -103,12 +109,20 @@ def build_boot_bank() -> bytes:
     CP.n8(b, 0x20)
     JR_NZ(b, "main_loop")
 
-    # 切り替え前のバンクももう一度表示
-    LOAD_AND_SHOW.call(b)
+    # 次のバンク番号を 1->2->3->1 の順で決定
+    LD.A_mn16(b, CURRENT_BANK_ADDR)
+    CP.n8(b, BANK_DATA_BLUE)
+    JR_NZ(b, "next_bank_increment")
 
-    # C の下位1bitをXORして 2<->3 を切替
-    LD.A_C(b)
-    XOR.n8(b, 0x01)
+    LD.A_n8(b, BANK_DATA_RED)
+    JR(b, "store_bank")
+
+    b.label("next_bank_increment")
+    INC.A(b)
+
+    b.label("store_bank")
+    LD.mn16_A(b, CURRENT_BANK_ADDR)
+
     LD.rr(b, "C", "A")
 
     LOAD_AND_SHOW.call(b)
@@ -127,20 +141,21 @@ def build_data_bank(pattern: bytes) -> bytes:
     return bytes(pad_bytes(list(pattern), PAGE_SIZE, 0x00))
 
 
-def generate_patterns() -> tuple[bytes, bytes]:
-    """画面差分が分かりやすい 2 種類のダミーパターンを作る。"""
+def generate_color_patterns() -> tuple[bytes, bytes, bytes]:
+    """赤・緑・青の単色データを用意する。"""
 
-    pat0 = bytes((i & 0xFF) for i in range(PAGE_SIZE))
-    pat1 = bytes(((i >> 2) ^ 0xAA) & 0xFF for i in range(PAGE_SIZE))
-    return pat0, pat1
+    pat_red = bytes([COLOR_RED] * PAGE_SIZE)
+    pat_green = bytes([COLOR_GREEN] * PAGE_SIZE)
+    pat_blue = bytes([COLOR_BLUE] * PAGE_SIZE)
+    return pat_red, pat_green, pat_blue
 
 
 def build_ascii16_rom() -> bytes:
     bank0 = build_boot_bank()
-    bank1 = bytes(pad_bytes([], PAGE_SIZE, 0xFF))  # page2=1 は未使用だが番号合わせで確保
-    pat0, pat1 = generate_patterns()
-    bank2 = build_data_bank(pat0)
-    bank3 = build_data_bank(pat1)
+    pat_red, pat_green, pat_blue = generate_color_patterns()
+    bank1 = build_data_bank(pat_red)
+    bank2 = build_data_bank(pat_green)
+    bank3 = build_data_bank(pat_blue)
     return bank0 + bank1 + bank2 + bank3
 
 
