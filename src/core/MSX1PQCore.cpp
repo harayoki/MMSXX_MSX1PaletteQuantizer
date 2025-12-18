@@ -322,8 +322,6 @@ bool palette_entry_allowed(int palette_idx, int num_colors, const std::array<boo
     return palette_enabled[static_cast<std::size_t>(basic_idx)];
 }
 
-} // namespace
-
 float clamp01f(float v)
 {
     if (v < 0.0f) return 0.0f;
