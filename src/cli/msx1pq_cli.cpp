@@ -15,6 +15,7 @@
 #include <array>
 
 #include "../core/MSX1PQCore.h"
+#include "../core/MSX1PQOutput.h"
 #include "../core/MSX1PQPalettes.h"
 #include "lodepng.h"
 
@@ -84,13 +85,7 @@ struct CliOptions {
     std::map<std::size_t, int> index_offset_overrides;
 };
 
-struct RgbaPixel {
-    std::uint8_t red;
-    std::uint8_t green;
-    std::uint8_t blue;
-    std::uint8_t alpha;
-};
-static_assert(sizeof(RgbaPixel) == 4, "RgbaPixel must be tightly packed");
+using MSX1PQCore::RgbaPixel;
 
 namespace {
 
@@ -528,10 +523,8 @@ bool confirm_overwrite(const fs::path& path) {
     return c == 'y';
 }
 
-std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> get_basic_palette(int color_system);
-
 RgbaPixel get_background_pixel(int color_index, int color_system) {
-    const auto palette = get_basic_palette(color_system);
+    const MSX1PQ::QuantColor* palette = MSX1PQCore::get_basic_palette(color_system);
     const std::size_t palette_idx = static_cast<std::size_t>(std::clamp(
         color_index - 1,
         0,
@@ -766,99 +759,15 @@ void quantize_image(std::vector<RgbaPixel>& pixels, unsigned width, unsigned hei
     }
 }
 
-void scale_pixels(std::vector<RgbaPixel>& pixels, unsigned& width, unsigned& height, int scale) {
-    if (scale <= 1) {
-        return;
-    }
-
-    const unsigned new_width  = width * static_cast<unsigned>(scale);
-    const unsigned new_height = height * static_cast<unsigned>(scale);
-    std::vector<RgbaPixel> scaled(new_width * new_height);
-
-    for (unsigned y = 0; y < new_height; ++y) {
-        const unsigned src_y = y / static_cast<unsigned>(scale);
-        for (unsigned x = 0; x < new_width; ++x) {
-            const unsigned src_x = x / static_cast<unsigned>(scale);
-            scaled[y * new_width + x] = pixels[src_y * width + src_x];
-        }
-    }
-
-    pixels.swap(scaled);
-    width  = new_width;
-    height = new_height;
-}
-
-std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors>
-get_basic_palette(int color_system) {
-    std::array<MSX1PQ::QuantColor, MSX1PQ::kNumBasicColors> palette{};
-
-    const auto* source_colors =
-        (color_system == MSX1PQCore::MSX1PQ_COLOR_SYS_MSX2)
-            ? MSX1PQ::kBasicColorsMsx2
-            : MSX1PQ::kQuantColors;
-
-    for (std::size_t i = 0; i < static_cast<std::size_t>(MSX1PQ::kNumBasicColors); ++i) {
-        palette[i] = source_colors[i];
-    }
-
-    return palette;
-}
-
 bool write_palette_png(const fs::path& output_path,
                        const std::vector<RgbaPixel>& pixels,
                        unsigned width,
                        unsigned height,
                        int color_system) {
-    const auto palette = get_basic_palette(color_system);
-
-    std::vector<unsigned char> indices(pixels.size());
-    for (std::size_t i = 0; i < pixels.size(); ++i) {
-        const auto& px = pixels[i];
-        if (px.alpha == 0) {
-            indices[i] = 0;
-            continue;
-        }
-
-        std::uint32_t best_distance = std::numeric_limits<std::uint32_t>::max();
-        std::uint8_t best_index = 0;
-        for (std::size_t pal_idx = 0; pal_idx < palette.size(); ++pal_idx) {
-            const auto& pal_color = palette[pal_idx];
-            const int dr = static_cast<int>(px.red)   - static_cast<int>(pal_color.r);
-            const int dg = static_cast<int>(px.green) - static_cast<int>(pal_color.g);
-            const int db = static_cast<int>(px.blue)  - static_cast<int>(pal_color.b);
-            const std::uint32_t distance = static_cast<std::uint32_t>(dr * dr + dg * dg + db * db);
-            if (distance < best_distance) {
-                best_distance = distance;
-                best_index = static_cast<std::uint8_t>(pal_idx + 1); // palette index 1-15
-                if (distance == 0) {
-                    break;
-                }
-            }
-        }
-        indices[i] = best_index;
-    }
-
-    lodepng::State state;
-    state.info_raw.colortype = LCT_PALETTE;
-    state.info_raw.bitdepth  = 8;
-    state.info_png.color.colortype = LCT_PALETTE;
-    state.info_png.color.bitdepth  = 8;
-    state.encoder.auto_convert     = 0; // Preserve explicit 8-bit palette output
-
-    const auto add_palette_entry = [&](std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) {
-        lodepng_palette_add(&state.info_png.color, r, g, b, a);
-        lodepng_palette_add(&state.info_raw, r, g, b, a);
-    };
-
-    add_palette_entry(0, 0, 0, 0); // index 0: transparent black
-    for (const auto& color : palette) {
-        add_palette_entry(color.r, color.g, color.b, 255);
-    }
-
     std::vector<unsigned char> png;
-    const unsigned error = lodepng::encode(png, indices, width, height, state);
+    const unsigned error = MSX1PQCore::encode_palette_png(pixels, width, height, color_system, png);
     if (error) {
-        std::cerr << "Failed to write PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
+        std::cerr << "Failed to encode PNG: " << output_path << " (" << lodepng_error_text(error) << ")\n";
         return false;
     }
 
@@ -870,83 +779,15 @@ bool write_palette_png(const fs::path& output_path,
     return true;
 }
 
-constexpr int kSc2Width = 256;
-constexpr int kSc2Height = 192;
 bool write_sc2(const fs::path& output_path,
                const std::vector<RgbaPixel>& pixels,
                unsigned width,
                unsigned height,
                int color_system) {
-    std::vector<RgbaPixel> canvas(static_cast<size_t>(kSc2Width * kSc2Height));
-
-    RgbaPixel bg{};
-    bg.red = 0;
-    bg.green = 0;
-    bg.blue = 0;
-    bg.alpha = 255;
-
-    for (int y = 0; y < kSc2Height; ++y) {
-        for (int x = 0; x < kSc2Width; ++x) {
-            if (y < static_cast<int>(height) && x < static_cast<int>(width)) {
-                canvas[static_cast<size_t>(y * kSc2Width + x)] = pixels[static_cast<size_t>(y * width + x)];
-            } else {
-                canvas[static_cast<size_t>(y * kSc2Width + x)] = bg;
-            }
-        }
-    }
-
-    std::vector<std::uint8_t> vram(0x4000, 0);
-
-    for (int ty = 0; ty < 24; ++ty) {
-        for (int tx = 0; tx < 32; ++tx) {
-            const int ty_mod = ty & 7;
-            const int char_index = ty_mod * 32 + tx;
-
-            const int pattern_base = (ty < 8) ? 0x0000 : (ty < 16 ? 0x0800 : 0x1000);
-            const int color_base = (ty < 8) ? 0x2000 : (ty < 16 ? 0x2800 : 0x3000);
-
-            const std::size_t name_addr = static_cast<std::size_t>(0x1800 + ty * 32 + tx);
-            vram[name_addr] = static_cast<std::uint8_t>(char_index);
-
-            for (int ry = 0; ry < 8; ++ry) {
-                const int y_base = ty * 8 + ry;
-
-                int color_min = 16;
-                int color_max = -1;
-
-                for (int rx = 0; rx < 8; ++rx) {
-                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
-                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
-                    color_min = std::min(color_min, basic_idx);
-                    color_max = std::max(color_max, basic_idx);
-                }
-
-                if (color_max < 0) {
-                    color_min = 0;
-                    color_max = 0;
-                }
-
-                const int bg_color = color_min + 1;
-                const int fg_color = (color_max >= 0) ? (color_max + 1) : bg_color;
-
-                std::uint8_t pattern_byte = 0;
-                for (int rx = 0; rx < 8; ++rx) {
-                    const RgbaPixel& px = canvas[static_cast<std::size_t>(y_base * kSc2Width + (tx * 8 + rx))];
-                    const int basic_idx = MSX1PQCore::find_basic_index_from_rgb(px.red, px.green, px.blue, color_system);
-                    const int color_code = basic_idx + 1;
-                    pattern_byte <<= 1;
-                    if (color_code == fg_color) {
-                        pattern_byte |= 0x01;
-                    }
-                }
-
-                const std::size_t pattern_addr = static_cast<std::size_t>(pattern_base + char_index * 8 + ry);
-                const std::size_t color_addr = static_cast<std::size_t>(color_base + char_index * 8 + ry);
-
-                vram[pattern_addr] = pattern_byte;
-                vram[color_addr] = static_cast<std::uint8_t>((fg_color << 4) | (bg_color & 0x0F));
-            }
-        }
+    std::vector<std::uint8_t> sc2;
+    if (!MSX1PQCore::build_sc2_binary(pixels, width, height, color_system, sc2)) {
+        std::cerr << "Failed to build SC2 data: " << output_path << "\n";
+        return false;
     }
 
     std::ofstream ofs(output_path, std::ios::binary);
@@ -955,22 +796,7 @@ bool write_sc2(const fs::path& output_path,
         return false;
     }
 
-    unsigned char header[7];
-    header[0] = 0xFE;
-    header[1] = 0x00;
-    header[2] = 0x00;
-    header[3] = 0xFF;
-    header[4] = 0x3F;
-    header[5] = 0x00;
-    header[6] = 0x00;
-
-    ofs.write(reinterpret_cast<const char*>(header), 7);
-    if (!ofs) {
-        std::cerr << "Failed to write BSAVE header: " << output_path << "\n";
-        return false;
-    }
-
-    ofs.write(reinterpret_cast<const char*>(vram.data()), static_cast<std::streamsize>(vram.size()));
+    ofs.write(reinterpret_cast<const char*>(sc2.data()), static_cast<std::streamsize>(sc2.size()));
     if (!ofs) {
         std::cerr << "Failed to write SC2 data: " << output_path << "\n";
         return false;
@@ -1029,7 +855,7 @@ bool process_file(const fs::path& input, const fs::path& output, const CliOption
         return write_sc2(output, pixels, width, height, opts.color_system);
     }
 
-    scale_pixels(pixels, width, height, opts.scale);
+    MSX1PQCore::scale_pixels(pixels, width, height, opts.scale);
     return write_palette_png(output, pixels, width, height, opts.color_system);
 }
 
