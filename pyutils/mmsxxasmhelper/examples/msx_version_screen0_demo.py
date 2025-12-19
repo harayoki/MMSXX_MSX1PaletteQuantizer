@@ -24,7 +24,7 @@ from mmsxxasmhelper.msxutils import (
     place_msx_rom_header_macro,
     store_stack_pointer_macro,
 )
-from mmsxxasmhelper.utils import pad_bytes
+from mmsxxasmhelper.utils import pad_bytes, loop_infinite_macro
 
 
 INITXT = 0x006C
@@ -93,37 +93,33 @@ def build_msx_version_rom() -> bytes:
     pos = b.emit(0x21, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, "MSX1_TEXT")
     PRINT_STRING.call(b)
-    JR(b, "wait_for_key")
+    JR(b, "end")
 
     b.label("print_msx2")
     pos = b.emit(0x21, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, "MSX2_TEXT")
     PRINT_STRING.call(b)
-    JR(b, "wait_for_key")
+    JR(b, "end")
 
     b.label("print_msx2_plus")
     pos = b.emit(0x21, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, "MSX2_PLUS_TEXT")
     PRINT_STRING.call(b)
-    JR(b, "wait_for_key")
+    JR(b, "end")
 
     b.label("print_turbor")
     pos = b.emit(0x21, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, "TURBOR_TEXT")
     PRINT_STRING.call(b)
-    JR(b, "wait_for_key")
+    JR(b, "end")
 
     b.label("print_other")
     pos = b.emit(0x21, 0x00, 0x00)
     b.add_abs16_fixup(pos + 1, "OTHER_TEXT")
     PRINT_STRING.call(b)
 
-    b.label("wait_for_key")
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "FOOTER_TEXT")
-    PRINT_STRING.call(b)
-    CALL(b, CHGET)
-    JR(b, "wait_for_key")
+    b.label("end")
+    loop_infinite_macro(b)
 
     PRINT_STRING.define(b)
 
@@ -148,9 +144,6 @@ def build_msx_version_rom() -> bytes:
 
     b.label("OTHER_TEXT")
     DB(b, *"OTHER\r\n".encode("ascii"), 0x00)
-
-    b.label("FOOTER_TEXT")
-    DB(b, *"PRESS ANY KEY TO LOOP\r\n".encode("ascii"), 0x00)
 
     rom = b.finalize(origin=0x4000)
     return bytes(pad_bytes(list(rom), PAGE_SIZE, 0x00))
