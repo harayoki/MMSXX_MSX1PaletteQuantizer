@@ -1,112 +1,183 @@
 # WebAssembly bindings for MSX1 Palette Quantizer
 
-## 推奨ディレクトリ構成
-```
-src/webasm/
-  CMakeLists.txt        # または build.sh など、Emscripten 用ビルドスクリプト
-  MSX1PQWebBindings.cpp # C API エクスポート実装（emscripten）
-  README.md             # このガイド
-```
+ブラウザ上で core（MSX1PQCore / Output / Palettes / lodepng）を呼ぶための最小バインディング。リアルタイム更新前提なので **コンテキスト方式** でバッファを保持し、malloc/free を乱発しない。
 
-## エクスポート API 例（C）
-`MSX1PQWebBindings.cpp` が以下を提供する想定。
-- `msx1pq_malloc` / `msx1pq_free` : JS 側が安全に wasm ヒープを確保・解放するためのラッパー。
-- `msx1pq_quantize_rgba` : RGBA 入力を量子化して RGBA 出力を返す。
-- `msx1pq_encode_png` / `msx1pq_decode_png` : lodepng を使った PNG 変換。
+## エクスポート API（C）
 
-### バインディング実装サンプル
-`MSX1PQWebBindings.cpp` を参照。`extern "C"` + `EMSCRIPTEN_KEEPALIVE` でエクスポートし、`Msx1pqOptions` から `QuantInfo` に変換して `quantize_image` を叩く。
-
-## 初期化と呼び出しの流れ
-1. 必要に応じて `Msx1pqOptions` を JS 側の `HEAP32`/`HEAPF32` に書き込む。
-2. RGBA バッファ（`width * height * 4` バイト）を wasm ヒープにコピー。
-3. `msx1pq_quantize_rgba` を呼ぶと、新しい RGBA バッファへのポインタとサイズが返る。
-4. JS 側で結果を `HEAPU8.subarray(ptr, ptr + size)` で読み出し、終わったら `msx1pq_free` で解放。
-
-### エクスポート関数シグネチャ
 ```c
-// ヒープ確保/解放
-void* msx1pq_malloc(size_t size);
-void  msx1pq_free(void* ptr);
+// コンテキスト
+msx1pq_context* msx1pq_create_context(void);
+void            msx1pq_destroy_context(msx1pq_context* ctx);
 
-// 量子化（RGBA→RGBA）
-int msx1pq_quantize_rgba(const uint8_t* rgba,
-                         int width,
-                         int height,
-                         const Msx1pqOptions* opts,
-                         uint8_t** out_rgba,
+// オプション（壊れにくい key/value 方式）
+int msx1pq_set_option_i(msx1pq_context* ctx, int key, int value);
+int msx1pq_set_option_f(msx1pq_context* ctx, int key, float value);
+
+// 量子化（RGBA -> RGBA, out は既存バッファ or ctx 内部）
+int msx1pq_quantize_rgba_into(msx1pq_context* ctx,
+                              const uint8_t* rgba,
+                              int width,
+                              int height,
+                              uint8_t* out_rgba,   // null なら ctx 内部を書き換え
+                              int out_capacity,    // bytes
+                              int* out_size);      // bytes
+int msx1pq_get_last_rgba(const msx1pq_context* ctx,
+                         const uint8_t** out_ptr,
                          int* out_size);
 
-// PNG 変換（任意）
-int msx1pq_encode_png(const uint8_t* rgba, int width, int height,
-                      uint8_t** out_png, int* out_size);
-int msx1pq_decode_png(const uint8_t* png, int size,
-                      uint8_t** out_rgba, int* out_width, int* out_height);
+// PNG 生成（必要時のみ）
+int msx1pq_encode_png_from_rgba(msx1pq_context* ctx,
+                                const uint8_t* rgba,
+                                int width,
+                                int height,
+                                const uint8_t** out_png,
+                                int* out_size);
+int msx1pq_get_last_png(const msx1pq_context* ctx,
+                        const uint8_t** out_png,
+                        int* out_size);
+
+// SC2 生成（256x192 のみ対応、内部で量子化して VRAM 相当を返す）
+int msx1pq_encode_sc2_from_rgba(msx1pq_context* ctx,
+                                const uint8_t* rgba,
+                                int width,
+                                int height,
+                                const uint8_t** out_sc2,
+                                int* out_size);
+int msx1pq_get_last_sc2(const msx1pq_context* ctx,
+                        const uint8_t** out_sc2,
+                        int* out_size);
+
+// wasm ヒープ確保/解放（JS 側でまとめて再利用）
+void* msx1pq_malloc(size_t size);
+void  msx1pq_free(void* ptr);
 ```
 
+### オプション key 一覧
+```c
+// msx1pq_set_option_i
+MSX1PQ_OPT_COLOR_SYSTEM  // MSX1PQCore::MSX1PQ_COLOR_SYS_*
+MSX1PQ_OPT_DISTANCE_MODE // MSX1PQCore::MSX1PQ_DIST_MODE_*
+MSX1PQ_OPT_EIGHTDOT_MODE // MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_*
+MSX1PQ_OPT_USE_DITHER    // 0/1
+MSX1PQ_OPT_USE_PALETTE   // 0/1 (palette 固定モード)
+MSX1PQ_OPT_USE_DARK_DITH // 0/1
+
+// msx1pq_set_option_f
+MSX1PQ_OPT_W_H, MSX1PQ_OPT_W_S, MSX1PQ_OPT_W_V // HSV 重み
+MSX1PQ_OPT_W_R, MSX1PQ_OPT_W_G, MSX1PQ_OPT_W_B // RGB 重み
+```
+
+### バッファ寿命と再確保条件
+- `msx1pq_quantize_rgba_into` は ctx->work_pixels を再利用。`width * height` が変わると再確保され、JS 側は **毎回 quantize 後に `msx1pq_get_last_rgba` でポインタを取り直す**。
+- PNG/SC2 も ctx 内部バッファを再利用するので、生成後に `msx1pq_get_last_png` / `msx1pq_get_last_sc2` で最新ポインタを取得。
+- `out_rgba` を自前で確保する場合のみ `out_capacity` をチェック。不要なら `out_rgba = 0, out_capacity = 0` で OK。
+
 ## emcc ビルドコマンド例
+
 ```bash
 emcc -O3 \
-  -std=c++17 \
+  -std=c++17 -fno-exceptions -fno-rtti \
   -I./src/core \
   src/webasm/MSX1PQWebBindings.cpp \
   src/core/MSX1PQCore.cpp src/core/MSX1PQOutput.cpp src/core/MSX1PQPalettes.cpp src/core/lodepng.cpp \
   -s ENVIRONMENT=web \
   -s MODULARIZE=1 -s EXPORT_NAME="MSX1PQ" \
-  -s EXPORTED_FUNCTIONS='["_msx1pq_malloc","_msx1pq_free","_msx1pq_quantize_rgba","_msx1pq_encode_png","_msx1pq_decode_png"]' \
-  -s ALLOW_MEMORY_GROWTH=1 \
+  -s EXPORTED_FUNCTIONS='["_msx1pq_create_context","_msx1pq_destroy_context","_msx1pq_set_option_i","_msx1pq_set_option_f","_msx1pq_quantize_rgba_into","_msx1pq_get_last_rgba","_msx1pq_encode_png_from_rgba","_msx1pq_get_last_png","_msx1pq_encode_sc2_from_rgba","_msx1pq_get_last_sc2","_msx1pq_malloc","_msx1pq_free"]' \
+  -s ALLOW_MEMORY_GROWTH=0 \
+  -s INITIAL_MEMORY=134217728 \
   -s MALLOC="emmalloc" \
   -o dist/msx1pq.js
 ```
 
-## JS からの最小呼び出し例
+- 256x192 + 作業バッファなら 128 MiB 固定で十分。より大きい入力を扱う場合は `INITIAL_MEMORY` を増やす。どうしても足りない場合のみ `-s ALLOW_MEMORY_GROWTH=1` にし、量子化後は毎回ポインタを取り直す。
+
+## JS 最小サンプル（Canvas プレビュー + PNG/SC2 生成）
+
 ```js
 import createMSX1PQ from './msx1pq.js';
 
-const wasm = await createMSX1PQ();
-const { HEAPU8, HEAP32, _msx1pq_malloc, _msx1pq_free, _msx1pq_quantize_rgba } = wasm;
+const mod = await createMSX1PQ();
+const ctx = mod._msx1pq_create_context();
 
-const width = 320, height = 240;
-const inputBytes = new Uint8Array(width * height * 4); // RGBA 入力
+// 一度だけ確保して使い回す
+const width = 256;
+const height = 192;
+const inputBytes = new Uint8Array(width * height * 4); // RGBA ソース
+const inputPtr = mod._msx1pq_malloc(inputBytes.length);
 
-// 入力コピー
-const inputPtr = _msx1pq_malloc(inputBytes.length);
-HEAPU8.set(inputBytes, inputPtr);
+// 出力ポインタ/サイズ受け取り用ワーク（4byte*2）
+const viewPtr = mod._msx1pq_malloc(8);
+const viewSizePtr = viewPtr + 4;
 
-// オプション配置
-const optsPtr = _msx1pq_malloc(4 * 9); // int*6 + float*3 (簡易例)
-HEAP32[optsPtr >> 2] = 1; // color_system = MSX1
-HEAP32[(optsPtr >> 2) + 1] = 2; // distance_mode = HSV
-HEAP32[(optsPtr >> 2) + 2] = 1; // eightdot_mode = NONE
-HEAP32[(optsPtr >> 2) + 3] = 1; // use_dither
-HEAP32[(optsPtr >> 2) + 4] = 0; // use_palette_color
-HEAP32[(optsPtr >> 2) + 5] = 0; // use_dark_dither
-// floatsは HEAPF32 を使って同じ位置に書き込む
-const f32 = new Float32Array(wasm.HEAPU8.buffer, optsPtr + 24, 3);
-f32[0] = 1.0; // w_h
-f32[1] = 1.0; // w_s
-f32[2] = 1.0; // w_v
+const OptI = {
+  COLOR_SYSTEM: 1,
+  DISTANCE_MODE: 2,
+  EIGHTDOT_MODE: 3,
+  USE_DITHER: 4,
+  USE_PALETTE: 5,
+  USE_DARK_DITH: 6,
+};
+const OptF = { W_H: 1, W_S: 2, W_V: 3, W_R: 4, W_G: 5, W_B: 6 };
 
-// 出力ポインタ用ワーク領域
-const outPtrPtr = _msx1pq_malloc(8); // uint8_t** + int*
-const outSizePtr = outPtrPtr + 4;
+// オプション更新
+function setOptions(opts) {
+  mod._msx1pq_set_option_i(ctx, OptI.DISTANCE_MODE, opts.distanceMode);
+  mod._msx1pq_set_option_i(ctx, OptI.USE_DITHER, opts.useDither ? 1 : 0);
+  mod._msx1pq_set_option_f(ctx, OptF.W_R, opts.wr);
+  mod._msx1pq_set_option_f(ctx, OptF.W_G, opts.wg);
+  mod._msx1pq_set_option_f(ctx, OptF.W_B, opts.wb);
+}
 
-const ret = _msx1pq_quantize_rgba(inputPtr, width, height, optsPtr, outPtrPtr, outSizePtr);
-if (ret !== 0) throw new Error(`quantize failed: ${ret}`);
+// Canvas 描画
+const canvas = document.querySelector('canvas');
+const ctx2d = canvas.getContext('2d');
+const imageData = ctx2d.createImageData(width, height);
 
-const outPtr = HEAP32[outPtrPtr >> 2];
-const outSize = HEAP32[outSizePtr >> 2];
-const outBytes = HEAPU8.slice(outPtr, outPtr + outSize);
+function preview() {
+  // 入力コピー
+  mod.HEAPU8.set(inputBytes, inputPtr);
 
-_msx1pq_free(outPtr);
-_msx1pq_free(outPtrPtr);
-_msx1pq_free(optsPtr);
-_msx1pq_free(inputPtr);
+  // 量子化（out_ptr/out_capacity は 0 -> ctx 内部に出力）
+  mod._msx1pq_quantize_rgba_into(ctx, inputPtr, width, height, 0, 0, 0);
+
+  // 最新バッファを取得して Canvas にコピー
+  mod._msx1pq_get_last_rgba(ctx, viewPtr, viewSizePtr);
+  const outPtr = mod.HEAP32[viewPtr >> 2];
+  const outSize = mod.HEAP32[viewSizePtr >> 2];
+  const outView = mod.HEAPU8.subarray(outPtr, outPtr + outSize);
+
+  imageData.data.set(outView);
+  ctx2d.putImageData(imageData, 0, 0);
+}
+
+async function exportPng() {
+  // 既に量子化済みの RGBA をそのまま PNG へ
+  mod._msx1pq_get_last_rgba(ctx, viewPtr, viewSizePtr);
+  const lastPtr = mod.HEAP32[viewPtr >> 2];
+  mod._msx1pq_encode_png_from_rgba(ctx, lastPtr, width, height, viewPtr, viewSizePtr);
+  const pngPtr = mod.HEAP32[viewPtr >> 2];
+  const pngSize = mod.HEAP32[viewSizePtr >> 2];
+  const pngBytes = mod.HEAPU8.slice(pngPtr, pngPtr + pngSize);
+  const blob = new Blob([pngBytes], { type: 'image/png' });
+  // download ...
+}
+
+async function exportSc2() {
+  mod._msx1pq_get_last_rgba(ctx, viewPtr, viewSizePtr);
+  const lastPtr = mod.HEAP32[viewPtr >> 2];
+  const ret = mod._msx1pq_encode_sc2_from_rgba(ctx, lastPtr, width, height, viewPtr, viewSizePtr);
+  if (ret !== 0) throw new Error('SC2 export failed: ' + ret);
+  const sc2Ptr = mod.HEAP32[viewPtr >> 2];
+  const sc2Size = mod.HEAP32[viewSizePtr >> 2];
+  const sc2Bytes = mod.HEAPU8.slice(sc2Ptr, sc2Ptr + sc2Size);
+  // download or embed sc2Bytes
+}
+
+// スライダー/チェック変更時: setOptions(...) -> preview()
+// 「確定」ボタン: exportPng() または exportSc2()
 ```
 
-## core 側での注意点（Wasm 化）
-- 例外を使わない前提なので `throw` を追加しない。`std::vector` の確保失敗は戻り値で検知して JS にエラーコードを返す。
-- `new/delete` ではなく `malloc/free` を API 経由で隠蔽し、JS 側で解放を徹底する。
-- スレッドやファイル I/O に依存しない（Emscripten の `-s ENVIRONMENT=web` を前提）。
-- 条件付きコンパイルで AE/CLI 依存をビルド対象から除外し、`__EMSCRIPTEN__` 下では Web 固有の設定を追加する程度に留める。
-- `lodepng` はそのままビルド可能。PNG 入出力は wasm 内で完結させ、ブラウザの File API 側とは JS ブリッジでやり取りする。
+### JS 側メモリ運用のポイント
+- `inputPtr`, `viewPtr` は一度確保して再利用。毎フレームの malloc/free を避ける。
+- `msx1pq_get_last_*` で得たポインタは **次の量子化/エンコードまで有効**。サイズが変わると再確保されるので、そのたびに View を取り直す。
+- SC2 は 256x192 固定。それ以外のサイズを渡すとエラーコード `-2` を返す。
