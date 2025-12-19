@@ -69,12 +69,10 @@ def build_msx_version_rom() -> bytes:
     CALL(b, CHGCLR)
 
     # 見出しの表示
-    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,header
-    b.add_abs16_fixup(pos + 1, "HEADER_TEXT")
+    LD.HL_label(b, "HEADER_TEXT")
     PRINT_STRING.call(b)
 
-    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,label
-    b.add_abs16_fixup(pos + 1, "LABEL_TEXT")
+    LD.HL_label(b, "LABEL_TEXT")
     PRINT_STRING.call(b)
 
     # MSX バージョン判定
@@ -90,32 +88,27 @@ def build_msx_version_rom() -> bytes:
     JR(b, "print_other")
 
     b.label("print_msx1")
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "MSX1_TEXT")
+    LD.HL_label(b, "MSX1_TEXT")
     PRINT_STRING.call(b)
     JR(b, "end")
 
     b.label("print_msx2")
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "MSX2_TEXT")
+    LD.HL_label(b, "MSX2_TEXT")
     PRINT_STRING.call(b)
     JR(b, "end")
 
     b.label("print_msx2_plus")
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "MSX2_PLUS_TEXT")
+    LD.HL_label(b, "MSX2_PLUS_TEXT")
     PRINT_STRING.call(b)
     JR(b, "end")
 
     b.label("print_turbor")
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "TURBOR_TEXT")
+    LD.HL_label(b, "TURBOR_TEXT")
     PRINT_STRING.call(b)
     JR(b, "end")
 
     b.label("print_other")
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, "OTHER_TEXT")
+    LD.HL_label(b, "OTHER_TEXT")
     PRINT_STRING.call(b)
 
     b.label("end")
