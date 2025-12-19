@@ -26,7 +26,7 @@ __all__ = [
     # "with_register_preserve",
     "VDP_CTRL",
     "VDP_DATA",
-    "VDP_CTRL",
+    "VDP_PAL",
 ]
 
 RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
@@ -107,6 +107,7 @@ MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 VDP_DATA = 0x98   # VDPデータポート
 VDP_CTRL = 0x99   # VDPコントロールポート
 VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
+
 
 @with_register_preserve
 def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:

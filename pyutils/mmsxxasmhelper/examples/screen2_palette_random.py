@@ -12,61 +12,13 @@ import sys
 from pathlib import Path
 
 try:
-    from mmsxxasmhelper.core import (
-        ADD,
-        AND,
-        Block,
-        DB,
-        Func,
-        INC,
-        JP,
-        JP_NZ,
-        LD,
-        OUT,
-        OR,
-        DEC,
-        XOR,
-    )
-    from mmsxxasmhelper.msxutils import (
-        VDP_CTRL,
-        VDP_DATA,
-        VDP_PAL,
-        enaslt_macro,
-        init_screen2_macro,
-        ldirvm_macro,
-        place_msx_rom_header_macro,
-        set_msx2_palette_default_macro,
-        store_stack_pointer_macro,
-    )
+    from mmsxxasmhelper.core import *
+    from mmsxxasmhelper.msxutils import *
     from mmsxxasmhelper.utils import pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    from mmsxxasmhelper.core import (
-        ADD,
-        AND,
-        Block,
-        DB,
-        Func,
-        INC,
-        JP,
-        JP_NZ,
-        LD,
-        OUT,
-        OR,
-        DEC,
-        XOR,
-    )
-    from mmsxxasmhelper.msxutils import (
-        VDP_CTRL,
-        VDP_DATA,
-        VDP_PAL,
-        enaslt_macro,
-        init_screen2_macro,
-        ldirvm_macro,
-        place_msx_rom_header_macro,
-        set_msx2_palette_default_macro,
-        store_stack_pointer_macro,
-    )
+    from mmsxxasmhelper.core import *
+    from mmsxxasmhelper.msxutils import *
     from mmsxxasmhelper.utils import pad_bytes
 
 
@@ -148,70 +100,77 @@ def _build_palette_random_rom() -> bytes:
         ADD.A_B(block)
         INC.A(block)
         LD.mn16_A(block, RNG_STATE_ADDR)
-        block.emit(0xC9)  # RET
+        RET(b)
 
     RNG_NEXT = Func("rng_next", rng_next)
 
-    def randomize_palette(block: Block) -> None:
+    def randomize_palette(b: Block) -> None:
+        RET(b)
         # HL = PALETTE_BUFFER
-        LD.HL_n16(block, PALETTE_BUFFER_ADDR)
+        LD.HL_n16(b, PALETTE_BUFFER_ADDR)
 
         # エントリ0は黒で固定
-        LD.mHL_n8(block, 0x00)
-        INC.HL(block)
-        LD.mHL_n8(block, 0x00)
-        INC.HL(block)
+        LD.mHL_n8(b, 0x00)
+        INC.HL(b)
+        LD.mHL_n8(b, 0x00)
+        INC.HL(b)
 
         # 残り 15 色を生成
-        LD.B_n8(block, 15)
-        block.label("__PALETTE_LOOP__")
+        LD.B_n8(b, 15)
+        b.label("LOOP_PALETTE_CREATE")
 
-        RNG_NEXT.call(block)
-        AND.n8(block, 0x07)
-        LD.rr(block, "D", "A")  # R
+        RNG_NEXT.call(b)
+        AND.n8(b, 0x07)
+        LD.rr(b, "D", "A")  # R
 
-        RNG_NEXT.call(block)
-        AND.n8(block, 0x07)
-        LD.rr(block, "E", "A")  # G
+        RNG_NEXT.call(b)
+        AND.n8(b, 0x07)
+        LD.rr(b, "E", "A")  # G
 
-        RNG_NEXT.call(block)
-        AND.n8(block, 0x07)
-        LD.rr(block, "C", "A")  # B
+        RNG_NEXT.call(b)
+        AND.n8(b, 0x07)
+        LD.rr(b, "C", "A")  # B
 
         # 1 バイト目: R << 4 | B << 1
-        LD.rr(block, "A", "D")
-        block.emit(0x07, 0x07, 0x07, 0x07)  # RLCA x4
-        LD.rr(block, "H", "A")
-        LD.rr(block, "A", "C")
-        ADD.A_A(block)
-        AND.n8(block, 0x0E)
-        OR.H(block)
-        LD.mHL_A(block)
-        INC.HL(block)
+        LD.rr(b, "A", "D")
+        RLCA(b)
+        RLCA(b)
+        RLCA(b)
+        RLCA(b)
+        LD.rr(b, "H", "A")
+        LD.rr(b, "A", "C")
+        ADD.A_A(b)
+        AND.n8(b, 0x0E)
+        OR.H(b)
+        LD.mHL_A(b)
+        INC.HL(b)
 
         # 2 バイト目: G
-        LD.rr(block, "A", "E")
-        LD.mHL_A(block)
-        INC.HL(block)
+        LD.rr(b, "A", "E")
+        LD.mHL_A(b)
+        INC.HL(b)
 
-        DEC.B(block)
-        JP_NZ(block, "__PALETTE_LOOP__")
-
-        block.emit(0xC9)  # RET test
+        DEC.B(b)
+        JP_NZ(b, "LOOP_PALETTE_CREATE")
 
         # VDP パレットレジスタへ転送 (index 0 から 32 バイト)
-        OUT(block, VDP_CTRL, 0x00)
-        OUT(block, VDP_CTRL, 0x80 + PALETTE_REGISTER)
-        LD.HL_n16(block, PALETTE_BUFFER_ADDR)
-        LD.B_n8(block, 32)
-        block.label("__PALETTE_OUT__")
-        block.emit(0x7E)        # LD A,(HL)
-        block.emit(0xD3, VDP_PAL)  # OUT (9Ah),A
-        block.emit(0x23)        # INC HL
-        disp = (block.labels["__PALETTE_OUT__"] - (block.pc + 1)) & 0xFF
-        block.emit(0x10, disp)  # DJNZ __PALETTE_OUT__
+        OUT(b, VDP_CTRL, 0x00)
+        OUT(b, VDP_CTRL, 0x80 + PALETTE_REGISTER)
+        LD.HL_n16(b, PALETTE_BUFFER_ADDR)
+        LD.B_n8(b, 32)
+        b.label("LOOP_PALETTE_OUT")
+        LD.A_mHL(b)  # LD A,(HL)
+        LD.A_n8(b, 0x99)
+        OUT(b, VDP_PAL)  # OUT (9Ah),A
 
-        block.emit(0xC9)  # RET
+        # RET(b)  # test
+
+        INC.HL(b)       # INC HL
+        # disp = (b.labels["LOOP_PALETTE_OUT"] - (b.pc + 1)) & 0xFF
+        # b.emit(0x10, disp)
+        JP_NZ(b, "LOOP_PALETTE_OUT")  # DJNZ LOOP_PALETTE_OUT
+
+        RET(b)
 
     RANDOMIZE_PALETTE = Func("randomize_palette", randomize_palette)
 
@@ -227,17 +186,14 @@ def _build_palette_random_rom() -> bytes:
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
-        pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
-        b.add_abs16_fixup(pos + 1, "PATTERN_DATA")
+        LD.HL_label(b, "PATTERN_DATA")
         ldirvm_macro(b, dest=dest, length=len(pattern_data))
 
     for dest in (COLOR_TABLE_ADDR, 0x2800, 0x3000):
-        pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
-        b.add_abs16_fixup(pos + 1, "COLOR_DATA")
+        LD.HL_label(b, "COLOR_DATA")
         ldirvm_macro(b, dest=dest, length=len(color_data))
 
-    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
-    b.add_abs16_fixup(pos + 1, "NAME_TABLE")
+    LD.HL_label(b, "NAME_TABLE")
     ldirvm_macro(b, dest=NAME_TABLE_ADDR, length=len(name_table))
 
     # RNG シード: JIFFY の 2 バイトを XOR
@@ -253,7 +209,7 @@ def _build_palette_random_rom() -> bytes:
     # 約 30 フレーム待機 (HALT で VBLANK 待ち合わせ)
     LD.B_n8(b, 30)
     b.label("__WAIT_LOOP__")
-    b.emit(0x76)  # HALT
+    HALT(b)
     DEC.B(b)
     JP_NZ(b, "__WAIT_LOOP__")
 

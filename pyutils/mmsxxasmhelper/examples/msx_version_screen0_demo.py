@@ -140,7 +140,7 @@ def build_msx_version_rom() -> bytes:
     DB(b, *"MSX2+\r\n".encode("ascii"), 0x00)
 
     b.label("TURBOR_TEXT")
-    DB(b, *"TURBOR\r\n".encode("ascii"), 0x00)
+    DB(b, *"TURBO R\r\n".encode("ascii"), 0x00)
 
     b.label("OTHER_TEXT")
     DB(b, *"OTHER\r\n".encode("ascii"), 0x00)

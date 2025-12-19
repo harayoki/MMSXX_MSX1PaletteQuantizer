@@ -59,9 +59,11 @@ __all__ = [
     "pad_pattern",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
-    "CALL_label", "CALL", "Func",
+    "CALL_label", "CALL", "RET", "Func",
     "DB", "DW",
-    "LD", "ADD", "CP", "AND", "OR", "XOR", "INC", "DEC",
+    "LD", "ADD", "CP", "AND", "OR", "XOR",
+    "RLCA",
+    "INC", "DEC",
     "OUT", "OUT_C",
     "NOP", "HALT", "DI", "EI",
 ]
@@ -452,6 +454,10 @@ def CALL(b: Block, address: int) -> None:
     """
     b.emit(0xCD, address & 0xFF, (address >> 8) & 0xFF)
 
+
+def RET(b: Block) -> None:
+    """return"""
+    b.emit(0xC9)
 
 # ---------------------------------------------------------------------------
 # ブロック調整
@@ -858,6 +864,11 @@ class LD:
         LD (IY+d),n8
         """
         b.emit(0xFD, 0x36, disp & 0xFF, value & 0xFF)
+
+    @staticmethod
+    def HL_label(b: Block, label: str) -> None:
+        pos = b.emit(0x21, 0x00, 0x00)
+        b.add_abs16_fixup(pos + 1, label)
 
 
 # ---------------------------------------------------------------------------
@@ -1286,6 +1297,26 @@ class XOR:
 
         b.emit(0xEE, value & 0xFF)
 
+# ---------------------------------------------------------------------------
+# ビット操作
+# TODO 実装
+# ---------------------------------------------------------------------------
+
+
+def RLCA(b: Block) -> None:
+    b.emit(0x07)
+
+
+"""
+| | `RLCA` | `07` | 1 | Aレジスタの左ローテート（キャリー経由なし） |
+| | `RRCA` | `0F` | 1 | Aレジスタの右ローテート（キャリー経由なし） |
+| | `RLA` | `17` | 1 | Aレジスタの左ローテート（キャリー経由） |
+| | `RRA` | `1F` | 1 | Aレジスタの右ローテート（キャリー経由） |
+| | `DAA` | `27` | 1 | 2進化10進補正 |
+| | `CPL` | `2F` | 1 | Aレジスタをビット反転 |
+| | `SCF` | `37` | 1 | キャリーフラグセット |
+| | `CCF` | `3F` | 1 | キャリーフラグ反転 |
+"""
 
 # ---------------------------------------------------------------------------
 # INC / DEC 命令
