@@ -239,8 +239,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     b.emit(0xD3, VDP_CTRL)
 
     # HL = PALETTE_DATA
-    pos2 = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
-    b.add_abs16_fixup(pos2 + 1, "__PALETTE_DATA__")
+    LD.HL_label(b, "__PALETTE_DATA__")
 
     # B = 32 (16色×2バイト)
     LD.B_n8(b, 32)

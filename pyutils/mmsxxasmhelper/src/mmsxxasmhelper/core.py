@@ -65,6 +65,7 @@ __all__ = [
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_C",
+    "PUSH", "POP",
     "NOP", "HALT", "DI", "EI",
 ]
 
@@ -1526,6 +1527,24 @@ class OUT_C:
         except KeyError as exc:
             raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
         b.emit(0xED, opcode)
+
+# ---------------------------------------------------------------------------
+# push / pop
+# TODO 実装
+# ---------------------------------------------------------------------------
+
+
+class PUSH:
+
+    @staticmethod
+    def BC(b: Block) -> None:
+        b.emit(0xC5)
+
+class POP:
+
+    @staticmethod
+    def BC(b: Block) -> None:
+        b.emit(0xC1)
 
 
 # ---------------------------------------------------------------------------

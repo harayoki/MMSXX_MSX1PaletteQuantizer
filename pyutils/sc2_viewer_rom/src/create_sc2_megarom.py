@@ -138,8 +138,7 @@ def build_boot_bank(
         LD.mn16_A(b, BAKCLR)
         LD.mn16_A(b, BDRCLR)
         CALL(b, CHGCLR)
-        pos = b.emit(0x21, 0x00, 0x00)
-        b.add_abs16_fixup(pos + 1, "INSTR_TEXT")
+        LD.HL_label(b, "INSTR_TEXT")
         PRINT_STRING.call(b)
         CALL(b, CHGET)
 

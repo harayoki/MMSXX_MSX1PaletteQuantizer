@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 try:
-    from mmsxxasmhelper.core import CALL, Block, CP, Func, INC, JR, JR_NZ, JR_Z, LD
+    from mmsxxasmhelper.core import CALL, Block, CP, Func, INC, JR, JR_NZ, JR_Z, LD, PUSH, POP, RET
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -30,7 +30,7 @@ try:
     from mmsxxasmhelper.utils import pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    from mmsxxasmhelper.core import CALL, Block, CP, Func, INC, JR, JR_NZ, JR_Z, LD
+    from mmsxxasmhelper.core import CALL, Block, CP, Func, INC, JR, JR_NZ, JR_Z, LD, PUSH, POP, RET
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -65,7 +65,7 @@ def build_boot_bank() -> bytes:
         LD.A_C(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
-        block.emit(0xC5)  # PUSH BC (C を退避)
+        PUSH.BC(b)
 
         # ROM page2(0x8000) -> VRAM 0 へコピー（LDIRVM）
         LD.HL_n16(block, 0x8000)
@@ -74,9 +74,9 @@ def build_boot_bank() -> bytes:
         # BIOS LDIRVM は HL=RAM, DE=VRAM, BC=サイズ
         CALL(block, LDIRVM)
 
-        block.emit(0xC1)  # POP BC (C を復帰)
+        POP.BC(b)
 
-        block.emit(0xC9)  # RET
+        RET(block)
 
     LOAD_AND_SHOW = Func("load_and_show", load_and_show)
 

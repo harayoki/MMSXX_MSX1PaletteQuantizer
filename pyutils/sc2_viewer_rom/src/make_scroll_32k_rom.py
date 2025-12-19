@@ -169,12 +169,10 @@ def draw_page_call(b: Block) -> None:
     1ページ分の RowPackage データを VRAM に転送する関数
     """
 
-    start_addr = "PACKED_DATA"
+    START_ADDR = "PACKED_DATA"
 
     # HL = RowPackage 先頭
-    # TODO 直接バイト列を書かない仕組みにしたい LD.HL_label的なのを
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, start_addr)
+    LD.HL_label(b, START_ADDR)
 
     # DE = PATTERN_BASE / IY = COLOR_BASE
     LD.DE_n16(b, PATTERN_BASE)
