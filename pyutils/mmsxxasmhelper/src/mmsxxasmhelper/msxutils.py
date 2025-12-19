@@ -24,6 +24,9 @@ __all__ = [
     "ldirvm_macro",
     "test_fill_vram_macro",
     # "with_register_preserve",
+    "VDP_CTRL",
+    "VDP_DATA",
+    "VDP_CTRL",
 ]
 
 RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
@@ -101,8 +104,9 @@ BAKCLR = 0xF3EA  # 背景色
 BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 
-VDP_DATA = 98   # VDPデータポート
-VDP_CTRL = 99   # VDPコントロールポート
+VDP_DATA = 0x98   # VDPデータポート
+VDP_CTRL = 0x99   # VDPコントロールポート
+VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
 @with_register_preserve
 def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
@@ -227,11 +231,11 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     # R#16 に color index 0 をセット
     # OUT 99h,0
     LD.A_n8(b, 0x00)
-    b.emit(0xD3, 0x99)
+    b.emit(0xD3, VDP_CTRL)
 
     # OUT 99h,80h+16  ; レジスタ16指定
     LD.A_n8(b, 0x80 + 16)
-    b.emit(0xD3, 0x99)
+    b.emit(0xD3, VDP_CTRL)
 
     # HL = PALETTE_DATA
     pos2 = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
@@ -242,7 +246,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 
     b.label("__MSX2_PAL_LOOP__")
     b.emit(0x7E)        # LD A,(HL)
-    b.emit(0xD3, 0x9A)  # OUT (9Ah),A
+    b.emit(0xD3, VDP_PAL)  # OUT (9Ah),A
     b.emit(0x23)        # INC HL
     disp = (b.labels["__MSX2_PAL_LOOP__"] - (b.pc + 1)) & 0xFF
     b.emit(0x10, disp)  # DJNZ __MSX2_PAL_LOOP__

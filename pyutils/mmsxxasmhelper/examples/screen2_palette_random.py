@@ -29,6 +29,8 @@ try:
     )
     from mmsxxasmhelper.msxutils import (
         VDP_CTRL,
+        VDP_DATA,
+        VDP_PAL,
         enaslt_macro,
         init_screen2_macro,
         ldirvm_macro,
@@ -56,6 +58,8 @@ except ImportError:
     )
     from mmsxxasmhelper.msxutils import (
         VDP_CTRL,
+        VDP_DATA,
+        VDP_PAL,
         enaslt_macro,
         init_screen2_macro,
         ldirvm_macro,
@@ -70,7 +74,6 @@ ROM_PAGE_SIZE = 0x4000
 PATTERN_TABLE_ADDR = 0x0000
 COLOR_TABLE_ADDR = 0x2000
 NAME_TABLE_ADDR = 0x1800
-VDP_DATA_PORT = 0x9A
 PALETTE_REGISTER = 16
 JIFFY_ADDR = 0xFC9E
 PALETTE_BUFFER_ADDR = 0xC100
@@ -194,6 +197,8 @@ def _build_palette_random_rom() -> bytes:
         DEC.B(block)
         JP_NZ(block, "__PALETTE_LOOP__")
 
+        block.emit(0xC9)  # RET test
+
         # VDP パレットレジスタへ転送 (index 0 から 32 バイト)
         OUT(block, VDP_CTRL, 0x00)
         OUT(block, VDP_CTRL, 0x80 + PALETTE_REGISTER)
@@ -201,7 +206,7 @@ def _build_palette_random_rom() -> bytes:
         LD.B_n8(block, 32)
         block.label("__PALETTE_OUT__")
         block.emit(0x7E)        # LD A,(HL)
-        block.emit(0xD3, VDP_DATA_PORT)  # OUT (9Ah),A
+        block.emit(0xD3, VDP_PAL)  # OUT (9Ah),A
         block.emit(0x23)        # INC HL
         disp = (block.labels["__PALETTE_OUT__"] - (block.pc + 1)) & 0xFF
         block.emit(0x10, disp)  # DJNZ __PALETTE_OUT__
@@ -218,7 +223,7 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
-    set_msx2_palette_default_macro(b)
+    # set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
@@ -243,7 +248,7 @@ def _build_palette_random_rom() -> bytes:
     LD.mn16_A(b, RNG_STATE_ADDR)
 
     b.label("main_loop")
-    RANDOMIZE_PALETTE.call(b)
+    RANDOMIZE_PALETTE.call(b)  # MSX2 以降でここで画面が真っ黒になる
 
     # 約 30 フレーム待機 (HALT で VBLANK 待ち合わせ)
     LD.B_n8(b, 30)
