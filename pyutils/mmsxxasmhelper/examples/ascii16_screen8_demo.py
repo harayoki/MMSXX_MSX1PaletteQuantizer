@@ -163,7 +163,7 @@ def main() -> None:
     rom = build_ascii16_rom()
     out_dir = Path(__file__).resolve().parent / "dist"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "ascii16_screen8_demo.rom"
+    out_path = out_dir / "ascii16_screen8_demo[ASCII16].rom"
     if out_path.exists():
         out_path.unlink()
     out_path.write_bytes(rom)
