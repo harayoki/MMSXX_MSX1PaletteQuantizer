@@ -221,7 +221,6 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     # --- MSX バージョン確認 ---
     get_msxver_macro(b)  # A = MSXVER
     CP.n8(b, 0x00)
-    debug_trap(b)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
