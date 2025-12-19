@@ -221,15 +221,15 @@ def _build_palette_random_rom() -> bytes:
     set_msx2_palette_default_macro(b)
 
     # パターン・カラーテーブル配置
-    pos = LD.HL_n16(b, 0x0000)
+    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
     b.add_abs16_fixup(pos + 1, "PATTERN_DATA")
     ldirvm_macro(b, dest=PATTERN_TABLE_ADDR, length=len(pattern_data))
 
-    pos = LD.HL_n16(b, 0x0000)
+    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
     b.add_abs16_fixup(pos + 1, "COLOR_DATA")
     ldirvm_macro(b, dest=COLOR_TABLE_ADDR, length=len(color_data))
 
-    pos = LD.HL_n16(b, 0x0000)
+    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
     b.add_abs16_fixup(pos + 1, "NAME_TABLE")
     ldirvm_macro(b, dest=NAME_TABLE_ADDR, length=len(name_table))
 
