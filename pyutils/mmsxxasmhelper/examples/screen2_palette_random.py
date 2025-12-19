@@ -220,14 +220,16 @@ def _build_palette_random_rom() -> bytes:
     init_screen2_macro(b)
     set_msx2_palette_default_macro(b)
 
-    # パターン・カラーテーブル配置
-    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
-    b.add_abs16_fixup(pos + 1, "PATTERN_DATA")
-    ldirvm_macro(b, dest=PATTERN_TABLE_ADDR, length=len(pattern_data))
+    # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
+    for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
+        pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
+        b.add_abs16_fixup(pos + 1, "PATTERN_DATA")
+        ldirvm_macro(b, dest=dest, length=len(pattern_data))
 
-    pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
-    b.add_abs16_fixup(pos + 1, "COLOR_DATA")
-    ldirvm_macro(b, dest=COLOR_TABLE_ADDR, length=len(color_data))
+    for dest in (COLOR_TABLE_ADDR, 0x2800, 0x3000):
+        pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
+        b.add_abs16_fixup(pos + 1, "COLOR_DATA")
+        ldirvm_macro(b, dest=dest, length=len(color_data))
 
     pos = b.emit(0x21, 0x00, 0x00)  # LD HL,0x0000
     b.add_abs16_fixup(pos + 1, "NAME_TABLE")
