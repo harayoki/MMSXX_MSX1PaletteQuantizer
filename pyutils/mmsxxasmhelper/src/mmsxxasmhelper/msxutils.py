@@ -29,35 +29,9 @@ __all__ = [
     "VDP_PAL",
 ]
 
-RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
+
 P = ParamSpec("P")
 
-
-_PUSH_OPCODES: dict[RegisterName, tuple[int, ...]] = {
-    "AF": (0xF5,),
-    "BC": (0xC5,),
-    "DE": (0xD5,),
-    "HL": (0xE5,),
-    "IX": (0xDD, 0xE5),
-    "IY": (0xFD, 0xE5),
-}
-
-_POP_OPCODES: dict[RegisterName, tuple[int, ...]] = {
-    "AF": (0xF1,),
-    "BC": (0xC1,),
-    "DE": (0xD1,),
-    "HL": (0xE1,),
-    "IX": (0xDD, 0xE1),
-    "IY": (0xFD, 0xE1),
-}
-
-
-def _emit_push(b: Block, reg: RegisterName) -> None:
-    b.emit(*_PUSH_OPCODES[reg])
-
-
-def _emit_pop(b: Block, reg: RegisterName) -> None:
-    b.emit(*_POP_OPCODES[reg])
 
 
 def with_register_preserve(
@@ -73,17 +47,17 @@ def with_register_preserve(
     def wrapper(
         b: Block,
         *args: P.args,
-        preserve_regs: Sequence[RegisterName] = (),
+        preserve_regs: Sequence[RegNames16] = (),
         **kwargs: P.kwargs,
     ) -> None:
         regs = tuple(preserve_regs)
         for reg in regs:
-            _emit_push(b, reg)
+            PUSH.r(b, reg)
 
         macro(b, *args, **kwargs)
 
         for reg in reversed(regs):
-            _emit_pop(b, reg)
+            POP.r(b, reg)
 
     return wrapper
 
@@ -110,7 +84,7 @@ VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
 
 @with_register_preserve
-def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
     """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
 
     "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
@@ -152,7 +126,7 @@ def restore_stack_pointer_macro(b: Block) -> None:
 
 
 @with_register_preserve
-def enaslt_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def enaslt_macro(b: Block, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
     """ENASLT (#0024) を呼び出してスロットを有効化するマクロ。
 
     現在のスロット情報を ``RSLREG`` で取得し、ページ 2 (0x8000–0xBFFF)
@@ -208,7 +182,7 @@ _MSX2_PALETTE_BYTES = [
 
 
 @with_register_preserve
-def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
     """MSX バージョンを A レジスタに読み出す。
     レジスタ変更: A
     """
@@ -216,7 +190,7 @@ def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) ->
 
 
 @with_register_preserve
-def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
     """MSX2 以上でデフォルトパレットを設定するマクロ。
 
     レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
@@ -260,7 +234,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
 
 
 @with_register_preserve
-def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
     """CHGMOD を呼び出して画面モードを設定する。
     レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
     """
@@ -276,7 +250,7 @@ def init_screen2_macro(b: Block) -> None:
 
 
 @with_register_preserve
-def test_fill_vram_macro(b: Block, color: int = 0, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def test_fill_vram_macro(b: Block, color: int = 0, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
     """VRAMをテスト用に塗りつぶすマクロ。
     レジスタ変更: A, BC
     """
@@ -297,7 +271,7 @@ def test_fill_vram_macro(b: Block, color: int = 0, *, preserve_regs: Sequence[Re
 @with_register_preserve
 def set_screen_colors_macro(
     b: Block, foreground: int, background: int, border: int,
-        current_screen_mode: int, *, preserve_regs: Sequence[RegisterName] = ()
+        current_screen_mode: int, *, preserve_regs: Sequence[RegNames16] = ()
 ) -> None:
     """MSX1/2 共通の画面色設定マクロ。
 
@@ -350,7 +324,7 @@ def ldirvm_macro(
     source: int | None = None,
     dest: int | None = None,
     length: int | None = None,
-    preserve_regs: Sequence[RegisterName] = (),
+    preserve_regs: Sequence[RegNames16] = (),
 ) -> None:
     """LDIRVM (#005C) を呼び出すマクロ。
 

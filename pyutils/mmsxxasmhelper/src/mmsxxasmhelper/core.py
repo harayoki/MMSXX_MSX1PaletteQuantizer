@@ -51,7 +51,7 @@ from collections.abc import Iterable
 
 __all__ = [
     "Block", "Fixup", "const", "Const",
-    "Data8", "Data16",
+    "Data8", "Data16", "RegNames16",
     "const_bytes", "const_words",
     "db_const", "dw_const", "db_from_bytes",
     "str_bytes", "const_string",
@@ -1530,21 +1530,94 @@ class OUT_C:
 
 # ---------------------------------------------------------------------------
 # push / pop
-# TODO 実装
 # ---------------------------------------------------------------------------
+
+
+RegNames16 = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
 
 
 class PUSH:
 
     @staticmethod
+    def AF(b: Block) -> None:
+        b.emit(0xF5)
+
+    @staticmethod
     def BC(b: Block) -> None:
         b.emit(0xC5)
+
+    @staticmethod
+    def DE(b: Block) -> None:
+        b.emit(0xD5)
+
+    @staticmethod
+    def HL(b: Block) -> None:
+        b.emit(0xE5)
+
+    @staticmethod
+    def IX(b: Block) -> None:
+        b.emit(0xDD, 0xE5)
+
+    @staticmethod
+    def IY(b: Block) -> None:
+        b.emit(0xFD, 0xE5)
+
+    @classmethod
+    def r(cls, b: Block, dst: RegNames16) -> None:
+        if dst == "AF":
+            cls.AF(b)
+        elif dst == "BC":
+            cls.BC(b)
+        elif dst == "DE":
+            cls.DE(b)
+        elif dst == "HL":
+            cls.HL(b)
+        elif dst == "IX":
+            cls.IX(b)
+        elif dst == "IY":
+            cls.IY(b)
+
 
 class POP:
 
     @staticmethod
+    def AF(b: Block) -> None:
+        b.emit(0xF1)
+
+    @staticmethod
     def BC(b: Block) -> None:
         b.emit(0xC1)
+
+    @staticmethod
+    def DE(b: Block) -> None:
+        b.emit(0xD1)
+
+    @staticmethod
+    def HL(b: Block) -> None:
+        b.emit(0xE1)
+
+    @staticmethod
+    def IX(b: Block) -> None:
+        b.emit(0xDD, 0xE1)
+
+    @staticmethod
+    def IY(b: Block) -> None:
+        b.emit(0xFD, 0xE1)
+
+    @classmethod
+    def r(cls, b: Block, dst: RegNames16) -> None:
+        if dst == "AF":
+            cls.AF(b)
+        elif dst == "BC":
+            cls.BC(b)
+        elif dst == "DE":
+            cls.DE(b)
+        elif dst == "HL":
+            cls.HL(b)
+        elif dst == "IX":
+            cls.IX(b)
+        elif dst == "IY":
+            cls.IY(b)
 
 
 # ---------------------------------------------------------------------------
