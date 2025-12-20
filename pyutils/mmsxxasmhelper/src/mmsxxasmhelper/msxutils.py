@@ -12,7 +12,7 @@ from mmsxxasmhelper.utils import *
 
 
 __all__ = [
-    "call_subrom_macro",
+    # "call_subrom_macro",
     "place_msx_rom_header_macro",
     "store_stack_pointer_macro",
     "restore_stack_pointer_macro",
@@ -23,13 +23,14 @@ __all__ = [
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
-    "set_palette_macro",
+    # "set_palette_macro",
 
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
 ]
 P = ParamSpec("P")
+
 
 def with_register_preserve(
     macro: Callable[Concatenate[Block, P], None]
@@ -74,9 +75,12 @@ INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
-SUBROM = 0x015C  # サブロムCALL
+# EXPTBL = 0xFCC1  # 拡張スロット情報
+# EXPTBL_MINUS_1 = EXPTBL -1
+# CALSLT = 0x001C  # インタースロットCALL（任意スロットの任意アドレスを呼ぶ）
+# SUBROM = 0x015C  # SUB-ROM内ルーチンCALL（IX指定・IYにSUB-ROMスロット必須）
 
-# サブROM コールアドレス
+# サブROM内 コールアドレス
 SETPLET = 0x014D
 
 # カラー関連システム変数 (MSX1/2 共通)
@@ -90,18 +94,16 @@ VDP_CTRL = 0x99   # VDPコントロールポート
 VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
 
-def call_subrom_macro(
-        b: Block, address: int, preserve_regs_ix: bool = False) -> None:
-    """
-    MSXのサブROM CALL
-    IXレジスタ利用
-    """
-    if preserve_regs_ix:
-        PUSH.IX(b)
-    LD.IX_n16(b, address)
-    CALL(b, SUBROM)
-    if preserve_regs_ix:
-        POP.IX(b)
+# def call_subrom_macro(b: Block, address: int) -> None:
+# 上手くいかないのでいったんつぶす
+#     """
+#     SUB-ROM内ルーチン呼び出し
+#     - 入力: IX=呼び先アドレス（SUB-ROM内）
+#     - 備考: スロット指定はBIOS側が処理する想定（IYは予約=保持）
+#     """
+#     # LD.IY_mn16(b, EXPTBL_MINUS_1)  # IY = SUB-ROMスロット系情報
+#     LD.IX_n16(b, address)
+#     CALL(b, SUBROM)
 
 
 def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
@@ -182,7 +184,8 @@ def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
 # MSX2 環境向け MSX1 カラーパレット (R,G,B: 0–7)
 _MSX2_PALETTE_BYTES = [
     *palette_bytes(0, 0, 0),
-    *palette_bytes(0, 0, 0),
+    # *palette_bytes(0, 0, 0),
+    *palette_bytes(4, 4, 4),  # temp test
     *palette_bytes(2, 5, 2),
     *palette_bytes(3, 5, 3),
     *palette_bytes(2, 2, 6),
@@ -219,9 +222,9 @@ def set_msx2_palette_default_macro(b: Block) -> None:
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
-    # # R#16 に color index 0 をセット
-    # OUT_A(b, VDP_CTRL, 0x00)
-    # OUT_A(b, VDP_CTRL, 0x80 + 16)
+    # R#16 に color index 0 をセット
+    OUT_A(b, VDP_CTRL, 0x00)
+    OUT_A(b, VDP_CTRL, 0x80 + 16)
 
     # HL = PALETTE_DATA
     LD.HL_label(b, "__PALETTE_DATA__")
@@ -230,17 +233,10 @@ def set_msx2_palette_default_macro(b: Block) -> None:
     LD.B_n8(b, 32)
 
     b.label("__MSX2_PAL_LOOP__")
-    LD.A_n8(b, 32)
-    SUB.B(b)
-    LD.D_A(b)  # color id
-    LD.A_mHL(b)  # R & B
+    LD.A_mHL(b)
+    OUT(b, VDP_PAL)
     INC.HL(b)
-    LD.E_mHL(b)  # G
-    PUSH.BC(b)  # 念のためPUSH いらないかも
-    LD.IX_n16(b, SETPLET)  # CALL SETPLET (SUB ROM)
-    CALL(b, SUBROM)
-    POP.BC(b)
-    DJNZ(b, "__MSX2_PAL_LOOP__")  # IF B > 0 LOOP
+    DJNZ(b, "__MSX2_PAL_LOOP__")
 
     b.label("__MSX2_PAL_SET_END__")
     # パレットデータ本体（実行されない領域）
@@ -343,39 +339,38 @@ def ldirvm_macro(
     b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
 
 
-def set_palette_macro(
-        block: Block,
-        color: int, r: int, g: int, b: int,
-        msx1_safe: bool = True,
-        preserve_regs_de: bool = False,
-        preserve_regs_ix: bool = False,
-) -> None:
-    """
-    SETPLET サブロムコールでパレットを設定（MSX2以降）
-    :param block: Block
-    :param color: color 1 ~ 15
-    :param r: red 1 ~ 7
-    :param g: green 1 ~ 7
-    :param b: blue 1 ~ 7
-    :param msx1_safe: msx1では処理を実行しないコードを挿入するか
-    :param preserve_regs_de: DEレジスタを保護
-    :param preserve_regs_ix: IXレジスタを保護
-    """
-    color = color & 0x0F
-    r = r & 0x07
-    g = g & 0x07
-    b = b & 0x07
-    if msx1_safe:
-        get_msxver_macro(block)
-        CP.n8(block, 0x00)
-        RET_Z(block)
-    if preserve_regs_de:
-        PUSH.DE(block)
-    LD.D_n8(block, color)
-    LD.A_n8(block, (r << 4) + b)
-    LD.E_n8(block, g)
-    if preserve_regs_de:
-        POP.DE(block)
-    call_subrom_macro(block, SETPLET, preserve_regs_ix=preserve_regs_ix)
+# def set_palette_macro(
+#         block: Block,
+#         color: int, r: int, g: int, b: int,
+#         msx1_safe: bool = True,
+#         preserve_regs_de: bool = False,
+# ) -> None:
+#     """
+#     SETPLET サブロムコールでパレットを設定（MSX2以降）
+#     ※ 動作未確認
+#     :param block: Block
+#     :param color: color 1 ~ 15
+#     :param r: red 1 ~ 7
+#     :param g: green 1 ~ 7
+#     :param b: blue 1 ~ 7
+#     :param msx1_safe: msx1では処理を実行しないコードを挿入するか
+#     :param preserve_regs_de: DEレジスタを保護
+#     """
+#     color = color & 0x0F
+#     r = r & 0x07
+#     g = g & 0x07
+#     b = b & 0x07
+#     if msx1_safe:
+#         get_msxver_macro(block)
+#         CP.n8(block, 0x00)
+#         RET_Z(block)
+#     if preserve_regs_de:
+#         PUSH.DE(block)
+#     LD.D_n8(block, color)
+#     LD.A_n8(block, (r << 4) + b)
+#     LD.E_n8(block, g)
+#     if preserve_regs_de:
+#         POP.DE(block)
+#     # call_subrom_macro(block, SETPLET)
 
 

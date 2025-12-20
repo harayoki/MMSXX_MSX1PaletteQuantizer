@@ -14,12 +14,12 @@ from pathlib import Path
 try:
     from mmsxxasmhelper.core import *
     from mmsxxasmhelper.msxutils import *
-    from mmsxxasmhelper.utils import rng_next_func
+    from mmsxxasmhelper.utils import rng_next_func, loop_infinite_macro
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from mmsxxasmhelper.core import *
     from mmsxxasmhelper.msxutils import *
-    from mmsxxasmhelper.utils import rng_next_func
+    from mmsxxasmhelper.utils import rng_next_func, loop_infinite_macro
 
 
 ROM_PAGE_SIZE = 0x4000
@@ -178,7 +178,7 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
-    set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
+    set_msx2_palette_default_macro(b)
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
@@ -213,7 +213,7 @@ def _build_palette_random_rom() -> bytes:
 
     # 関数定義
     RNG_NEXT.define(b)
-    RANDOMIZE_PALETTE.define(b)
+    # RANDOMIZE_PALETTE.define(b)
 
     # データ配置 --------------------------------------------------------
     b.label("PATTERN_DATA")
