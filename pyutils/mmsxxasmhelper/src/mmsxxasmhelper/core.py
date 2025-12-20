@@ -632,9 +632,19 @@ class LD:
         LD.rr(b, "B", "A")
 
     @staticmethod
+    def B_H(b: Block) -> None:
+        """LD B,H"""
+        LD.rr(b, "B", "H")
+
+    @staticmethod
     def C_A(b: Block) -> None:
         """LD C,A"""
         LD.rr(b, "C", "A")
+
+    @staticmethod
+    def C_L(b: Block) -> None:
+        """LD C,L"""
+        LD.rr(b, "C", "L")
 
     @staticmethod
     def D_A(b: Block) -> None:
