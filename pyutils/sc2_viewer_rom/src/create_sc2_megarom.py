@@ -46,6 +46,9 @@ LAST_JIFFY_ADDR = 0xC007
 AUTO_SPEED_INDEX_ADDR = 0xC009
 AUTO_SPEED_PREV_ADDR = 0xC00A
 AUTO_INDICATOR_FLAG_ADDR = 0xC00B
+INSTRUCTION_TICK_TOTAL_ADDR = 0xC00C
+INSTRUCTION_LAST_JIFFY_ADDR = 0xC00E
+INSTRUCTION_LINE_BUFFER_ADDR = 0xC010
 
 CHSNS = 0x009C
 CHGET = 0x009F
@@ -72,21 +75,29 @@ KEY_ESC = 0x1B
 KEYBOARD_ROW_SHIFT = 0x06
 KEYBOARD_SHIFT_MASK = 0x01
 
-INSTRUCTION_TEXT = (
+INSTRUCTION_TEXT_STATIC = (
     "MMSXX SC2 VIEWER\r\n"
     "\r\n"
     "SPACE: NEXT + PAUSE\r\n"
     "DOWN: NEXT\r\n"
     "UP: PREV\r\n"
-    "SHIFT+UD: SPD\r\n"
+    "SHIFT+DOWN: FASTER\r\n"
+    "SHIFT+UP: SLOWER\r\n"
     "ESC: FIRST\r\n"
     "\r\n"
-    "PRESS ANY KEY\r\n"
 )
+
+INSTRUCTION_TEXT_WAIT = "PRESS ANY KEY\r\n"
+
+INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00S\r\n"
+INSTRUCTION_AUTO_DIGIT_OFFSET = 14
+INSTRUCTION_LINE_LENGTH = len(INSTRUCTION_AUTO_LINE_TEMPLATE) + 1
 
 INSTRUCTION_BG_COLOR = 0x04
 
 JIFFY_PER_SECOND = 60
+
+INSTRUCTION_SECONDS_TEXT = [f"{value:02d}" for value in range(0, 31)]
 
 AUTO_SPEED_SECONDS = [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
 DEFAULT_AUTO_SPEED_LEVEL = 4
@@ -134,6 +145,7 @@ def build_boot_bank(
     initial_speed_level: int,
     start_paused: bool,
     enable_speed_indicator: bool,
+    instruction_autostart_seconds: int,
 ) -> bytes:
     if not 1 <= image_count <= 0xFF:
         raise ValueError("image_count must be between 1 and 255")
@@ -141,6 +153,8 @@ def build_boot_bank(
         raise ValueError("speed_tick_levels must not be empty")
     if not 0 <= initial_speed_level < len(speed_tick_levels):
         raise ValueError("initial_speed_level out of range")
+    if not 0 <= instruction_autostart_seconds <= 30:
+        raise ValueError("instruction_autostart_seconds must be between 0 and 30")
     for value in speed_tick_levels:
         if not 0 < value <= 0xFFFF:
             raise ValueError("speed_tick_levels values must be between 1 and 65535")
@@ -171,6 +185,46 @@ def build_boot_bank(
         block.label("print_string_end")
 
     PRINT_STRING = Func("print_string", print_string)
+
+    def update_instruction_countdown(block: Block) -> None:
+        LD.HL_mn16(block, INSTRUCTION_TICK_TOTAL_ADDR)
+        LD.BC_n16(block, JIFFY_PER_SECOND)
+        LD.D_n8(block, 0)
+
+        block.label("instr_seconds_loop")
+        XOR.A(block)
+        block.emit(0xED, 0x42)  # SBC HL,BC
+        JR_C(block, "instr_seconds_done")
+        INC.D(block)
+        JR(block, "instr_seconds_loop")
+
+        block.label("instr_seconds_done")
+        ADD.HL_BC(block)
+        LD.A_D(block)
+
+        LD.HL_label(block, "INSTR_SECONDS_TABLE")
+        LD.E_A(block)
+        LD.D_n8(block, 0)
+        ADD.HL_DE(block)
+        ADD.HL_DE(block)
+        LD.DE_n16(block, INSTRUCTION_LINE_BUFFER_ADDR + INSTRUCTION_AUTO_DIGIT_OFFSET)
+        LD.A_mHL(block)
+        LD.mDE_A(block)
+        INC.DE(block)
+        INC.HL(block)
+        LD.A_mHL(block)
+        LD.mDE_A(block)
+        block.label("instr_update_end")
+
+    UPDATE_INSTRUCTION_COUNTDOWN = Func("update_instruction_countdown", update_instruction_countdown)
+
+    def print_instruction_line(block: Block) -> None:
+        LD.A_n8(block, 0x0D)
+        CALL(block, CHPUT)
+        LD.HL_n16(block, INSTRUCTION_LINE_BUFFER_ADDR)
+        PRINT_STRING.call(block)
+
+    PRINT_INSTRUCTION_LINE = Func("print_instruction_line", print_instruction_line)
 
     attr_bytes_per_level = speed_level_count * 4
 
@@ -402,9 +456,77 @@ def build_boot_bank(
         LD.mn16_A(b, BAKCLR)
         LD.mn16_A(b, BDRCLR)
         CALL(b, CHGCLR)
-        LD.HL_label(b, "INSTR_TEXT")
+
+        LD.HL_label(b, "INSTR_TEXT_STATIC")
         PRINT_STRING.call(b)
-        CALL(b, CHGET)
+
+        if instruction_autostart_seconds > 0:
+            LD.HL_n16(b, instruction_autostart_seconds * JIFFY_PER_SECOND)
+            LD.mn16_HL(b, INSTRUCTION_TICK_TOTAL_ADDR)
+            LD.HL_mn16(b, JIFFY_ADDR)
+            LD.mn16_HL(b, INSTRUCTION_LAST_JIFFY_ADDR)
+
+            LD.HL_label(b, "INSTR_AUTO_TEMPLATE")
+            LD.DE_n16(b, INSTRUCTION_LINE_BUFFER_ADDR)
+            LD.BC_n16(b, INSTRUCTION_LINE_LENGTH)
+            b.emit(0xED, 0xB0)  # LDIR
+
+            UPDATE_INSTRUCTION_COUNTDOWN.call(b)
+            PRINT_INSTRUCTION_LINE.call(b)
+
+            b.label("instruction_wait_loop")
+            CALL(b, CHSNS)
+            CP.n8(b, 0)
+            JR_NZ(b, "instruction_wait_key")
+
+            LD.HL_mn16(b, INSTRUCTION_LAST_JIFFY_ADDR)
+            LD.D_H(b)
+            LD.E_L(b)
+
+            LD.HL_mn16(b, JIFFY_ADDR)
+            LD.B_H(b)
+            LD.C_L(b)
+
+            LD.A_L(b)
+            CP.E(b)
+            JR_NZ(b, "instruction_tick_changed")
+            LD.A_H(b)
+            CP.D(b)
+            JR_NZ(b, "instruction_tick_changed")
+            JR(b, "instruction_wait_loop")
+
+            b.label("instruction_tick_changed")
+            XOR.A(b)
+            b.emit(0xED, 0x52)  # SBC HL,DE
+            LD.D_H(b)
+            LD.E_L(b)
+
+            LD.H_B(b)
+            LD.L_C(b)
+            LD.mn16_HL(b, INSTRUCTION_LAST_JIFFY_ADDR)
+
+            LD.HL_mn16(b, INSTRUCTION_TICK_TOTAL_ADDR)
+            XOR.A(b)
+            b.emit(0xED, 0x52)  # SBC HL,DE
+            JR_C(b, "instruction_start_auto")
+            LD.A_H(b)
+            OR.L(b)
+            JR_Z(b, "instruction_start_auto")
+            LD.mn16_HL(b, INSTRUCTION_TICK_TOTAL_ADDR)
+            UPDATE_INSTRUCTION_COUNTDOWN.call(b)
+            PRINT_INSTRUCTION_LINE.call(b)
+            JR(b, "instruction_wait_loop")
+
+            b.label("instruction_wait_key")
+            CALL(b, CHGET)
+            JR(b, "instruction_end")
+
+            b.label("instruction_start_auto")
+            b.label("instruction_end")
+        else:
+            LD.HL_label(b, "INSTR_TEXT_WAIT")
+            PRINT_STRING.call(b)
+            CALL(b, CHGET)
 
     LD.A_n8(b, 2)
     CALL(b, CHGMOD)
@@ -516,8 +638,17 @@ def build_boot_bank(
     HANDLE_AUTO.define(b)
     SPEED_UP.define(b)
     SLOW_DOWN.define(b)
-    b.label("INSTR_TEXT")
-    DB(b, *INSTRUCTION_TEXT.encode("ascii"), 0x00)
+    UPDATE_INSTRUCTION_COUNTDOWN.define(b)
+    PRINT_INSTRUCTION_LINE.define(b)
+
+    b.label("INSTR_TEXT_STATIC")
+    DB(b, *INSTRUCTION_TEXT_STATIC.encode("ascii"), 0x00)
+    b.label("INSTR_TEXT_WAIT")
+    DB(b, *INSTRUCTION_TEXT_WAIT.encode("ascii"), 0x00)
+    b.label("INSTR_AUTO_TEMPLATE")
+    DB(b, *INSTRUCTION_AUTO_LINE_TEMPLATE.encode("ascii"), 0x00)
+    b.label("INSTR_SECONDS_TABLE")
+    DB(b, *"".join(INSTRUCTION_SECONDS_TEXT).encode("ascii"))
 
     b.label("AUTO_SPEED_TICKS_TABLE")
     DW(b, *speed_tick_levels)
@@ -558,6 +689,7 @@ def build_rom(
     initial_speed_level: int,
     start_paused: bool,
     enable_speed_indicator: bool,
+    instruction_autostart_seconds: int,
 ) -> bytes:
     max_images = MAX_BANKS - 1
     image_count = len(images)
@@ -583,6 +715,7 @@ def build_rom(
         initial_speed_level,
         start_paused,
         enable_speed_indicator,
+        instruction_autostart_seconds,
     )
     banks = [bank0]
 
@@ -654,6 +787,19 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Hide the speed indicator (default)",
     )
+    parser.add_argument(
+        "--instruction-autostart",
+        type=int,
+        default=3,
+        help="Seconds before auto-starting from the instruction screen (0 waits for key, max 30, default: 3).",
+    )
+    parser.add_argument(
+        "--instruction-wait-key",
+        dest="instruction_autostart",
+        action="store_const",
+        const=0,
+        help="Disable auto-start and wait for a key press on the instruction screen.",
+    )
     parser.set_defaults(with_instructions=True, speed_indicator=False)
     return parser.parse_args()
 
@@ -699,6 +845,8 @@ def main() -> None:
 
     if args.auto_interval < 0:
         raise SystemExit("--auto-interval must be zero or greater")
+    if not 0 <= args.instruction_autostart <= 30:
+        raise SystemExit("--instruction-autostart must be between 0 and 30")
 
     speed_tick_levels = [max(1, seconds_to_jiffies(sec)) for sec in AUTO_SPEED_SECONDS]
     start_paused = False
@@ -724,6 +872,7 @@ def main() -> None:
         initial_speed_level,
         start_paused,
         args.speed_indicator,
+        args.instruction_autostart,
     )
     out_path = resolve_output_path(args.output, sc2_paths[0])
     out_path.write_bytes(rom_bytes)
