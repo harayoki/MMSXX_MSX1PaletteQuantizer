@@ -787,7 +787,16 @@ def build_boot_bank(
     DB(b, *hidden_attr_data)
 
     b.label("SPEED_PATTERN")
-    speed_pattern = [0x38, 0x70, 0xE0, 0xE0, 0x38, 0x70, 0xE0, 0x80]
+    speed_pattern = [
+        0x18,
+        0x3C,
+        0x7E,
+        0xFF,
+        0x66,
+        0x42,
+        0x00,
+        0x00,
+    ]
     DB(b, *speed_pattern)
 
     return bytes(pad_bytes(list(b.finalize(origin=0x4000)), PAGE_SIZE, 0x00))
