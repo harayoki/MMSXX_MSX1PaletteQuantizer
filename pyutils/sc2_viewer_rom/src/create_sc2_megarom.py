@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 
 try:
@@ -555,9 +556,19 @@ def build_rom(
     start_paused: bool,
     enable_speed_indicator: bool,
 ) -> bytes:
+    max_images = MAX_BANKS - 1
     image_count = len(images)
-    if image_count + 1 > MAX_BANKS:
-        raise ValueError("Too many images for a 4 MiB ASCII16 MegaROM")
+    if image_count > max_images:
+        warnings.warn(
+            (
+                "Too many images for a 4 MiB ASCII16 MegaROM; "
+                "only the first %d of %d will be embedded"
+            )
+            % (max_images, image_count),
+            RuntimeWarning,
+        )
+        images = images[:max_images]
+        image_count = len(images)
     if not 0 <= background_color <= 0x0F:
         raise ValueError("background_color must be between 0 and 15")
 
