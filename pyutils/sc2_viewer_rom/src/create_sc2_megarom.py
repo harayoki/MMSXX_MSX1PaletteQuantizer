@@ -64,7 +64,7 @@ SPRITE_PATTERN_TABLE_ADDR = 0x3800
 SPEED_INDICATOR_PATTERN_ID = 0x00
 SPEED_INDICATOR_COLOR = 0x0F
 SPEED_INDICATOR_X = 0xF8
-SPEED_INDICATOR_Y_START = 0x08
+SPEED_INDICATOR_Y_BOTTOM = 0xB8
 SPEED_INDICATOR_Y_STEP = 0x08
 
 KEY_SPACE = 0x20
@@ -79,6 +79,7 @@ INSTRUCTION_TEXT_STATIC = (
     "MMSXX SC2 VIEWER\r\n"
     "\r\n"
     "SPACE: NEXT + PAUSE\r\n"
+    "SHIFT+SPACE: PREV\r\n"
     "DOWN: NEXT\r\n"
     "UP: PREV\r\n"
     "SHIFT+DOWN: FASTER\r\n"
@@ -89,7 +90,7 @@ INSTRUCTION_TEXT_STATIC = (
 
 INSTRUCTION_TEXT_WAIT = "PRESS ANY KEY\r\n"
 
-INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00S\r\n"
+INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00S"
 INSTRUCTION_AUTO_DIGIT_OFFSET = 14
 INSTRUCTION_LINE_LENGTH = len(INSTRUCTION_AUTO_LINE_TEMPLATE) + 1
 
@@ -596,6 +597,16 @@ def build_boot_bank(
     JR(b, "main_loop")
 
     b.label("key_space")
+    LD.A_D(b)
+    AND.n8(b, KEYBOARD_SHIFT_MASK)
+    JR_Z(b, "key_space_next")
+    LD.B_n8(b, 1)
+    JR(b, "key_space_pause_start")
+
+    b.label("key_space_next")
+    LD.B_n8(b, 0)
+
+    b.label("key_space_pause_start")
     LD.HL_mn16(b, AUTO_INTERVAL_ADDR)
     LD.A_H(b)
     OR.L(b)
@@ -606,6 +617,13 @@ def build_boot_bank(
     b.label("key_space_pause_set")
     LD.HL_n16(b, 0)
     SET_AUTO_INTERVAL.call(b)
+    LD.A_B(b)
+    OR.A(b)
+    JR_Z(b, "key_space_do_next")
+    PREV_IMAGE.call(b)
+    JR(b, "main_loop")
+
+    b.label("key_space_do_next")
     NEXT_IMAGE.call(b)
     JR(b, "main_loop")
 
@@ -658,7 +676,7 @@ def build_boot_bank(
         visible_marks = speed_level_count - level
         for idx in range(speed_level_count):
             if idx < visible_marks:
-                y = (SPEED_INDICATOR_Y_START + (idx * SPEED_INDICATOR_Y_STEP)) & 0xFF
+                y = (SPEED_INDICATOR_Y_BOTTOM - (idx * SPEED_INDICATOR_Y_STEP)) & 0xFF
             else:
                 y = 0xD0
             speed_attr_data.extend(
