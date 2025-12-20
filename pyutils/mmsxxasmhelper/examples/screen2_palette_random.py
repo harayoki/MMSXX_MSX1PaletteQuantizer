@@ -178,6 +178,7 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
+    set_screen_colors_macro(b, 15,0,0, 2)
     set_msx2_palette_default_macro(b)
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
@@ -191,6 +192,8 @@ def _build_palette_random_rom() -> bytes:
 
     LD.HL_label(b, "NAME_TABLE")
     ldirvm_macro(b, dest=NAME_TABLE_ADDR, length=len(name_table))
+
+    loop_infinite_macro(b)
 
     # RNG シード: JIFFY の 2 バイトを XOR
     LD.A_mn16(b, JIFFY_ADDR)
@@ -230,6 +233,7 @@ def _build_palette_random_rom() -> bytes:
 
 def main() -> None:
     rom = _build_palette_random_rom()
+    # print(rom)
     out_dir = Path(__file__).resolve().parent / "dist"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "screen2_palette_random.rom"

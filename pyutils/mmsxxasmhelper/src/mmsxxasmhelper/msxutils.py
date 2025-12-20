@@ -177,15 +177,16 @@ def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
     - 1 バイト目: 0R2 R1 R0 B2 B1 B0 0 (R/B はビット 4–6 / 1–3)
     - 2 バイト目: 0000 G2 G1 G0
     """
-
-    return ((r & 0b111) << 4) | ((b & 0b111) << 1), g & 0b111
+    # r = int(r * 7 / 255)
+    # g = int(g * 7 / 255)
+    # b = int(b * 7 / 255)
+    return ((r & 0x07) << 4) | (b & 0x07), g & 0x07
 
 
 # MSX2 環境向け MSX1 カラーパレット (R,G,B: 0–7)
 _MSX2_PALETTE_BYTES = [
     *palette_bytes(0, 0, 0),
-    # *palette_bytes(0, 0, 0),
-    *palette_bytes(4, 4, 4),  # temp test
+    *palette_bytes(0, 0, 0),
     *palette_bytes(2, 5, 2),
     *palette_bytes(3, 5, 3),
     *palette_bytes(2, 2, 6),
@@ -244,6 +245,10 @@ def set_msx2_palette_default_macro(b: Block) -> None:
     b.label("__PALETTE_DATA__")
     DB(b, *_MSX2_PALETTE_BYTES)
     b.label("__MSX2_PAL_DATA_END__")
+
+    # print("-----")
+    # print(_MSX2_PALETTE_BYTES)
+    # print("-----")
 
 
 def set_screen_mode_macro(b: Block, mode: int) -> None:
