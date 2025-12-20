@@ -647,14 +647,34 @@ class LD:
         LD.rr(b, "D", "B")
 
     @staticmethod
+    def D_H(b: Block) -> None:
+        """LD D,H"""
+        LD.rr(b, "D", "H")
+
+    @staticmethod
     def E_A(b: Block) -> None:
         """LD E,A"""
         LD.rr(b, "E", "A")
 
     @staticmethod
+    def E_L(b: Block) -> None:
+        """LD E,L"""
+        LD.rr(b, "E", "L")
+
+    @staticmethod
     def H_A(b: Block) -> None:
         """LD H,A"""
         LD.rr(b, "H", "A")
+
+    @staticmethod
+    def H_B(b: Block) -> None:
+        """LD H,B"""
+        LD.rr(b, "H", "B")
+
+    @staticmethod
+    def L_C(b: Block) -> None:
+        """LD L,C"""
+        LD.rr(b, "L", "C")
 
 
     # TODO その他 レジスタ間のLDは必要時に増やしていく
