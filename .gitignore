@@ -62,5 +62,9 @@ __pycache__/
 _sdk_temp_/
 tests/msx1pq_outputs/
 tests/msx1pq_autogen_input.png
- nuitka-crash-report.xml
+nuitka-crash-report.xml
+~*
+*~
+*.rom
+*.sc2
 
