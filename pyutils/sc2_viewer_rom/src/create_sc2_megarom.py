@@ -77,7 +77,7 @@ INSTRUCTION_TEXT_STATIC = (
 
 INSTRUCTION_TEXT_WAIT = "PRESS ANY KEY\r\n"
 
-INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00 S"
+INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00 Sec."
 INSTRUCTION_AUTO_DIGIT_OFFSET = 14
 INSTRUCTION_LINE_LENGTH = len(INSTRUCTION_AUTO_LINE_TEMPLATE) + 1
 
@@ -784,7 +784,7 @@ def parse_args() -> argparse.Namespace:
         "--speed-indicator",
         dest="speed_indicator",
         action="store_true",
-        help="Show a compact speed indicator using sprites in the top-right corner",
+        help="Show a compact speed indicator using sprites in the bottom-right corner",
     )
     parser.add_argument(
         "--no-speed-indicator",
@@ -795,7 +795,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--instruction-autostart",
         type=int,
-        default=3,
+        default=5,
         help="Seconds before auto-starting from the instruction screen (0 waits for key, max 30, default: 3).",
     )
     parser.add_argument(
