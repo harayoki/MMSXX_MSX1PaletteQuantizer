@@ -14,12 +14,12 @@ from pathlib import Path
 try:
     from mmsxxasmhelper.core import *
     from mmsxxasmhelper.msxutils import *
-    from mmsxxasmhelper.utils import pad_bytes
+    from mmsxxasmhelper.utils import rng_next_func
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from mmsxxasmhelper.core import *
     from mmsxxasmhelper.msxutils import *
-    from mmsxxasmhelper.utils import pad_bytes
+    from mmsxxasmhelper.utils import rng_next_func
 
 
 ROM_PAGE_SIZE = 0x4000
@@ -83,21 +83,9 @@ def _build_color_data() -> bytes:
 
 
 # ルーチン定義 ------------------------------------------------------
-def _rng_next(b: Block) -> None:
-    """
-    8bit LCG: state = state * 5 + 1.
-    """
-    LD.A_mn16(b, RNG_STATE_ADDR)
-    LD.rr(b, "B", "A")
-    ADD.A_A(b)
-    ADD.A_A(b)
-    ADD.A_B(b)
-    INC.A(b)
-    LD.mn16_A(b, RNG_STATE_ADDR)
-    RET(b)
 
 
-RNG_NEXT = Func("rng_next", _rng_next)
+RNG_NEXT = rng_next_func(RNG_STATE_ADDR)
 
 
 def _randomize_palette(b: Block) -> None:

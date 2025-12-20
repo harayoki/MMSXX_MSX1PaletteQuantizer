@@ -295,8 +295,7 @@ def str_bytes(text: str, encoding: str = "ascii") -> List[int]:
 
 def const_string(name: str, text: str, encoding: str = "ascii") -> None:
     """
-    文字列をそのまま const_bytes に登録する糖衣関数。
-
+    文字列をそのまま const_bytes に登録する便利関数。
     例:
         const_string("TITLE", "HELLO!")
     """
@@ -554,13 +553,11 @@ class LD:
     @staticmethod
     def A_B(b: Block) -> None:
         """LD A,B"""
-
         LD.rr(b, "A", "B")
 
     @staticmethod
     def A_C(b: Block) -> None:
         """LD A,C"""
-
         LD.rr(b, "A", "C")
 
     @staticmethod
@@ -572,26 +569,29 @@ class LD:
     @staticmethod
     def A_E(b: Block) -> None:
         """LD A,E"""
-
         LD.rr(b, "A", "E")
 
     @staticmethod
     def A_H(b: Block) -> None:
         """LD A,H"""
-
         LD.rr(b, "A", "H")
 
     @staticmethod
     def A_L(b: Block) -> None:
         """LD A,L"""
-
         LD.rr(b, "A", "L")
 
     @staticmethod
     def A_A(b: Block) -> None:
         """LD A,A"""
-
         LD.rr(b, "A", "A")
+
+    @staticmethod
+    def B_A(b: Block) -> None:
+        """LD B,A"""
+        LD.rr(b, "B", "A")
+
+    # TODO その他 レジスタ間のLDは必要時に増やしていく
 
     # ---- 8bit 即値ロード ----
 
@@ -1322,6 +1322,7 @@ def RLCA(b: Block) -> None:
 # ---------------------------------------------------------------------------
 # INC / DEC 命令
 # ---------------------------------------------------------------------------
+
 
 class INC:
     """INC 系命令。"""
