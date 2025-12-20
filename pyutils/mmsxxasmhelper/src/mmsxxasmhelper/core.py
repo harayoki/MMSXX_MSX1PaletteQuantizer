@@ -682,6 +682,11 @@ class LD:
         LD.rr(b, "H", "B")
 
     @staticmethod
+    def L_A(b: Block) -> None:
+        """LD L,A"""
+        LD.rr(b, "L", "A")
+
+    @staticmethod
     def L_C(b: Block) -> None:
         """LD L,C"""
         LD.rr(b, "L", "C")
@@ -986,6 +991,11 @@ class LD:
         LD (IY+d),n8
         """
         b.emit(0xFD, 0x36, disp & 0xFF, value & 0xFF)
+
+    @staticmethod
+    def DE_label(b: Block, label: str) -> None:
+        pos = b.emit(0x11, 0x00, 0x00)
+        b.add_abs16_fixup(pos + 1, label)
 
     @staticmethod
     def HL_label(b: Block, label: str) -> None:

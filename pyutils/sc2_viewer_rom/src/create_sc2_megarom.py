@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 try:
-    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NZ, JR_Z, LD, OR, XOR
+    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, XOR
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -18,7 +18,7 @@ try:
     from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".." / "mmsxxasmhelper" / "src"))
-    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NZ, JR_Z, LD, OR, XOR
+    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, XOR
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
