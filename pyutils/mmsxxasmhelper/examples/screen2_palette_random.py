@@ -178,7 +178,7 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
-    # set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
+    set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
@@ -200,7 +200,7 @@ def _build_palette_random_rom() -> bytes:
     LD.mn16_A(b, RNG_STATE_ADDR)
 
     b.label("main_loop")
-    RANDOMIZE_PALETTE.call(b)
+    # RANDOMIZE_PALETTE.call(b)
 
     # 約 30 フレーム待機 (HALT で VBLANK 待ち合わせ)
     LD.B_n8(b, 30)

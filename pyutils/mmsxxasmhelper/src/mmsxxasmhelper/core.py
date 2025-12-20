@@ -63,7 +63,7 @@ __all__ = [
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
     "Func",
     "DB", "DW",
-    "LD", "ADD", "CP", "AND", "OR", "XOR",
+    "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR",
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_A", "OUT_C",
@@ -636,6 +636,11 @@ class LD:
         LD.rr(b, "D", "A")
 
     @staticmethod
+    def D_B(b: Block) -> None:
+        """LD D,A"""
+        LD.rr(b, "D", "B")
+
+    @staticmethod
     def E_A(b: Block) -> None:
         """LD E,A"""
         LD.rr(b, "E", "A")
@@ -746,6 +751,31 @@ class LD:
     def A_mHL(b: Block) -> None:
         """LD A,(HL)"""
         b.emit(0x7E)
+
+    @staticmethod
+    def B_mHL(b: Block) -> None:
+        """LD B,(HL)"""
+        b.emit(0x46)
+    @staticmethod
+    def C_mHL(b: Block) -> None:
+        """LD C,(HL)"""
+        b.emit(0x4E)
+    @staticmethod
+    def D_mHL(b: Block) -> None:
+        """LD D,(HL)"""
+        b.emit(0x56)
+    @staticmethod
+    def E_mHL(b: Block) -> None:
+        """LD E,(HL)"""
+        b.emit(0x5E)
+    @staticmethod
+    def H_mHL(b: Block) -> None:
+        """LD H,(HL)"""
+        b.emit(0x66)
+    @staticmethod
+    def L_mHL(b: Block) -> None:
+        """LD L,(HL)"""
+        b.emit(0x6E)
 
     @staticmethod
     def mBC_A(b: Block) -> None:
@@ -1074,6 +1104,41 @@ class ADD:
         b.emit(0xFD, 0x39)
 
 
+class SUB:
+
+    @staticmethod
+    def B(b: Block):
+        b.emit(0x90)
+
+    @staticmethod
+    def C(b: Block):
+        b.emit(0x91)
+
+    @staticmethod
+    def D(b: Block):
+        b.emit(0x92)
+
+    @staticmethod
+    def E(b: Block):
+        b.emit(0x93)
+
+    @staticmethod
+    def H(b: Block):
+        b.emit(0x94)
+
+    @staticmethod
+    def L(b: Block):
+        b.emit(0x95)
+
+    @staticmethod
+    def mHL(b: Block):
+        b.emit(0x96)
+
+    @staticmethod
+    def A(b: Block):
+        b.emit(0x97)
+
+
 class CP:
     """CP 系命令。"""
 
@@ -1355,7 +1420,6 @@ class XOR:
 
 # ---------------------------------------------------------------------------
 # ビット操作
-# TODO 実装
 # ---------------------------------------------------------------------------
 
 
@@ -1363,16 +1427,33 @@ def RLCA(b: Block) -> None:
     b.emit(0x07)
 
 
-"""
-| | `RLCA` | `07` | 1 | Aレジスタの左ローテート（キャリー経由なし） |
-| | `RRCA` | `0F` | 1 | Aレジスタの右ローテート（キャリー経由なし） |
-| | `RLA` | `17` | 1 | Aレジスタの左ローテート（キャリー経由） |
-| | `RRA` | `1F` | 1 | Aレジスタの右ローテート（キャリー経由） |
-| | `DAA` | `27` | 1 | 2進化10進補正 |
-| | `CPL` | `2F` | 1 | Aレジスタをビット反転 |
-| | `SCF` | `37` | 1 | キャリーフラグセット |
-| | `CCF` | `3F` | 1 | キャリーフラグ反転 |
-"""
+def RRCA(b: Block) -> None:
+    b.emit(0x0F)
+
+
+def RLA(b: Block) -> None:
+    b.emit(0x17)
+
+
+def RRA(b: Block) -> None:
+    b.emit(0x1F)
+
+
+def DAA(b: Block) -> None:
+    b.emit(0x27)
+
+
+def CPL(b: Block) -> None:
+    b.emit(0x2F)
+
+
+def SCF(b: Block) -> None:
+    b.emit(0x37)
+
+
+def CCF(b: Block) -> None:
+    b.emit(0x3F)
+
 
 # ---------------------------------------------------------------------------
 # INC / DEC 命令

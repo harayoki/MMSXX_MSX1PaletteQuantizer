@@ -209,7 +209,6 @@ def get_msxver_macro(b: Block) -> None:
 
 def set_msx2_palette_default_macro(b: Block) -> None:
     """MSX2 以上でデフォルトパレットを設定するマクロ。
-
     レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
 
     """
@@ -220,9 +219,9 @@ def set_msx2_palette_default_macro(b: Block) -> None:
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
-    # R#16 に color index 0 をセット
-    OUT_A(b, VDP_CTRL, 0x00)
-    OUT_A(b, VDP_CTRL, 0x80 + 16)
+    # # R#16 に color index 0 をセット
+    # OUT_A(b, VDP_CTRL, 0x00)
+    # OUT_A(b, VDP_CTRL, 0x80 + 16)
 
     # HL = PALETTE_DATA
     LD.HL_label(b, "__PALETTE_DATA__")
@@ -231,11 +230,17 @@ def set_msx2_palette_default_macro(b: Block) -> None:
     LD.B_n8(b, 32)
 
     b.label("__MSX2_PAL_LOOP__")
-    b.emit(0x7E)        # LD A,(HL)
-    b.emit(0xD3, VDP_PAL)  # OUT (9Ah),A
-    b.emit(0x23)        # INC HL
-    disp = (b.labels["__MSX2_PAL_LOOP__"] - (b.pc + 1)) & 0xFF
-    b.emit(0x10, disp)  # DJNZ __MSX2_PAL_LOOP__
+    LD.A_n8(b, 32)
+    SUB.B(b)
+    LD.D_A(b)  # color id
+    LD.A_mHL(b)  # R & B
+    INC.HL(b)
+    LD.E_mHL(b)  # G
+    PUSH.BC(b)  # 念のためPUSH いらないかも
+    LD.IX_n16(b, SETPLET)  # CALL SETPLET (SUB ROM)
+    CALL(b, SUBROM)
+    POP.BC(b)
+    DJNZ(b, "__MSX2_PAL_LOOP__")  # IF B > 0 LOOP
 
     b.label("__MSX2_PAL_SET_END__")
     # パレットデータ本体（実行されない領域）
