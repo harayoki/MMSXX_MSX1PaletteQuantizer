@@ -33,8 +33,9 @@ RNG_STATE_ADDR = 0xC200
 
 
 def _build_name_table_data() -> bytes:
-    """矩形配置済みのネームテーブルデータを生成する。"""
-
+    """
+    矩形配置済みのネームテーブルデータを生成する。
+    """
     width = 32
     height = 24
     rect_w = 4
@@ -81,6 +82,93 @@ def _build_color_data() -> bytes:
     return bytes(color_data)
 
 
+# ルーチン定義 ------------------------------------------------------
+def _rng_next(b: Block) -> None:
+    """
+    8bit LCG: state = state * 5 + 1.
+    """
+    LD.A_mn16(b, RNG_STATE_ADDR)
+    LD.rr(b, "B", "A")
+    ADD.A_A(b)
+    ADD.A_A(b)
+    ADD.A_B(b)
+    INC.A(b)
+    LD.mn16_A(b, RNG_STATE_ADDR)
+    RET(b)
+
+
+RNG_NEXT = Func("rng_next", _rng_next)
+
+
+def _randomize_palette(b: Block) -> None:
+    # HL = PALETTE_BUFFER
+    LD.HL_n16(b, PALETTE_BUFFER_ADDR)
+
+    # エントリ0は黒で固定
+    LD.mHL_n8(b, 0x00)
+    INC.HL(b)
+    LD.mHL_n8(b, 0x00)
+    INC.HL(b)
+
+    # 残り 15 色を生成
+    LD.B_n8(b, 15)
+    b.label("LOOP_PALETTE_CREATE")
+
+    RNG_NEXT.call(b)
+    AND.n8(b, 0x07)
+    LD.rr(b, "D", "A")  # R
+
+    RNG_NEXT.call(b)
+    AND.n8(b, 0x07)
+    LD.rr(b, "E", "A")  # G
+
+    RNG_NEXT.call(b)
+    AND.n8(b, 0x07)
+    LD.rr(b, "C", "A")  # B
+
+    # 1 バイト目: R << 4 | B << 1
+    LD.rr(b, "A", "D")
+    RLCA(b)
+    RLCA(b)
+    RLCA(b)
+    RLCA(b)
+    LD.rr(b, "H", "A")
+    LD.rr(b, "A", "C")
+    ADD.A_A(b)
+    AND.n8(b, 0x0E)
+    OR.H(b)
+    LD.mHL_A(b)
+    INC.HL(b)
+
+    # 2 バイト目: G
+    LD.rr(b, "A", "E")
+    LD.mHL_A(b)
+    INC.HL(b)
+
+    DEC.B(b)
+    JP_NZ(b, "LOOP_PALETTE_CREATE")
+
+    # VDP パレットレジスタへ転送 (index 0 から 32 バイト)
+    OUT_A(b, VDP_CTRL, 0x00)
+    OUT_A(b, VDP_CTRL, 0x80 + PALETTE_REGISTER)
+    LD.HL_n16(b, PALETTE_BUFFER_ADDR)
+    LD.B_n8(b, 32)
+    b.label("LOOP_PALETTE_OUT")
+    LD.A_mHL(b)  # LD A,(HL)
+    LD.A_n8(b, 0x99)  # test
+    OUT(b, VDP_PAL)  # OUT (9Ah),A
+
+    # RET(b)  # test
+
+    INC.HL(b)       # INC HL
+    JP_NZ(b, "LOOP_PALETTE_OUT")  # DJNZ LOOP_PALETTE_OUT
+
+    RET(b)
+
+
+RANDOMIZE_PALETTE = Func("randomize_palette", _randomize_palette)
+
+
 def _build_palette_random_rom() -> bytes:
     name_table = _build_name_table_data()
     pattern_data = _build_pattern_data()
@@ -88,91 +176,6 @@ def _build_palette_random_rom() -> bytes:
 
     b = Block()
     place_msx_rom_header_macro(b, entry_point=0x4010)
-
-    # ルーチン定義 ------------------------------------------------------
-    def rng_next(block: Block) -> None:
-        """8bit LCG: state = state * 5 + 1."""
-
-        LD.A_mn16(block, RNG_STATE_ADDR)
-        LD.rr(block, "B", "A")
-        ADD.A_A(block)
-        ADD.A_A(block)
-        ADD.A_B(block)
-        INC.A(block)
-        LD.mn16_A(block, RNG_STATE_ADDR)
-        RET(b)
-
-    RNG_NEXT = Func("rng_next", rng_next)
-
-    def randomize_palette(b: Block) -> None:
-        RET(b)
-        # HL = PALETTE_BUFFER
-        LD.HL_n16(b, PALETTE_BUFFER_ADDR)
-
-        # エントリ0は黒で固定
-        LD.mHL_n8(b, 0x00)
-        INC.HL(b)
-        LD.mHL_n8(b, 0x00)
-        INC.HL(b)
-
-        # 残り 15 色を生成
-        LD.B_n8(b, 15)
-        b.label("LOOP_PALETTE_CREATE")
-
-        RNG_NEXT.call(b)
-        AND.n8(b, 0x07)
-        LD.rr(b, "D", "A")  # R
-
-        RNG_NEXT.call(b)
-        AND.n8(b, 0x07)
-        LD.rr(b, "E", "A")  # G
-
-        RNG_NEXT.call(b)
-        AND.n8(b, 0x07)
-        LD.rr(b, "C", "A")  # B
-
-        # 1 バイト目: R << 4 | B << 1
-        LD.rr(b, "A", "D")
-        RLCA(b)
-        RLCA(b)
-        RLCA(b)
-        RLCA(b)
-        LD.rr(b, "H", "A")
-        LD.rr(b, "A", "C")
-        ADD.A_A(b)
-        AND.n8(b, 0x0E)
-        OR.H(b)
-        LD.mHL_A(b)
-        INC.HL(b)
-
-        # 2 バイト目: G
-        LD.rr(b, "A", "E")
-        LD.mHL_A(b)
-        INC.HL(b)
-
-        DEC.B(b)
-        JP_NZ(b, "LOOP_PALETTE_CREATE")
-
-        # VDP パレットレジスタへ転送 (index 0 から 32 バイト)
-        OUT(b, VDP_CTRL, 0x00)
-        OUT(b, VDP_CTRL, 0x80 + PALETTE_REGISTER)
-        LD.HL_n16(b, PALETTE_BUFFER_ADDR)
-        LD.B_n8(b, 32)
-        b.label("LOOP_PALETTE_OUT")
-        LD.A_mHL(b)  # LD A,(HL)
-        LD.A_n8(b, 0x99)
-        OUT(b, VDP_PAL)  # OUT (9Ah),A
-
-        # RET(b)  # test
-
-        INC.HL(b)       # INC HL
-        # disp = (b.labels["LOOP_PALETTE_OUT"] - (b.pc + 1)) & 0xFF
-        # b.emit(0x10, disp)
-        JP_NZ(b, "LOOP_PALETTE_OUT")  # DJNZ LOOP_PALETTE_OUT
-
-        RET(b)
-
-    RANDOMIZE_PALETTE = Func("randomize_palette", randomize_palette)
 
     # メインコード ------------------------------------------------------
     b.label("main")
@@ -182,7 +185,7 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
-    # set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
+    set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
@@ -204,7 +207,7 @@ def _build_palette_random_rom() -> bytes:
     LD.mn16_A(b, RNG_STATE_ADDR)
 
     b.label("main_loop")
-    RANDOMIZE_PALETTE.call(b)  # MSX2 以降でここで画面が真っ黒になる
+    # RANDOMIZE_PALETTE.call(b)  # MSX2 以降でここで画面が真っ黒になる
 
     # 約 30 フレーム待機 (HALT で VBLANK 待ち合わせ)
     LD.B_n8(b, 30)

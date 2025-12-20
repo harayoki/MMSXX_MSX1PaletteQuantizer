@@ -22,16 +22,11 @@ __all__ = [
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
-    "test_fill_vram_macro",
-    # "with_register_preserve",
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
 ]
-
-
 P = ParamSpec("P")
-
 
 
 def with_register_preserve(
@@ -60,6 +55,7 @@ def with_register_preserve(
             POP.r(b, reg)
 
     return wrapper
+
 
 # システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
 SP_TEMP_RAM = 0xF300
@@ -198,19 +194,15 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegNames
     """
 
     # --- MSX バージョン確認 ---
-    get_msxver_macro(b)  # A = MSXVER
+    # ※ type: ignore しなくてもいいがラッパーの関係で警告が出ている模様
+    get_msxver_macro(b)  # type: ignore # A = MSXVER
     CP.n8(b, 0x00)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
     # R#16 に color index 0 をセット
-    # OUT 99h,0
-    LD.A_n8(b, 0x00)
-    b.emit(0xD3, VDP_CTRL)
-
-    # OUT 99h,80h+16  ; レジスタ16指定
-    LD.A_n8(b, 0x80 + 16)
-    b.emit(0xD3, VDP_CTRL)
+    OUT_A(b, VDP_CTRL, 0x00)
+    OUT_A(b, VDP_CTRL, 0x80 + 16)
 
     # HL = PALETTE_DATA
     LD.HL_label(b, "__PALETTE_DATA__")
@@ -250,25 +242,6 @@ def init_screen2_macro(b: Block) -> None:
 
 
 @with_register_preserve
-def test_fill_vram_macro(b: Block, color: int = 0, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
-    """VRAMをテスト用に塗りつぶすマクロ。
-    レジスタ変更: A, BC
-    """
-
-    # DI(b)
-    OUT(b, VDP_CTRL, 0x00)
-    OUT(b, VDP_CTRL, 0x40)
-    LD.BC_n16(b, 0x0800)
-    b.label("TEST_FILL_LOOP")
-    OUT(b, VDP_DATA, color)
-    DEC.BC(b)
-    LD.A_B(b)
-    OR.C(b)
-    JP_NZ(b, "TEST_FILL_LOOP")
-    # EI(b)
-
-
-@with_register_preserve
 def set_screen_colors_macro(
     b: Block, foreground: int, background: int, border: int,
         current_screen_mode: int, *, preserve_regs: Sequence[RegNames16] = ()
@@ -283,19 +256,19 @@ def set_screen_colors_macro(
     """
 
     # 直前に VDP を操作する場合のコード？
-    # OUT(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
-    # OUT(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
-    # OUT(b, VDP_DATA, background & 0x0F)  # 背景色指定
+    # OUT_A(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
+    # OUT_A(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
+    # OUT_A(b, VDP_DATA, background & 0x0F)  # 背景色指定
 
     # DI(b)
 
     # vdpを初期化するコード？
-    # OUT(b, VDP_CTRL, 0x02)
-    # OUT(b, VDP_CTRL, 0x80)
+    # OUT_A(b, VDP_CTRL, 0x02)
+    # OUT_A(b, VDP_CTRL, 0x80)
     # LD.A_n8(b, 0xE0)
     # AND.n8(b, 0xFD)
     # OUT(b, VDP_CTRL)
-    # OUT(b, VDP_CTRL, 0x81)
+    # OUT_A(b, VDP_CTRL, 0x81)
 
     # FORCLR
     LD.A_n8(b, foreground & 0x0F)

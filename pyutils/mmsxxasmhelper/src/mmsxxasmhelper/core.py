@@ -64,7 +64,7 @@ __all__ = [
     "LD", "ADD", "CP", "AND", "OR", "XOR",
     "RLCA",
     "INC", "DEC",
-    "OUT", "OUT_C",
+    "OUT", "OUT_A", "OUT_C",
     "PUSH", "POP",
     "NOP", "HALT", "DI", "EI",
 ]
@@ -1495,13 +1495,20 @@ def DW(b: Block, *values: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def OUT(b: Block, port: int, a: int | None = None) -> None:
+def OUT(b: Block, port: int) -> None:
     """
-    OUT OUT (n),A
-    Aが None の場合は A レジスタの値を指定しない。
+    OUT (port),A
     """
-    if a is not None:
-        LD.A_n8(b, a & 0xFF)
+    b.emit(0xD3, port & 0xFF)
+
+
+def OUT_A(b: Block, port: int, a: int) -> None:
+    """
+    LD　A, a
+    OUT (port),A
+    A レジスタの値を設定してOUT
+    """
+    LD.A_n8(b, a & 0xFF)
     b.emit(0xD3, port & 0xFF)
 
 
