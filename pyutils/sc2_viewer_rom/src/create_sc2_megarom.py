@@ -36,6 +36,8 @@ AUTO_INDICATOR_FLAG_ADDR = 0xC00B
 INSTRUCTION_TICK_TOTAL_ADDR = 0xC00C
 INSTRUCTION_LAST_JIFFY_ADDR = 0xC00E
 INSTRUCTION_LINE_BUFFER_ADDR = 0xC010
+AUTO_INDICATOR_TIMEOUT_ADDR = 0xC026
+AUTO_INDICATOR_LAST_JIFFY_ADDR = 0xC028
 
 CHSNS = 0x009C
 CHGET = 0x009F
@@ -86,6 +88,7 @@ INSTRUCTION_LINE_LENGTH = len(INSTRUCTION_AUTO_LINE_TEMPLATE) + 1
 INSTRUCTION_BG_COLOR = 0x04
 
 JIFFY_PER_SECOND = 60
+AUTO_INDICATOR_TIMEOUT_TICKS = 5 * JIFFY_PER_SECOND
 
 INSTRUCTION_SECONDS_TEXT = [f"{value:02d}" for value in range(0, 31)]
 
@@ -243,6 +246,11 @@ def build_boot_bank(
         JR_Z(block, "update_speed_indicator_end")
         LOAD_SPEED_PATTERN.call(block)
 
+        LD.HL_mn16(block, AUTO_INDICATOR_TIMEOUT_ADDR)
+        LD.A_H(block)
+        OR.L(block)
+        JR_Z(block, "update_speed_indicator_use_hidden")
+
         LD.HL_mn16(block, AUTO_INTERVAL_ADDR)
         LD.A_H(block)
         OR.L(block)
@@ -319,8 +327,23 @@ def build_boot_bank(
         LD.rr(block, "H", "D")
         LD.rr(block, "L", "E")
         SET_AUTO_INTERVAL.call(block)
+        SHOW_SPEED_INDICATOR.call(block)
 
     SET_SPEED_LEVEL = Func("set_speed_level", set_speed_level)
+
+    def show_speed_indicator(block: Block) -> None:
+        LD.A_mn16(block, AUTO_INDICATOR_FLAG_ADDR)
+        OR.A(block)
+        JR_Z(block, "show_speed_indicator_end")
+        LD.HL_n16(block, AUTO_INDICATOR_TIMEOUT_TICKS)
+        LD.mn16_HL(block, AUTO_INDICATOR_TIMEOUT_ADDR)
+        LD.HL_mn16(block, JIFFY_ADDR)
+        LD.mn16_HL(block, AUTO_INDICATOR_LAST_JIFFY_ADDR)
+        UPDATE_SPEED_INDICATOR.call(block)
+
+        block.label("show_speed_indicator_end")
+
+    SHOW_SPEED_INDICATOR = Func("show_speed_indicator", show_speed_indicator)
 
     def next_image(block: Block) -> None:
         LD.A_mn16(block, CURRENT_INDEX_ADDR)
@@ -412,6 +435,61 @@ def build_boot_bank(
 
     HANDLE_AUTO = Func("handle_auto_advance", handle_auto_advance)
 
+    def handle_indicator_timeout(block: Block) -> None:
+        LD.A_mn16(block, AUTO_INDICATOR_FLAG_ADDR)
+        OR.A(block)
+        JR_Z(block, "indicator_end")
+
+        LD.HL_mn16(block, AUTO_INDICATOR_TIMEOUT_ADDR)
+        LD.A_H(block)
+        OR.L(block)
+        JR_Z(block, "indicator_end")
+
+        LD.HL_mn16(block, AUTO_INDICATOR_LAST_JIFFY_ADDR)
+        LD.D_H(block)
+        LD.E_L(block)
+
+        LD.HL_mn16(block, JIFFY_ADDR)
+        LD.B_H(block)
+        LD.C_L(block)
+
+        LD.A_L(block)
+        CP.E(block)
+        JR_NZ(block, "indicator_tick_changed")
+        LD.A_H(block)
+        CP.D(block)
+        JR_NZ(block, "indicator_tick_changed")
+        JR(block, "indicator_end")
+
+        block.label("indicator_tick_changed")
+        XOR.A(block)
+        block.emit(0xED, 0x52)  # SBC HL,DE
+        LD.D_H(block)
+        LD.E_L(block)
+
+        LD.H_B(block)
+        LD.L_C(block)
+        LD.mn16_HL(block, AUTO_INDICATOR_LAST_JIFFY_ADDR)
+
+        LD.HL_mn16(block, AUTO_INDICATOR_TIMEOUT_ADDR)
+        XOR.A(block)
+        block.emit(0xED, 0x52)  # SBC HL,DE
+        JR_C(block, "indicator_timeout")
+        LD.A_H(block)
+        OR.L(block)
+        JR_Z(block, "indicator_timeout")
+        LD.mn16_HL(block, AUTO_INDICATOR_TIMEOUT_ADDR)
+        JR(block, "indicator_end")
+
+        block.label("indicator_timeout")
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, AUTO_INDICATOR_TIMEOUT_ADDR)
+        UPDATE_SPEED_INDICATOR.call(block)
+
+        block.label("indicator_end")
+
+    HANDLE_INDICATOR_TIMEOUT = Func("handle_indicator_timeout", handle_indicator_timeout)
+
     def speed_up(block: Block) -> None:
         LD.A_mn16(block, AUTO_INTERVAL_ADDR)
         OR.A(block)
@@ -429,6 +507,7 @@ def build_boot_bank(
 
         block.label("speed_up_apply")
         SET_SPEED_LEVEL.call(block)
+        NEXT_IMAGE.call(block)
 
     SPEED_UP = Func("speed_up", speed_up)
 
@@ -449,6 +528,7 @@ def build_boot_bank(
 
         block.label("slow_down_apply")
         SET_SPEED_LEVEL.call(block)
+        NEXT_IMAGE.call(block)
 
     SLOW_DOWN = Func("slow_down", slow_down)
 
@@ -554,6 +634,8 @@ def build_boot_bank(
     LD.mn16_A(b, AUTO_SPEED_PREV_ADDR)
     LD.HL_n16(b, speed_tick_levels[initial_speed_level])
     LD.mn16_HL(b, AUTO_INTERVAL_PREV_ADDR)
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, AUTO_INDICATOR_TIMEOUT_ADDR)
 
     if start_paused:
         LD.HL_n16(b, 0)
@@ -561,6 +643,7 @@ def build_boot_bank(
     else:
         LD.A_n8(b, initial_speed_level & 0xFF)
         SET_SPEED_LEVEL.call(b)
+        SHOW_SPEED_INDICATOR.call(b)
 
     LD.A_n8(b, 0)
     LD.mn16_A(b, CURRENT_INDEX_ADDR)
@@ -569,6 +652,7 @@ def build_boot_bank(
     RESET_AUTO_TIMER.call(b)
 
     b.label("main_loop")
+    HANDLE_INDICATOR_TIMEOUT.call(b)
     CALL(b, CHSNS)
     CP.n8(b, 0)
     JR_Z(b, "main_loop_auto")
@@ -658,10 +742,12 @@ def build_boot_bank(
     RESET_AUTO_TIMER.define(b)
     SET_AUTO_INTERVAL.define(b)
     SET_SPEED_LEVEL.define(b)
+    SHOW_SPEED_INDICATOR.define(b)
     NEXT_IMAGE.define(b)
     PREV_IMAGE.define(b)
     RESET_IMAGE.define(b)
     HANDLE_AUTO.define(b)
+    HANDLE_INDICATOR_TIMEOUT.define(b)
     SPEED_UP.define(b)
     SLOW_DOWN.define(b)
     UPDATE_INSTRUCTION_COUNTDOWN.define(b)
