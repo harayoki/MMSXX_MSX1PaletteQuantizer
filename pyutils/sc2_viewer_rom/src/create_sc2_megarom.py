@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 try:
-    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, Func, INC, JR, JR_C, JR_NZ, JR_Z, LD, OR, XOR
+    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NZ, JR_Z, LD, OR, XOR
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -18,7 +18,7 @@ try:
     from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".." / "mmsxxasmhelper" / "src"))
-    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, Func, INC, JR, JR_C, JR_NZ, JR_Z, LD, OR, XOR
+    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NZ, JR_Z, LD, OR, XOR
     from mmsxxasmhelper.msxutils import (
         CHGMOD,
         LDIRVM,
@@ -42,6 +42,9 @@ AUTO_INTERVAL_ADDR = 0xC001
 AUTO_INTERVAL_PREV_ADDR = 0xC003
 AUTO_COUNTDOWN_ADDR = 0xC005
 LAST_JIFFY_ADDR = 0xC007
+AUTO_SPEED_INDEX_ADDR = 0xC009
+AUTO_SPEED_PREV_ADDR = 0xC00A
+AUTO_INDICATOR_FLAG_ADDR = 0xC00B
 
 CHSNS = 0x009C
 CHGET = 0x009F
@@ -51,6 +54,14 @@ FORCLR = 0xF3E9
 BAKCLR = 0xF3EA
 BDRCLR = 0xF3EB
 SNSMAT = 0x0141
+
+SPRITE_ATTR_TABLE_ADDR = 0x1B00
+SPRITE_PATTERN_TABLE_ADDR = 0x3800
+SPEED_INDICATOR_PATTERN_ID = 0x00
+SPEED_INDICATOR_COLOR = 0x0F
+SPEED_INDICATOR_X = 0xF8
+SPEED_INDICATOR_Y_START = 0x08
+SPEED_INDICATOR_Y_STEP = 0x08
 
 KEY_SPACE = 0x20
 KEY_UP = 0x1E
@@ -75,6 +86,9 @@ INSTRUCTION_TEXT = (
 INSTRUCTION_BG_COLOR = 0x04
 
 JIFFY_PER_SECOND = 60
+
+AUTO_SPEED_SECONDS = [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
+DEFAULT_AUTO_SPEED_LEVEL = 4
 
 
 def int_from_str(value: str) -> int:
@@ -115,29 +129,22 @@ def build_boot_bank(
     image_count: int,
     show_instructions: bool,
     background_color: int,
-    auto_interval_ticks: int,
-    auto_step_ticks: int,
-    auto_min_ticks: int,
-    auto_max_ticks: int,
-    auto_resume_ticks: int,
+    speed_tick_levels: list[int],
+    initial_speed_level: int,
+    start_paused: bool,
+    enable_speed_indicator: bool,
 ) -> bytes:
     if not 1 <= image_count <= 0xFF:
         raise ValueError("image_count must be between 1 and 255")
-    for name, value in {
-        "auto_interval_ticks": auto_interval_ticks,
-        "auto_step_ticks": auto_step_ticks,
-        "auto_min_ticks": auto_min_ticks,
-        "auto_max_ticks": auto_max_ticks,
-        "auto_resume_ticks": auto_resume_ticks,
-    }.items():
-        if not 0 <= value <= 0xFFFF:
-            raise ValueError(f"{name} must fit in 16 bits")
-    if auto_step_ticks <= 0:
-        raise ValueError("auto_step_ticks must be positive")
-    if auto_min_ticks <= 0:
-        raise ValueError("auto_min_ticks must be positive")
-    if auto_min_ticks > auto_max_ticks:
-        raise ValueError("auto_min_ticks must be less than or equal to auto_max_ticks")
+    if not speed_tick_levels:
+        raise ValueError("speed_tick_levels must not be empty")
+    if not 0 <= initial_speed_level < len(speed_tick_levels):
+        raise ValueError("initial_speed_level out of range")
+    for value in speed_tick_levels:
+        if not 0 < value <= 0xFFFF:
+            raise ValueError("speed_tick_levels values must be between 1 and 65535")
+
+    speed_level_count = len(speed_tick_levels)
 
     b = Block()
     place_msx_rom_header_macro(b, entry_point=0x4010)
@@ -149,6 +156,8 @@ def build_boot_bank(
         LD.DE_n16(block, 0x0000)
         LD.BC_n16(block, VRAM_SIZE)
         CALL(block, LDIRVM)
+        LOAD_SPEED_PATTERN.call(block)
+        UPDATE_SPEED_INDICATOR.call(block)
 
     LOAD_AND_SHOW = Func("load_and_show", load_and_show)
 
@@ -164,6 +173,53 @@ def build_boot_bank(
 
     PRINT_STRING = Func("print_string", print_string)
 
+    attr_bytes_per_level = speed_level_count * 4
+
+    def update_speed_indicator(block: Block) -> None:
+        LD.A_mn16(block, AUTO_INDICATOR_FLAG_ADDR)
+        OR.A(block)
+        JR_Z(block, "update_speed_indicator_end")
+
+        LD.HL_mn16(block, AUTO_INTERVAL_ADDR)
+        LD.A_H(block)
+        OR.L(block)
+        JR_Z(block, "update_speed_indicator_off")
+        LD.A_mn16(block, AUTO_SPEED_INDEX_ADDR)
+        JR(block, "update_speed_indicator_have_index")
+
+        block.label("update_speed_indicator_off")
+        LD.A_n8(block, speed_level_count)
+
+        block.label("update_speed_indicator_have_index")
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        ADD.HL_HL(block)
+        ADD.HL_HL(block)
+        ADD.HL_HL(block)
+        ADD.HL_HL(block)
+        LD.DE_label(block, "SPEED_ATTR_TABLE")
+        ADD.HL_DE(block)
+        LD.DE_n16(block, SPRITE_ATTR_TABLE_ADDR)
+        LD.BC_n16(block, attr_bytes_per_level)
+        CALL(block, LDIRVM)
+
+        block.label("update_speed_indicator_end")
+
+    UPDATE_SPEED_INDICATOR = Func("update_speed_indicator", update_speed_indicator)
+
+    def load_speed_pattern(block: Block) -> None:
+        LD.A_mn16(block, AUTO_INDICATOR_FLAG_ADDR)
+        OR.A(block)
+        JR_Z(block, "load_speed_pattern_end")
+        LD.HL_label(block, "SPEED_PATTERN")
+        LD.DE_n16(block, SPRITE_PATTERN_TABLE_ADDR + (SPEED_INDICATOR_PATTERN_ID * 8))
+        LD.BC_n16(block, 8)
+        CALL(block, LDIRVM)
+        block.label("load_speed_pattern_end")
+
+    LOAD_SPEED_PATTERN = Func("load_speed_pattern", load_speed_pattern)
+
     def reset_auto_timer(block: Block) -> None:
         LD.HL_mn16(block, AUTO_INTERVAL_ADDR)
         LD.mn16_HL(block, AUTO_COUNTDOWN_ADDR)
@@ -178,10 +234,29 @@ def build_boot_bank(
         OR.L(block)
         JR_Z(block, "set_auto_interval_skip_prev")
         LD.mn16_HL(block, AUTO_INTERVAL_PREV_ADDR)
+        LD.A_mn16(block, AUTO_SPEED_INDEX_ADDR)
+        LD.mn16_A(block, AUTO_SPEED_PREV_ADDR)
         block.label("set_auto_interval_skip_prev")
         RESET_AUTO_TIMER.call(block)
+        UPDATE_SPEED_INDICATOR.call(block)
 
     SET_AUTO_INTERVAL = Func("set_auto_interval", set_auto_interval)
+
+    def set_speed_level(block: Block) -> None:
+        LD.mn16_A(block, AUTO_SPEED_INDEX_ADDR)
+        LD.HL_label(block, "AUTO_SPEED_TICKS_TABLE")
+        LD.E_A(block)
+        LD.D_n8(block, 0)
+        ADD.HL_DE(block)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        LD.rr(block, "H", "D")
+        LD.rr(block, "L", "E")
+        SET_AUTO_INTERVAL.call(block)
+
+    SET_SPEED_LEVEL = Func("set_speed_level", set_speed_level)
 
     def next_image(block: Block) -> None:
         LD.A_mn16(block, CURRENT_INDEX_ADDR)
@@ -274,65 +349,42 @@ def build_boot_bank(
     HANDLE_AUTO = Func("handle_auto_advance", handle_auto_advance)
 
     def speed_up(block: Block) -> None:
-        LD.HL_mn16(block, AUTO_INTERVAL_ADDR)
-        LD.A_H(block)
-        OR.L(block)
-        JR_NZ(block, "speed_up_have_interval")
-        LD.HL_mn16(block, AUTO_INTERVAL_PREV_ADDR)
-        block.label("speed_up_have_interval")
+        LD.A_mn16(block, AUTO_INTERVAL_ADDR)
+        OR.A(block)
+        JR_NZ(block, "speed_up_use_current")
+        LD.A_mn16(block, AUTO_SPEED_PREV_ADDR)
+        JR(block, "speed_up_have_index")
 
-        LD.DE_n16(block, auto_step_ticks)
-        XOR.A(block)
-        block.emit(0xED, 0x52)  # SBC HL,DE
-        JR_C(block, "speed_up_set_min")
+        block.label("speed_up_use_current")
+        LD.A_mn16(block, AUTO_SPEED_INDEX_ADDR)
 
-        LD.A_H(block)
-        CP.n8(block, (auto_min_ticks >> 8) & 0xFF)
-        JR_C(block, "speed_up_set_min")
-        JR_Z(block, "speed_up_check_low")
-        JR(block, "speed_up_apply")
-
-        block.label("speed_up_check_low")
-        LD.A_L(block)
-        CP.n8(block, auto_min_ticks & 0xFF)
-        JR_C(block, "speed_up_set_min")
-        JR(block, "speed_up_apply")
-
-        block.label("speed_up_set_min")
-        LD.HL_n16(block, auto_min_ticks)
+        block.label("speed_up_have_index")
+        OR.A(block)
+        JR_Z(block, "speed_up_apply")
+        DEC.A(block)
 
         block.label("speed_up_apply")
-        SET_AUTO_INTERVAL.call(block)
+        SET_SPEED_LEVEL.call(block)
 
     SPEED_UP = Func("speed_up", speed_up)
 
     def slow_down(block: Block) -> None:
-        LD.HL_mn16(block, AUTO_INTERVAL_ADDR)
-        LD.A_H(block)
-        OR.L(block)
-        JR_NZ(block, "slow_down_have_interval")
-        LD.HL_mn16(block, AUTO_INTERVAL_PREV_ADDR)
-        block.label("slow_down_have_interval")
+        LD.A_mn16(block, AUTO_INTERVAL_ADDR)
+        OR.A(block)
+        JR_NZ(block, "slow_down_use_current")
+        LD.A_mn16(block, AUTO_SPEED_PREV_ADDR)
+        JR(block, "slow_down_have_index")
 
-        LD.DE_n16(block, auto_step_ticks)
-        ADD.HL_DE(block)
+        block.label("slow_down_use_current")
+        LD.A_mn16(block, AUTO_SPEED_INDEX_ADDR)
 
-        LD.A_H(block)
-        CP.n8(block, (auto_max_ticks >> 8) & 0xFF)
-        JR_C(block, "slow_down_apply")
-        JR_Z(block, "slow_down_check_low")
-        JR(block, "slow_down_set_max")
-
-        block.label("slow_down_check_low")
-        LD.A_L(block)
-        CP.n8(block, auto_max_ticks & 0xFF)
-        JR_C(block, "slow_down_apply")
-
-        block.label("slow_down_set_max")
-        LD.HL_n16(block, auto_max_ticks)
+        block.label("slow_down_have_index")
+        CP.n8(block, speed_level_count - 1)
+        JR_NC(block, "slow_down_apply")
+        INC.A(block)
 
         block.label("slow_down_apply")
-        SET_AUTO_INTERVAL.call(block)
+        SET_SPEED_LEVEL.call(block)
 
     SLOW_DOWN = Func("slow_down", slow_down)
 
@@ -353,11 +405,6 @@ def build_boot_bank(
         PRINT_STRING.call(b)
         CALL(b, CHGET)
 
-    LD.HL_n16(b, auto_resume_ticks)
-    LD.mn16_HL(b, AUTO_INTERVAL_PREV_ADDR)
-    LD.HL_n16(b, auto_interval_ticks)
-    SET_AUTO_INTERVAL.call(b)
-
     LD.A_n8(b, 2)
     CALL(b, CHGMOD)
     # set_msx2_palette_default_macro(b)　うまく動いていない
@@ -367,6 +414,22 @@ def build_boot_bank(
     LD.mn16_A(b, BAKCLR)
     LD.mn16_A(b, BDRCLR)
     CALL(b, CHGCLR)
+
+    LD.A_n8(b, 1 if enable_speed_indicator else 0)
+    LD.mn16_A(b, AUTO_INDICATOR_FLAG_ADDR)
+    LOAD_SPEED_PATTERN.call(b)
+    LD.A_n8(b, initial_speed_level & 0xFF)
+    LD.mn16_A(b, AUTO_SPEED_INDEX_ADDR)
+    LD.mn16_A(b, AUTO_SPEED_PREV_ADDR)
+    LD.HL_n16(b, speed_tick_levels[initial_speed_level])
+    LD.mn16_HL(b, AUTO_INTERVAL_PREV_ADDR)
+
+    if start_paused:
+        LD.HL_n16(b, 0)
+        SET_AUTO_INTERVAL.call(b)
+    else:
+        LD.A_n8(b, initial_speed_level & 0xFF)
+        SET_SPEED_LEVEL.call(b)
 
     LD.A_n8(b, 0)
     LD.mn16_A(b, CURRENT_INDEX_ADDR)
@@ -416,6 +479,8 @@ def build_boot_bank(
     OR.L(b)
     JR_Z(b, "key_space_pause_set")
     LD.mn16_HL(b, AUTO_INTERVAL_PREV_ADDR)
+    LD.A_mn16(b, AUTO_SPEED_INDEX_ADDR)
+    LD.mn16_A(b, AUTO_SPEED_PREV_ADDR)
     b.label("key_space_pause_set")
     LD.HL_n16(b, 0)
     SET_AUTO_INTERVAL.call(b)
@@ -440,8 +505,11 @@ def build_boot_bank(
 
     LOAD_AND_SHOW.define(b)
     PRINT_STRING.define(b)
+    UPDATE_SPEED_INDICATOR.define(b)
+    LOAD_SPEED_PATTERN.define(b)
     RESET_AUTO_TIMER.define(b)
     SET_AUTO_INTERVAL.define(b)
+    SET_SPEED_LEVEL.define(b)
     NEXT_IMAGE.define(b)
     PREV_IMAGE.define(b)
     RESET_IMAGE.define(b)
@@ -451,6 +519,30 @@ def build_boot_bank(
     b.label("INSTR_TEXT")
     DB(b, *INSTRUCTION_TEXT.encode("ascii"), 0x00)
 
+    b.label("AUTO_SPEED_TICKS_TABLE")
+    DW(b, *speed_tick_levels)
+
+    speed_attr_data: list[int] = []
+    for level in range(speed_level_count):
+        visible_marks = speed_level_count - level
+        for idx in range(speed_level_count):
+            if idx < visible_marks:
+                y = (SPEED_INDICATOR_Y_START + (idx * SPEED_INDICATOR_Y_STEP)) & 0xFF
+            else:
+                y = 0xD0
+            speed_attr_data.extend(
+                [y, SPEED_INDICATOR_X, SPEED_INDICATOR_PATTERN_ID, SPEED_INDICATOR_COLOR]
+            )
+    for _ in range(speed_level_count):
+        speed_attr_data.extend([0xD0, SPEED_INDICATOR_X, SPEED_INDICATOR_PATTERN_ID, SPEED_INDICATOR_COLOR])
+
+    b.label("SPEED_ATTR_TABLE")
+    DB(b, *speed_attr_data)
+
+    b.label("SPEED_PATTERN")
+    speed_pattern = [0x18] * 8
+    DB(b, *speed_pattern)
+
     return bytes(pad_bytes(list(b.finalize(origin=0x4000)), PAGE_SIZE, 0x00))
 
 
@@ -458,11 +550,10 @@ def build_rom(
     images: list[bytes],
     show_instructions: bool,
     background_color: int,
-    auto_interval_ticks: int,
-    auto_step_ticks: int,
-    auto_min_ticks: int,
-    auto_max_ticks: int,
-    auto_resume_ticks: int,
+    speed_tick_levels: list[int],
+    initial_speed_level: int,
+    start_paused: bool,
+    enable_speed_indicator: bool,
 ) -> bytes:
     image_count = len(images)
     if image_count + 1 > MAX_BANKS:
@@ -474,11 +565,10 @@ def build_rom(
         image_count,
         show_instructions,
         background_color,
-        auto_interval_ticks,
-        auto_step_ticks,
-        auto_min_ticks,
-        auto_max_ticks,
-        auto_resume_ticks,
+        speed_tick_levels,
+        initial_speed_level,
+        start_paused,
+        enable_speed_indicator,
     )
     banks = [bank0]
 
@@ -525,28 +615,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--auto-interval",
         type=float,
-        default=2.0,
-        help="Seconds per automatic page advance (0 to disable, default: 2.0)",
+        default=AUTO_SPEED_SECONDS[DEFAULT_AUTO_SPEED_LEVEL],
+        help=(
+            "Seconds per automatic page advance. "
+            "Value is rounded to the nearest of the 8 fixed speed steps; "
+            "use 0 to pause on startup."
+        ),
     )
     parser.add_argument(
-        "--auto-step",
-        type=float,
-        default=0.2,
-        help="Seconds to add/subtract per SHIFT+cursor speed adjustment (default: 0.2)",
+        "--auto-speed-level",
+        type=int,
+        choices=range(1, len(AUTO_SPEED_SECONDS) + 1),
+        help="Initial auto speed level (1=fastest, 8=slowest). Overrides --auto-interval when set.",
     )
     parser.add_argument(
-        "--min-auto-interval",
-        type=float,
-        default=0.2,
-        help="Minimum seconds allowed for auto advance when adjusting (default: 0.2)",
+        "--speed-indicator",
+        dest="speed_indicator",
+        action="store_true",
+        help="Show a compact speed indicator using sprites in the top-right corner",
     )
     parser.add_argument(
-        "--max-auto-interval",
-        type=float,
-        default=10.0,
-        help="Maximum seconds allowed for auto advance when adjusting (default: 10.0)",
+        "--no-speed-indicator",
+        dest="speed_indicator",
+        action="store_false",
+        help="Hide the speed indicator (default)",
     )
-    parser.set_defaults(with_instructions=True)
+    parser.set_defaults(with_instructions=True, speed_indicator=False)
     return parser.parse_args()
 
 
@@ -589,36 +683,33 @@ def main() -> None:
 
     image_bytes = [sc2_to_vram(path.read_bytes()) for path in sc2_paths]
 
-    if args.auto_step <= 0:
-        raise SystemExit("--auto-step must be greater than 0")
-    if args.min_auto_interval <= 0:
-        raise SystemExit("--min-auto-interval must be greater than 0")
-    if args.max_auto_interval <= 0:
-        raise SystemExit("--max-auto-interval must be greater than 0")
-    if args.min_auto_interval > args.max_auto_interval:
-        raise SystemExit("--min-auto-interval cannot exceed --max-auto-interval")
     if args.auto_interval < 0:
         raise SystemExit("--auto-interval must be zero or greater")
 
-    auto_step_ticks = max(1, seconds_to_jiffies(args.auto_step))
-    auto_min_ticks = max(1, seconds_to_jiffies(args.min_auto_interval))
-    auto_max_ticks = max(auto_min_ticks, seconds_to_jiffies(args.max_auto_interval))
-    auto_interval_ticks = seconds_to_jiffies(args.auto_interval)
-    if 0 < auto_interval_ticks < auto_min_ticks:
-        auto_interval_ticks = auto_min_ticks
-    if auto_interval_ticks > auto_max_ticks:
-        auto_interval_ticks = auto_max_ticks
-    auto_resume_ticks = auto_interval_ticks if auto_interval_ticks > 0 else auto_min_ticks
+    speed_tick_levels = [max(1, seconds_to_jiffies(sec)) for sec in AUTO_SPEED_SECONDS]
+    start_paused = False
+    initial_speed_level = DEFAULT_AUTO_SPEED_LEVEL
+
+    if args.auto_speed_level is not None:
+        initial_speed_level = args.auto_speed_level - 1
+
+    if args.auto_interval == 0:
+        start_paused = True
+    elif args.auto_speed_level is None:
+        target_ticks = seconds_to_jiffies(args.auto_interval)
+        initial_speed_level = min(
+            range(len(speed_tick_levels)),
+            key=lambda idx: abs(speed_tick_levels[idx] - target_ticks),
+        )
 
     rom_bytes = build_rom(
         image_bytes,
         args.with_instructions,
         args.background_color,
-        auto_interval_ticks,
-        auto_step_ticks,
-        auto_min_ticks,
-        auto_max_ticks,
-        auto_resume_ticks,
+        speed_tick_levels,
+        initial_speed_level,
+        start_paused,
+        args.speed_indicator,
     )
     out_path = resolve_output_path(args.output, sc2_paths[0])
     out_path.write_bytes(rom_bytes)
