@@ -143,10 +143,10 @@ def _randomize_palette(b: Block) -> None:
     LD.mHL_A(b)
     INC.HL(b)
 
-    DEC.B(b)
-    JP_NZ(b, "LOOP_PALETTE_CREATE")
+    DJNZ(b, "LOOP_PALETTE_CREATE")
 
     # VDP パレットレジスタへ転送 (index 0 から 32 バイト)
+
     OUT_A(b, VDP_CTRL, 0x00)
     OUT_A(b, VDP_CTRL, 0x80 + PALETTE_REGISTER)
     LD.HL_n16(b, PALETTE_BUFFER_ADDR)
@@ -155,7 +155,7 @@ def _randomize_palette(b: Block) -> None:
     LD.A_mHL(b)  # LD A,(HL)
     OUT(b, VDP_PAL)  # OUT (9Ah),A
     INC.HL(b)       # INC HL
-    JP_NZ(b, "LOOP_PALETTE_OUT")  # DJNZ LOOP_PALETTE_OUT
+    DJNZ(b, "LOOP_PALETTE_OUT")  # DJNZ LOOP_PALETTE_OUT
     RET(b)
 
 
@@ -170,7 +170,7 @@ def _build_palette_random_rom() -> bytes:
     b = Block()
     place_msx_rom_header_macro(b, entry_point=0x4010)
 
-    # メインコード ------------------------------------------------------
+    # メインコード
     b.label("main")
 
     store_stack_pointer_macro(b)
@@ -178,8 +178,8 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
-    set_screen_colors_macro(b, 15,0,0, 2)
     set_msx2_palette_default_macro(b)
+    set_screen_colors_macro(b, 15, 0, 0, 2)
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
@@ -193,8 +193,6 @@ def _build_palette_random_rom() -> bytes:
     LD.HL_label(b, "NAME_TABLE")
     ldirvm_macro(b, dest=NAME_TABLE_ADDR, length=len(name_table))
 
-    loop_infinite_macro(b)
-
     # RNG シード: JIFFY の 2 バイトを XOR
     LD.A_mn16(b, JIFFY_ADDR)
     LD.rr(b, "D", "A")
@@ -202,13 +200,18 @@ def _build_palette_random_rom() -> bytes:
     XOR.D(b)
     LD.mn16_A(b, RNG_STATE_ADDR)
 
+    get_msxver_macro(b)
+    CP.n8(b, 0)
+    JP_NZ(b, "main_loop")  # MSX1以外なら先に進む
+    loop_infinite_macro(b)
+
     b.label("main_loop")
-    # RANDOMIZE_PALETTE.call(b)
+    RANDOMIZE_PALETTE.call(b)
 
     # 約 30 フレーム待機 (HALT で VBLANK 待ち合わせ)
     LD.B_n8(b, 30)
     b.label("__WAIT_LOOP__")
-    HALT(b)
+    HALT(b)  # VBLANKまで待機
     DEC.B(b)
     JP_NZ(b, "__WAIT_LOOP__")
 
@@ -216,9 +219,9 @@ def _build_palette_random_rom() -> bytes:
 
     # 関数定義
     RNG_NEXT.define(b)
-    # RANDOMIZE_PALETTE.define(b)
+    RANDOMIZE_PALETTE.define(b)
 
-    # データ配置 --------------------------------------------------------
+    # データ配置
     b.label("PATTERN_DATA")
     DB(b, *pattern_data)
 

@@ -56,10 +56,8 @@ def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
 
 def loop_infinite_macro(b: Block) -> None:
     """無限ループを作成するマクロ。"""
-
     # 同じアドレスに相対ジャンプする
-    b.label("__LOOP_INFINITE__")
-    JR(b, "__LOOP_INFINITE__")
+    JR_n8(b, -2)
 
 # ---------------------------------------------------------------------------
 # DEBUG 用フラグと簡易トラップ

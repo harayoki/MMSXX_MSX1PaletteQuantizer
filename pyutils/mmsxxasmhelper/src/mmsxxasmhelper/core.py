@@ -58,7 +58,7 @@ __all__ = [
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
-    "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
+    "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
     "Func",
@@ -401,7 +401,6 @@ def JP_M(b: Block, target: str) -> None:
 
 def JP_mHL(b: Block) -> None:
     """JP (HL) (HLが指すアドレスへジャンプ)。"""
-
     b.emit(0xE9)
 
 
@@ -433,6 +432,13 @@ def JR_C(b: Block, target: str) -> None:
     """JR C,target (C=1)。"""
 
     _jr_rel8(b, 0x38, target)
+
+
+def JR_n8(b: Block, offset: int) -> None:
+    """JRの相対ジャンプ"""
+    if offset < 0:
+        offset = 0xFF + offset
+    b.emit(0x18, offset)
 
 
 def DJNZ(b: Block, target: str) -> None:
