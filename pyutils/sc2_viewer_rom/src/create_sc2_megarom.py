@@ -6,7 +6,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, XOR
+from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, OUT, XOR
 from mmsxxasmhelper.msxutils import (
     CHGMOD,
     LDIRVM,
@@ -89,6 +89,16 @@ INSTRUCTION_BG_COLOR = 0x04
 
 JIFFY_PER_SECOND = 60
 AUTO_INDICATOR_TIMEOUT_TICKS = 5 * JIFFY_PER_SECOND
+
+PSG_REG_PORT = 0xA0
+PSG_DATA_PORT = 0xA1
+PSG_MIXER_VALUE = 0xFE
+SOUND_DURATION_TICKS = 18
+SOUND_VOLUME = 0x0A
+SOUND_HIGH_FINE = 0x20
+SOUND_HIGH_COARSE = 0x00
+SOUND_LOW_FINE = 0x00
+SOUND_LOW_COARSE = 0x01
 
 INSTRUCTION_SECONDS_TEXT = [f"{value:02d}" for value in range(0, 31)]
 
@@ -185,6 +195,53 @@ def build_boot_bank(
         UPDATE_SPEED_INDICATOR.call(block)
 
     LOAD_AND_SHOW = Func("load_and_show", load_and_show)
+
+    def psg_write(block: Block, register: int, value: int) -> None:
+        LD.A_n8(block, register & 0xFF)
+        OUT(block, PSG_REG_PORT)
+        LD.A_n8(block, value & 0xFF)
+        OUT(block, PSG_DATA_PORT)
+
+    def wait_sound_duration(block: Block) -> None:
+        LD.B_n8(block, SOUND_DURATION_TICKS)
+        LD.HL_mn16(block, JIFFY_ADDR)
+        LD.D_H(block)
+        LD.E_L(block)
+
+        block.label("sound_wait_loop")
+        LD.HL_mn16(block, JIFFY_ADDR)
+        LD.A_L(block)
+        CP.E(block)
+        JR_NZ(block, "sound_wait_tick")
+        LD.A_H(block)
+        CP.D(block)
+        JR_Z(block, "sound_wait_loop")
+
+        block.label("sound_wait_tick")
+        LD.D_H(block)
+        LD.E_L(block)
+        DEC.B(block)
+        JR_NZ(block, "sound_wait_loop")
+
+    WAIT_SOUND_DURATION = Func("wait_sound_duration", wait_sound_duration)
+
+    def play_tone(block: Block, fine: int, coarse: int) -> None:
+        psg_write(block, 7, PSG_MIXER_VALUE)
+        psg_write(block, 0, fine)
+        psg_write(block, 1, coarse)
+        psg_write(block, 8, SOUND_VOLUME)
+        WAIT_SOUND_DURATION.call(block)
+        psg_write(block, 8, 0)
+
+    def play_speed_up_sound(block: Block) -> None:
+        play_tone(block, SOUND_HIGH_FINE, SOUND_HIGH_COARSE)
+
+    PLAY_SPEED_UP_SOUND = Func("play_speed_up_sound", play_speed_up_sound)
+
+    def play_slow_down_sound(block: Block) -> None:
+        play_tone(block, SOUND_LOW_FINE, SOUND_LOW_COARSE)
+
+    PLAY_SLOW_DOWN_SOUND = Func("play_slow_down_sound", play_slow_down_sound)
 
     def print_string(block: Block) -> None:
         block.label("print_string_loop")
@@ -508,6 +565,7 @@ def build_boot_bank(
         block.label("speed_up_apply")
         SET_SPEED_LEVEL.call(block)
         NEXT_IMAGE.call(block)
+        PLAY_SPEED_UP_SOUND.call(block)
 
     SPEED_UP = Func("speed_up", speed_up)
 
@@ -529,6 +587,7 @@ def build_boot_bank(
         block.label("slow_down_apply")
         SET_SPEED_LEVEL.call(block)
         NEXT_IMAGE.call(block)
+        PLAY_SLOW_DOWN_SOUND.call(block)
 
     SLOW_DOWN = Func("slow_down", slow_down)
 
@@ -750,6 +809,9 @@ def build_boot_bank(
     HANDLE_INDICATOR_TIMEOUT.define(b)
     SPEED_UP.define(b)
     SLOW_DOWN.define(b)
+    WAIT_SOUND_DURATION.define(b)
+    PLAY_SPEED_UP_SOUND.define(b)
+    PLAY_SLOW_DOWN_SOUND.define(b)
     UPDATE_INSTRUCTION_COUNTDOWN.define(b)
     PRINT_INSTRUCTION_LINE.define(b)
 
