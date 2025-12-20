@@ -6,29 +6,16 @@ import sys
 import warnings
 from pathlib import Path
 
-try:
-    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, XOR
-    from mmsxxasmhelper.msxutils import (
-        CHGMOD,
-        LDIRVM,
-        enaslt_macro,
-        place_msx_rom_header_macro,
-        set_msx2_palette_default_macro,
-        store_stack_pointer_macro,
-    )
-    from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".." / "mmsxxasmhelper" / "src"))
-    from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, XOR
-    from mmsxxasmhelper.msxutils import (
-        CHGMOD,
-        LDIRVM,
-        enaslt_macro,
-        place_msx_rom_header_macro,
-        set_msx2_palette_default_macro,
-        store_stack_pointer_macro,
-    )
-    from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
+from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, XOR
+from mmsxxasmhelper.msxutils import (
+    CHGMOD,
+    LDIRVM,
+    enaslt_macro,
+    place_msx_rom_header_macro,
+    set_msx2_palette_default_macro,
+    store_stack_pointer_macro,
+)
+from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
 
 PAGE_SIZE = 0x4000
 MAX_ROM_SIZE = 0x400000
@@ -90,7 +77,7 @@ INSTRUCTION_TEXT_STATIC = (
 
 INSTRUCTION_TEXT_WAIT = "PRESS ANY KEY\r\n"
 
-INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00S"
+INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00 S"
 INSTRUCTION_AUTO_DIGIT_OFFSET = 14
 INSTRUCTION_LINE_LENGTH = len(INSTRUCTION_AUTO_LINE_TEMPLATE) + 1
 
@@ -531,7 +518,7 @@ def build_boot_bank(
 
     LD.A_n8(b, 2)
     CALL(b, CHGMOD)
-    # set_msx2_palette_default_macro(b)　うまく動いていない
+    set_msx2_palette_default_macro(b)
     LD.A_n8(b, 0x0F)
     LD.mn16_A(b, FORCLR)
     LD.A_n8(b, background_color & 0x0F)
