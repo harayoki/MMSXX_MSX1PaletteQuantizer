@@ -99,37 +99,47 @@ def _randomize_palette(b: Block) -> None:
     INC.HL(b)
 
     # 残り 15 色を生成
+    # HL... 書き込みアドレス
+    # B... カウンダ
+    # C... Blue
+    # D... Red
+    # E... Green
     LD.B_n8(b, 15)
     b.label("LOOP_PALETTE_CREATE")
 
-    RNG_NEXT.call(b)
+    RNG_NEXT.call(b)  # a = random値
     AND.n8(b, 0x07)
-    LD.rr(b, "D", "A")  # R
+    LD.D_A(b)  # Red
 
-    RNG_NEXT.call(b)
+    RNG_NEXT.call(b)  # a = random値
     AND.n8(b, 0x07)
-    LD.rr(b, "E", "A")  # G
+    LD.E_A(b)  # Green
 
-    RNG_NEXT.call(b)
+    RNG_NEXT.call(b)  # a = random値
     AND.n8(b, 0x07)
-    LD.rr(b, "C", "A")  # B
+    LD.C_A(b)  # Blue
 
     # 1 バイト目: R << 4 | B << 1
-    LD.rr(b, "A", "D")
+    LD.A_D(b)  # Red
     RLCA(b)
     RLCA(b)
     RLCA(b)
     RLCA(b)
-    LD.rr(b, "H", "A")
-    LD.rr(b, "A", "C")
-    ADD.A_A(b)
-    AND.n8(b, 0x0E)
-    OR.H(b)
+
+    LD.D_A(b)  # Red << 4
+    LD.A_C(b)  # Blue
+
+    # ADD.A_A(b)
+    # AND.n8(b, 0x0E)
+    # OR.H(b)
+
+    ADD.A_D(b)
+
     LD.mHL_A(b)
     INC.HL(b)
 
     # 2 バイト目: G
-    LD.rr(b, "A", "E")
+    LD.A_E(b)  # Green
     LD.mHL_A(b)
     INC.HL(b)
 
@@ -143,14 +153,9 @@ def _randomize_palette(b: Block) -> None:
     LD.B_n8(b, 32)
     b.label("LOOP_PALETTE_OUT")
     LD.A_mHL(b)  # LD A,(HL)
-    LD.A_n8(b, 0x99)  # test
     OUT(b, VDP_PAL)  # OUT (9Ah),A
-
-    # RET(b)  # test
-
     INC.HL(b)       # INC HL
     JP_NZ(b, "LOOP_PALETTE_OUT")  # DJNZ LOOP_PALETTE_OUT
-
     RET(b)
 
 
@@ -173,7 +178,7 @@ def _build_palette_random_rom() -> bytes:
 
     # SCREEN 2 初期化とデフォルトパレット設定（MSX2 以上のみ）
     init_screen2_macro(b)
-    set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
+    # set_msx2_palette_default_macro(b)  # MSX2以降で画面が真っ黒になる
 
     # パターン・カラーテーブル配置 (SCREEN 2 の 3 バンクへ複製)
     for dest in (PATTERN_TABLE_ADDR, 0x0800, 0x1000):
@@ -195,7 +200,7 @@ def _build_palette_random_rom() -> bytes:
     LD.mn16_A(b, RNG_STATE_ADDR)
 
     b.label("main_loop")
-    # RANDOMIZE_PALETTE.call(b)  # MSX2 以降でここで画面が真っ黒になる
+    RANDOMIZE_PALETTE.call(b)
 
     # 約 30 フレーム待機 (HALT で VBLANK 待ち合わせ)
     LD.B_n8(b, 30)

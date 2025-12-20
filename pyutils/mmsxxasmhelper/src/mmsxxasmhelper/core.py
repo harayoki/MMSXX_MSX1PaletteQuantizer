@@ -59,7 +59,9 @@ __all__ = [
     "pad_pattern",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "DJNZ",
-    "CALL_label", "CALL", "RET", "Func",
+    "CALL_label", "CALL",
+    "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
+    "Func",
     "DB", "DW",
     "LD", "ADD", "CP", "AND", "OR", "XOR",
     "RLCA",
@@ -456,8 +458,40 @@ def CALL(b: Block, address: int) -> None:
 
 
 def RET(b: Block) -> None:
-    """return"""
     b.emit(0xC9)
+
+
+def RET_NZ(b: Block) -> None:
+    b.emit(0xC0)
+
+
+def RET_Z(b: Block) -> None:
+    b.emit(0xC8)
+
+
+def RET_NC(b: Block) -> None:
+    b.emit(0xD0)
+
+
+def RET_C(b: Block) -> None:
+    b.emit(0xD8)
+
+
+def RET_PO(b: Block) -> None:
+    b.emit(0xE0)
+
+
+def RET_PE(b: Block) -> None:
+    b.emit(0xE8)
+
+
+def RET_P(b: Block) -> None:
+    b.emit(0xF0)
+
+
+def RET_M(b: Block) -> None:
+    b.emit(0x0F8)
+
 
 # ---------------------------------------------------------------------------
 # ブロック調整
@@ -590,6 +624,27 @@ class LD:
     def B_A(b: Block) -> None:
         """LD B,A"""
         LD.rr(b, "B", "A")
+
+    @staticmethod
+    def C_A(b: Block) -> None:
+        """LD C,A"""
+        LD.rr(b, "C", "A")
+
+    @staticmethod
+    def D_A(b: Block) -> None:
+        """LD D,A"""
+        LD.rr(b, "D", "A")
+
+    @staticmethod
+    def E_A(b: Block) -> None:
+        """LD E,A"""
+        LD.rr(b, "E", "A")
+
+    @staticmethod
+    def H_A(b: Block) -> None:
+        """LD H,A"""
+        LD.rr(b, "H", "A")
+
 
     # TODO その他 レジスタ間のLDは必要時に増やしていく
 

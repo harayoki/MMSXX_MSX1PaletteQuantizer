@@ -12,6 +12,7 @@ from mmsxxasmhelper.utils import *
 
 
 __all__ = [
+    "call_subrom_macro",
     "place_msx_rom_header_macro",
     "store_stack_pointer_macro",
     "restore_stack_pointer_macro",
@@ -22,30 +23,35 @@ __all__ = [
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
+    "set_palette_macro",
+
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
 ]
 P = ParamSpec("P")
 
-
 def with_register_preserve(
     macro: Callable[Concatenate[Block, P], None]
 ) -> Callable[Concatenate[Block, P], None]:
     """マクロ呼び出しの前後に PUSH/POP を挿入するデコレータ。
-
-    ``preserve_regs`` キーワード引数で退避するレジスタを指定できる。
+    ``regs_preserve`` キーワード引数で退避するレジスタを指定できる。
     何も指定しなければ PUSH/POP は行われない。
+
+    @with_register_preserveの記述をマクロ関数に記述すると有効になるが
+    どのレジスタを保護するのあユーザーに細かくゆだねたい場合以外は使わない方針
+    各マクロでPUSH POP対応を行う 理由は呼び出し元でどのレジスタを保護すべきか考えさせたくないため
+
     """
 
     @wraps(macro)
     def wrapper(
         b: Block,
         *args: P.args,
-        preserve_regs: Sequence[RegNames16] = (),
+        regs_preserve: Sequence[RegNames16] = (),
         **kwargs: P.kwargs,
     ) -> None:
-        regs = tuple(preserve_regs)
+        regs = tuple(regs_preserve)
         for reg in regs:
             PUSH.r(b, reg)
 
@@ -60,6 +66,7 @@ def with_register_preserve(
 # システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
 SP_TEMP_RAM = 0xF300
 
+
 # BIOS コールアドレス
 LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
@@ -67,6 +74,10 @@ INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
+SUBROM = 0x015C  # サブロムCALL
+
+# サブROM コールアドレス
+SETPLET = 0x014D
 
 # カラー関連システム変数 (MSX1/2 共通)
 FORCLR = 0xF3E9  # 前景色
@@ -79,8 +90,21 @@ VDP_CTRL = 0x99   # VDPコントロールポート
 VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
 
-@with_register_preserve
-def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
+def call_subrom_macro(
+        b: Block, address: int, preserve_regs_ix: bool = False) -> None:
+    """
+    MSXのサブROM CALL
+    IXレジスタ利用
+    """
+    if preserve_regs_ix:
+        PUSH.IX(b)
+    LD.IX_n16(b, address)
+    CALL(b, SUBROM)
+    if preserve_regs_ix:
+        POP.IX(b)
+
+
+def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
     """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
 
     "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
@@ -121,8 +145,7 @@ def restore_stack_pointer_macro(b: Block) -> None:
     LD.SP_HL(b)
 
 
-@with_register_preserve
-def enaslt_macro(b: Block, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
+def enaslt_macro(b: Block) -> None:
     """ENASLT (#0024) を呼び出してスロットを有効化するマクロ。
 
     現在のスロット情報を ``RSLREG`` で取得し、ページ 2 (0x8000–0xBFFF)
@@ -177,16 +200,14 @@ _MSX2_PALETTE_BYTES = [
 ]
 
 
-@with_register_preserve
-def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
+def get_msxver_macro(b: Block) -> None:
     """MSX バージョンを A レジスタに読み出す。
     レジスタ変更: A
     """
     LD.A_mn16(b, MSXVER)
 
 
-@with_register_preserve
-def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
+def set_msx2_palette_default_macro(b: Block) -> None:
     """MSX2 以上でデフォルトパレットを設定するマクロ。
 
     レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
@@ -194,8 +215,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegNames
     """
 
     # --- MSX バージョン確認 ---
-    # ※ type: ignore しなくてもいいがラッパーの関係で警告が出ている模様
-    get_msxver_macro(b)  # type: ignore # A = MSXVER
+    get_msxver_macro(b)
     CP.n8(b, 0x00)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
@@ -225,8 +245,7 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegNames
     b.label("__MSX2_PAL_DATA_END__")
 
 
-@with_register_preserve
-def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegNames16] = ()) -> None:
+def set_screen_mode_macro(b: Block, mode: int) -> None:
     """CHGMOD を呼び出して画面モードを設定する。
     レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
     """
@@ -241,11 +260,9 @@ def init_screen2_macro(b: Block) -> None:
     b.emit(0xCD, INIGRP & 0xFF, (INIGRP >> 8) & 0xFF)
 
 
-@with_register_preserve
 def set_screen_colors_macro(
     b: Block, foreground: int, background: int, border: int,
-        current_screen_mode: int, *, preserve_regs: Sequence[RegNames16] = ()
-) -> None:
+        current_screen_mode: int) -> None:
     """MSX1/2 共通の画面色設定マクロ。
 
     FORCLR/BAKCLR/BDRCLR を指定した値に設定して CHGCLR を呼び出す。
@@ -290,14 +307,13 @@ def set_screen_colors_macro(
 
     # EI(b)
 
-@with_register_preserve
+
 def ldirvm_macro(
     b: Block,
     *,
     source: int | None = None,
     dest: int | None = None,
     length: int | None = None,
-    preserve_regs: Sequence[RegNames16] = (),
 ) -> None:
     """LDIRVM (#005C) を呼び出すマクロ。
 
@@ -320,3 +336,41 @@ def ldirvm_macro(
         LD.BC_n16(b, length & 0xFFFF)
 
     b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+
+
+def set_palette_macro(
+        block: Block,
+        color: int, r: int, g: int, b: int,
+        msx1_safe: bool = True,
+        preserve_regs_de: bool = False,
+        preserve_regs_ix: bool = False,
+) -> None:
+    """
+    SETPLET サブロムコールでパレットを設定（MSX2以降）
+    :param block: Block
+    :param color: color 1 ~ 15
+    :param r: red 1 ~ 7
+    :param g: green 1 ~ 7
+    :param b: blue 1 ~ 7
+    :param msx1_safe: msx1では処理を実行しないコードを挿入するか
+    :param preserve_regs_de: DEレジスタを保護
+    :param preserve_regs_ix: IXレジスタを保護
+    """
+    color = color & 0x0F
+    r = r & 0x07
+    g = g & 0x07
+    b = b & 0x07
+    if msx1_safe:
+        get_msxver_macro(block)
+        CP.n8(block, 0x00)
+        RET_Z(block)
+    if preserve_regs_de:
+        PUSH.DE(block)
+    LD.D_n8(block, color)
+    LD.A_n8(block, (r << 4) + b)
+    LD.E_n8(block, g)
+    if preserve_regs_de:
+        POP.DE(block)
+    call_subrom_macro(block, SETPLET, preserve_regs_ix=preserve_regs_ix)
+
+
