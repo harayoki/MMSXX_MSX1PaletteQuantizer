@@ -98,24 +98,30 @@ def _randomize_palette(b: Block) -> None:
     LD.mHL_n8(b, 0x00)
     INC.HL(b)
 
+    RNG_SEED.call(b)
+
     # 残り 15 色を生成
     # HL... 書き込みアドレス
     # B... カウンダ
     # C... Blue
     # D... Red
     # E... Green
-    LD.B_n8(b, 15)
+    LD.B_n8(b, 16)
     b.label("LOOP_PALETTE_CREATE")
 
+    # Note: どうも8周期で同じものが出てくるので7と15が同じ色になる ランダムルーチンの問題
     RNG_NEXT.call(b)  # a = random値
+    # XOR.B(b)
     AND.n8(b, 0x07)
     LD.D_A(b)  # Red
 
     RNG_NEXT.call(b)  # a = random値
+    # XOR.B(b)
     AND.n8(b, 0x07)
     LD.E_A(b)  # Green
 
     RNG_NEXT.call(b)  # a = random値
+    # XOR.B(b)
     AND.n8(b, 0x07)
     LD.C_A(b)  # Blue
 

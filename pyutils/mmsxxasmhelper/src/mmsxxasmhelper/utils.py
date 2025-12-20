@@ -25,7 +25,7 @@ JIFFY_ADDR = 0xFC9E
 # ---------------------------------------------------------------------------
 
 
-def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = False):
+def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = True):
     """
     ランダムシードの値を指定アドレスに描きこむ
     :param rng_state_addr: 読み書きするアドレス

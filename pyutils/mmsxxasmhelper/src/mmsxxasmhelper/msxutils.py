@@ -278,21 +278,6 @@ def set_screen_colors_macro(
 
     """
 
-    # 直前に VDP を操作する場合のコード？
-    # OUT_A(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
-    # OUT_A(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
-    # OUT_A(b, VDP_DATA, background & 0x0F)  # 背景色指定
-
-    # DI(b)
-
-    # vdpを初期化するコード？
-    # OUT_A(b, VDP_CTRL, 0x02)
-    # OUT_A(b, VDP_CTRL, 0x80)
-    # LD.A_n8(b, 0xE0)
-    # AND.n8(b, 0xFD)
-    # OUT(b, VDP_CTRL)
-    # OUT_A(b, VDP_CTRL, 0x81)
-
     # FORCLR
     LD.A_n8(b, foreground & 0x0F)
     LD.mn16_A(b, FORCLR)
@@ -309,9 +294,7 @@ def set_screen_colors_macro(
     LD.A_n8(b, current_screen_mode)
 
     # CALL CHGCLR
-    # CALL(b, CHGCLR)  # コールすると固まってしまうのでいったんコメントアウトしておく
-
-    # EI(b)
+    CALL(b, CHGCLR)
 
 
 def ldirvm_macro(
