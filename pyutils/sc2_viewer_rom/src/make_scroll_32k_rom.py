@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-MSX1 用・2画面縦スクロールエンジン（8ドット単位）ROM ビルダー仕様
-MSX1 で 2枚の SCREEN2 画像を持ち、 カーソル上下で 8ドット＝1キャラ行単位でスクロール
+MSX1 用・2画面縦スクロールエンジン（8ドット単位）ROM ビルダー仕様。
+MSX1 で 2枚の SCREEN2 画像を持ち、カーソル上下で 8ドット＝1キャラ行単位でスクロール
 ネームテーブル パターンジェネレータ カラーテーブル を ROM から VRAM に反映する
-8ドットスクロールエンジンを構築する
+8ドットスクロールエンジンを構築する。
+
+ASCII16 の MegaROM として、バンク0にエンジンと初期化コードを、以降のバンクに
+RowPackage を配置する。mmsxxasmhelper のマクロを利用してスロット有効化、スタック
+レジスタ退避、MSX2 のデフォルトパレット初期化などをまとめて行う。
 
 ROM 内部構造
 スクロール処理で1行にアクセスしやすいデータ構造をあらかじめ作っておく。
 RowPackage:
 1 logical 行（SCREEN2 の 1行）を以下の構造で ROM に保存する：
-    pattern[8] ; パターンジェネレータ（8バイト）x 32文字
-    color[8] ; カラーテーブル（8バイト）x 32文字
-    32 バイト + (8 + 8) バイト × 32 = 512
-    合計 512 バイト
+    pattern[1] ; パターンジェネレータ（1バイト）x 32文字
+    color[1] ; カラーテーブル（1バイト）x 32文字
+    32 バイト + 32 バイト = 64 バイト
+    合計 64 バイト
 必要ない物
     ネームテーブル（1行 32文字）… 動的に決定できる
     スプライト属性テーブル
@@ -21,7 +25,7 @@ RowPackage:
 画像は 2 枚（各 24 行）なので：
 image1 RowPackage[ 0] ~ RowPackage[23]
 image1 RowPackage[24] ~ RowPackage[47]
-512 × 48 = 21504 バイト（21KB） → 32KB ROM に 11kB余裕をもって収まる。
+64 × 48 = 3072 バイト → 32KB ROM に十分余裕をもって収まる。
 
 ＊SCREEN2 VRAM 仕様
 Pattern Generator : 0000h–17FFh
@@ -63,41 +67,58 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import List
+from typing import Iterable
 
-from mmsxxasmhelper.core import *
-from mmsxxasmhelper.msxutils import *
-from mmsxxasmhelper.utils import *
+from mmsxxasmhelper.core import ADD, Block, CALL, DEC, Func, INC, JR, JR_NZ, LD, POP, PUSH
+from mmsxxasmhelper.msxutils import (
+    CHGCLR,
+    CHGMOD,
+    FORCLR,
+    BAKCLR,
+    BDRCLR,
+    LDIRVM,
+    enaslt_macro,
+    place_msx_rom_header_macro,
+    restore_stack_pointer_macro,
+    set_msx2_palette_default_macro,
+    store_stack_pointer_macro,
+)
+from mmsxxasmhelper.utils import pad_bytes
 
-ROM_SIZE = 0x8000      # 32KB
+PAGE_SIZE = 0x4000
 ROM_BASE = 0x4000
+
+ASCII16_PAGE2_REG = 0x7000
+DATA_BANK_ADDR = 0x8000
 
 VRAM_SIZE = 0x4000
 SC2_HEADER_SIZE = 7
 
 # VDP / SCREEN2 VRAM レイアウト
 PATTERN_BASE = 0x0000
-NAME_BASE    = 0x1800
-COLOR_BASE   = 0x2000
+NAME_BASE = 0x1800
+COLOR_BASE = 0x2000
 
 # MSX RAM での作業領域
 WORK_RAM_BASE = 0xC000
 
+ROW_COUNT = 24
 
-def validate_sc2_bytes(sc2_bytes: bytes) -> bytes:
-    """
-    SCREEN2 VRAM データの正規化
-    """
+
+def int_from_str(value: str) -> int:
+    return int(value, 0)
+
+
+def sc2_to_vram(sc2_bytes: bytes) -> bytes:
     length = len(sc2_bytes)
-    # 7バイトヘッダ付き 0x4000 + 7
     if length == VRAM_SIZE + SC2_HEADER_SIZE:
         sc2_bytes = sc2_bytes[SC2_HEADER_SIZE:]
         length = len(sc2_bytes)
-    assert length == VRAM_SIZE, f"Invalid SC2 size: {length:#x}"  # must be 16k
-    # ねんのためスプライト定義と属性テーブルを0クリア
+    if length != VRAM_SIZE:
+        raise ValueError("SC2 image must be 0x4000 bytes (optionally +7 header)")
+
     vram = bytearray(sc2_bytes)
-    for addr in range(0x3800, 0x4000):
-        vram[addr] = 0x00
+    vram[0x3800:0x4000] = b"\x00" * 0x800
     return bytes(vram)
 
 
@@ -109,211 +130,166 @@ def build_row_packages(image_bytes: bytes) -> bytes:
         color   * 32
     """
     if len(image_bytes) != VRAM_SIZE:
-        raise ValueError("trimmed image must be 0x3780 bytes")
+        raise ValueError("image must be 0x4000 bytes after normalization")
 
-    """
-    ＊SCREEN2 VRAM 仕様
-    Pattern Generator : 0000h–17FFh
-    Name Table : 1800h–1AFFh
-    Color Table : 2000h–37FFh
-    """
     pattern_gen = image_bytes[:0x1800]
-    color_table = image_bytes[0x2000:0x3800]  # カラーテーブル
+    color_table = image_bytes[0x2000:0x3800]
 
-    rows: List[bytes] = []
-    for row in range(24):
-        bank = row // 8  # 0,1,2 (SCREEN2 の 8行単位バンク)
-
-        pattern_line = pattern_gen[row * 32:(row + 1) * 32]
-        pattern_line_as_str = " ".join(f"{b:02X}" for b in pattern_line)
-        # print(f"#{row} pattern_line({((bank * 0x800) + (row % 8) * 32):04X}) {pattern_line_as_str}")
-        color_line   = color_table[row * 32:(row + 1) * 32]
-        color_line_as_str = " ".join(f"{b:02X}" for b in color_line)
-        # print(f"#{row} color_line({((bank * 0x800) + (row % 8) * 32):04X}) {color_line_as_str}")
-
-        pkg: bytes = pattern_line + color_line  # 64 bytes
-        rows.append(pkg)
+    rows: list[bytes] = []
+    for row in range(ROW_COUNT):
+        pattern_line = pattern_gen[row * 32 : (row + 1) * 32]
+        color_line = color_table[row * 32 : (row + 1) * 32]
+        rows.append(pattern_line + color_line)
 
     return b"".join(rows)
 
 
-def init_name_table_call(b: Block) -> None:
+def build_init_name_table_func() -> Func:
+    def init_name_table_call(block: Block) -> None:
+        # 最初に 0~255 のパターンをRAMに用意
+        LD.HL_n16(block, WORK_RAM_BASE)
+        LD.A_n8(block, 0)
+        block.label("CREATE_NAME_TABLE_LOOP")
+        LD.mHL_A(block)
+        LD.mHL_n8(block, 0)
+        INC.HL(block)
+        INC.A(block)
+        JR_NZ(block, "CREATE_NAME_TABLE_LOOP")
 
-    # 最初に 0~255 のパターンをRAMに用意
-    # HL = WORK_RAM_BASE
-    LD.HL_n16(b, WORK_RAM_BASE)
-    # A = 0~255
-    LD.A_n8(b, 0)
-    b.label("CREATE_NAME_TABLE_LOOP")
-    # (HL) = A
-    LD.mHL_A(b)
-    LD.mHL_n8(b, 0)
-    # HL++
-    INC.HL(b)
-    # A++
-    INC.A(b)
-    # 256回ループ
-    JP_Z(b, "CREATE_NAME_TABLE_LOOP")
+        # ネームテーブルの初期化x3
+        LD.HL_n16(block, WORK_RAM_BASE)
+        LD.DE_n16(block, NAME_BASE)
+        LD.BC_n16(block, 0x0200)
+        CALL(block, LDIRVM)
 
-    # ネームテーブルの初期化x3
-    ldirvm_macro(b, source=WORK_RAM_BASE, dest=NAME_BASE        , length=0x0200)
-    ldirvm_macro(b, source=WORK_RAM_BASE, dest=NAME_BASE + 0x100, length=0x0200)
-    ldirvm_macro(b, source=WORK_RAM_BASE, dest=NAME_BASE + 0x200, length=0x0200)
+        LD.HL_n16(block, WORK_RAM_BASE)
+        LD.DE_n16(block, NAME_BASE + 0x100)
+        LD.BC_n16(block, 0x0200)
+        CALL(block, LDIRVM)
 
+        LD.HL_n16(block, WORK_RAM_BASE)
+        LD.DE_n16(block, NAME_BASE + 0x200)
+        LD.BC_n16(block, 0x0200)
+        CALL(block, LDIRVM)
 
-INIT_NAME_TABLE_CALL = Func("init_name_table_call", init_name_table_call)
-
-
-def draw_page_call(b: Block) -> None:
-    """
-    1ページ分の RowPackage データを VRAM に転送する関数
-    """
-
-    START_ADDR = "PACKED_DATA"
-
-    # HL = RowPackage 先頭
-    LD.HL_label(b, START_ADDR)
-
-    # DE = PATTERN_BASE / IY = COLOR_BASE
-    LD.DE_n16(b, PATTERN_BASE)
-    LD.IY_n16(b, COLOR_BASE)
-
-    # A = 24 行分処理
-    LD.A_n8(b, 24)
-
-    b.label("DRAW_PAGE_LOOP")
-
-    # パターン 32バイトコピー BCレジスタ破壊
-    ldirvm_macro(b, length=31)
-
-    # 次のパターン出力先を退避
-    PUSH.DE(b)
-
-    # カラーの出力先 (IY) を DE にセット
-    PUSH.IY(b)
-    POP.DE(b)
-
-    # 1行分転送 BCレジスタ破壊
-    ldirvm_macro(b, length=32)
-
-    # IY += 32 (次行のカラー位置)
-    LD.BC_n16(b, 32)
-    ADD.IY_BC(b)
-
-    # 次行のパターン出力先を復帰
-    POP.DE(b)
-
-    # 24行処理するまでループ
-    DEC.A(b)
-    JP_Z(b, "DRAW_PAGE_LOOP")
+    return Func("init_name_table_call", init_name_table_call)
 
 
-DRAW_PAGE_CALL = Func("draw_page_call", draw_page_call)
+INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
-def build_rom(packed_data: bytes) -> bytes:
-    """
-    ROMに書き込むコードを組み立てる。
-    """
+def build_draw_page_func() -> Func:
+    def draw_page(block: Block) -> None:
+        # C = data bank number
+        LD.A_C(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
 
-    set_debug(True)
+        LD.HL_n16(block, DATA_BANK_ADDR)
+        LD.DE_n16(block, PATTERN_BASE)
+        LD.IY_n16(block, COLOR_BASE)
+        LD.A_n8(block, ROW_COUNT)
 
+        block.label("DRAW_PAGE_LOOP")
+        LD.BC_n16(block, 32)
+        CALL(block, LDIRVM)
+
+        PUSH.DE(block)
+        PUSH.IY(block)
+        POP.DE(block)
+
+        LD.BC_n16(block, 32)
+        CALL(block, LDIRVM)
+
+        LD.BC_n16(block, 32)
+        ADD.IY_BC(block)
+        POP.DE(block)
+
+        DEC.A(block)
+        JR_NZ(block, "DRAW_PAGE_LOOP")
+
+    return Func("draw_page_call", draw_page)
+
+
+DRAW_PAGE_CALL = build_draw_page_func()
+
+
+def build_boot_bank(data_banks: Iterable[int], fill_byte: int) -> bytes:
     b = Block()
 
-    # エントリラベル（ROM_HEADER もここに置く）
+    place_msx_rom_header_macro(b, entry_point=ROM_BASE + 0x10)
+
     b.label("start")
-
-    # ROM ヘッダ配置（MSX がここを 0x4000 とみなす）
-    place_msx_rom_header_macro(b)
-
-    # ----- ここから 0x4010: 実際に実行されるコード -----
-
-    # スタックポインタ退避
     store_stack_pointer_macro(b)
+    enaslt_macro(b)
 
-    # SCREEN 2 に変更: LD A,2 / CALL 005Fh (CHGMOD)
-    # set_screen_mode_macro(b, 2)  # MSX2以降でないと動いていない模様
-    init_screen2_macro(b)  # MSX2以降でないと動いていない模様
+    LD.A_n8(b, 2)
+    CALL(b, CHGMOD)
+    set_msx2_palette_default_macro(b)
 
-    # 色: 前景=白 / 背景=黒 / 枠=黒
-    # 現状動いていない
-    # set_screen_colors_macro(b, 15, 0, 0, 2)
+    LD.A_n8(b, 0x0F)
+    LD.mn16_A(b, FORCLR)
+    LD.A_n8(b, 0x00)
+    LD.mn16_A(b, BAKCLR)
+    LD.mn16_A(b, BDRCLR)
+    CALL(b, CHGCLR)
 
-    # MSX2 以上ならパレット設定
-    # set_msx2_palette_default_macro(b)
-
-    # ネームテーブル初期化
     INIT_NAME_TABLE_CALL.call(b)
-    debug_trap(b)
 
-    # 1枚目の絵を出す
-    # PACKED_DATA の先頭 (1 枚目) を描画
-    DRAW_PAGE_CALL.call(b)
+    for bank_index in data_banks:
+        LD.C_n8(b, bank_index)
+        DRAW_PAGE_CALL.call(b)
+        break
 
-    # 以降は無限ループ
-    loop_infinite_macro(b)
+    loop_start = "main_loop"
+    b.label(loop_start)
+    JR(b, loop_start)
 
-    # スタックポインタ復帰（必要なら）
     restore_stack_pointer_macro(b)
 
-    # ----- サブルーチンの定義 -----
     INIT_NAME_TABLE_CALL.define(b)
     DRAW_PAGE_CALL.define(b)
 
-    # ----- VRAM イメージデータ本体 -----
-    NOP(b, 16)  # test
-    b.label("PACKED_DATA")
-    DB(b, *packed_data)
-
-    # origin=0x4000 で fixup 解決
-    return b.finalize(origin=ROM_BASE)
+    return bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
 
 
-def build(
-    image0_trimmed: bytes,
-    image1_trimmed: bytes,
-    fill_byte: int = 0xFF,
-) -> bytes:
-    """
-    1枚目: フル VRAM に復元して ROM に埋め込み、起動時に表示。
-    2枚目: 今は未使用（将来 RowPackage 等で使う前提で残してある引数）。
-    """
+def build_data_bank(row_packages: bytes, fill_byte: int) -> bytes:
+    return bytes(pad_bytes(list(row_packages), PAGE_SIZE, fill_byte))
+
+
+def build(image0: bytes, image1: bytes, fill_byte: int = 0xFF) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
 
-    pack1 = build_row_packages(image0_trimmed)
-    pack2 = build_row_packages(image1_trimmed)
+    packages = [build_row_packages(image0), build_row_packages(image1)]
 
-    engine = build_rom(pack1 + pack2)
+    banks = [
+        build_boot_bank(range(1, len(packages) + 1), fill_byte),
+    ]
+    for pkg in packages:
+        banks.append(build_data_bank(pkg, fill_byte))
 
-    if len(engine) > ROM_SIZE:
-        raise ValueError(
-            f"engine+data too large ({len(engine)} bytes) for 32KB ROM"
-        )
-
-    rom = bytearray([fill_byte] * ROM_SIZE)
-    rom[: len(engine)] = engine
-    return bytes(rom)
+    return b"".join(banks)
 
 
 def parse_args() -> argparse.Namespace:
-    def int_from_str(v: str) -> int:
-        return int(v, 0)
-
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="MSX1 SCREEN2 1枚目表示 ROM ビルダー（スクロール前段階＋色＆パレット）"
     )
-    p.add_argument("image0", type=Path, help="1枚目 .sc2 (上側 / まず表示する画像)")
-    p.add_argument("image1", type=Path, help="2枚目 .sc2 (今は未使用)")
-    p.add_argument(
-        "-o", "--output", type=Path,
+    parser.add_argument("image0", type=Path, help="1枚目 .sc2 (上側 / まず表示する画像)")
+    parser.add_argument("image1", type=Path, help="2枚目 .sc2 (今は未使用)")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
         help="出力 ROM ファイル名（未指定なら自動命名）",
     )
-    p.add_argument(
-        "--fill-byte", type=int_from_str, default=0xFF,
+    parser.add_argument(
+        "--fill-byte",
+        type=int_from_str,
+        default=0xFF,
         help="未使用領域の埋め値 (default: 0xFF)",
     )
-    return p.parse_args()
+    return parser.parse_args()
 
 
 def main() -> None:
@@ -324,20 +300,20 @@ def main() -> None:
     if not args.image1.is_file():
         raise SystemExit(f"not found: {args.image1}")
 
-    img0 = validate_sc2_bytes(args.image0.read_bytes())
-    img1 = validate_sc2_bytes(args.image1.read_bytes())
+    img0 = sc2_to_vram(args.image0.read_bytes())
+    img1 = sc2_to_vram(args.image1.read_bytes())
 
     rom = build(img0, img1, fill_byte=args.fill_byte)
 
     out = args.output
     if out is None:
-        name = f"{args.image0.stem}_scroll_{args.image1.stem}"
+        name = f"{args.image0.stem}_scroll_{args.image1.stem}[ASCII16]"
         out = args.image0.with_name(name).with_suffix(".rom")
 
     try:
         out.write_bytes(rom)
-    except Exception as e:
-        raise SystemExit(f"ERROR! failed to write ROM file: {e}") from e
+    except Exception as exc:  # pragma: no cover - CLI error path
+        raise SystemExit(f"ERROR! failed to write ROM file: {exc}") from exc
     print(f"Wrote {len(rom)} bytes to {out}")
 
 
