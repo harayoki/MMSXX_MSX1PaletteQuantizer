@@ -10,15 +10,39 @@ from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 from mmsxxasmhelper.core import *
 
 __all__ = [
+    "create_rng_seed_func",
     "rng_next_func",
     "loop_infinite_macro",
     "set_debug",
     "debug_trap",
 ]
 
+JIFFY_ADDR = 0xFC9E
+
+
 # ---------------------------------------------------------------------------
 # 関数
 # ---------------------------------------------------------------------------
+
+
+def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = False):
+    """
+    ランダムシードの値を指定アドレスに描きこむ
+    :param rng_state_addr: 読み書きするアドレス
+    :param preserve_reg_bc: bcレジスタを保護するか
+    """
+    def _create_rng_seed(b: Block):
+        if preserve_reg_bc:
+            PUSH.BC(b)
+        LD.A_mn16(b, JIFFY_ADDR)
+        LD.B_A(b)
+        LD.A_mn16(b, JIFFY_ADDR + 1)
+        XOR.B(b)
+        if preserve_reg_bc:
+            POP.BC(b)
+        LD.mn16_A(b, rng_state_addr)
+
+    return Func("create_rng_seed", _create_rng_seed)
 
 
 def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
@@ -27,7 +51,6 @@ def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
     あるアドレスの値を次のランダム値に更新する Aレジスタに更新後の値を返す
     :param rng_state_addr: 読み書きするアドレス
     :param preserve_reg_bc: bcレジスタを保護するか
-    :return:
     """
     def _rng_next(b: Block) -> None:
         """

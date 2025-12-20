@@ -14,12 +14,12 @@ from pathlib import Path
 try:
     from mmsxxasmhelper.core import *
     from mmsxxasmhelper.msxutils import *
-    from mmsxxasmhelper.utils import rng_next_func, loop_infinite_macro
+    from mmsxxasmhelper.utils import create_rng_seed_func, rng_next_func, loop_infinite_macro
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from mmsxxasmhelper.core import *
     from mmsxxasmhelper.msxutils import *
-    from mmsxxasmhelper.utils import rng_next_func, loop_infinite_macro
+    from mmsxxasmhelper.utils import create_rng_seed_func, rng_next_func, loop_infinite_macro
 
 
 ROM_PAGE_SIZE = 0x4000
@@ -27,7 +27,6 @@ PATTERN_TABLE_ADDR = 0x0000
 COLOR_TABLE_ADDR = 0x2000
 NAME_TABLE_ADDR = 0x1800
 PALETTE_REGISTER = 16
-JIFFY_ADDR = 0xFC9E
 PALETTE_BUFFER_ADDR = 0xC100
 RNG_STATE_ADDR = 0xC200
 
@@ -85,6 +84,7 @@ def _build_color_data() -> bytes:
 # ルーチン定義 ------------------------------------------------------
 
 
+RNG_SEED = create_rng_seed_func(RNG_STATE_ADDR)
 RNG_NEXT = rng_next_func(RNG_STATE_ADDR)
 
 
@@ -150,7 +150,7 @@ def _randomize_palette(b: Block) -> None:
     OUT_A(b, VDP_CTRL, 0x00)
     OUT_A(b, VDP_CTRL, 0x80 + PALETTE_REGISTER)
     LD.HL_n16(b, PALETTE_BUFFER_ADDR)
-    LD.B_n8(b, 32)
+    LD.B_n8(b, 16 * 2)
     b.label("LOOP_PALETTE_OUT")
     LD.A_mHL(b)  # LD A,(HL)
     OUT(b, VDP_PAL)  # OUT (9Ah),A
@@ -193,12 +193,8 @@ def _build_palette_random_rom() -> bytes:
     LD.HL_label(b, "NAME_TABLE")
     ldirvm_macro(b, dest=NAME_TABLE_ADDR, length=len(name_table))
 
-    # RNG シード: JIFFY の 2 バイトを XOR
-    LD.A_mn16(b, JIFFY_ADDR)
-    LD.rr(b, "D", "A")
-    LD.A_mn16(b, JIFFY_ADDR + 1)
-    XOR.D(b)
-    LD.mn16_A(b, RNG_STATE_ADDR)
+    # RNG シード作成
+    RNG_SEED.call(b)
 
     get_msxver_macro(b)
     CP.n8(b, 0)
@@ -218,6 +214,7 @@ def _build_palette_random_rom() -> bytes:
     JP(b, "main_loop")
 
     # 関数定義
+    RNG_SEED.define(b)
     RNG_NEXT.define(b)
     RANDOMIZE_PALETTE.define(b)
 
