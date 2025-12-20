@@ -27,7 +27,7 @@ except ImportError:
         set_msx2_palette_default_macro,
         store_stack_pointer_macro,
     )
-    from mmsxxasmhelper.utils import pad_bytes
+    from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
 
 PAGE_SIZE = 0x4000
 MAX_ROM_SIZE = 0x400000
