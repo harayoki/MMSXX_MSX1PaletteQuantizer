@@ -156,8 +156,6 @@ def build_boot_bank(
         LD.DE_n16(block, 0x0000)
         LD.BC_n16(block, VRAM_SIZE)
         CALL(block, LDIRVM)
-        LOAD_SPEED_PATTERN.call(block)
-        UPDATE_SPEED_INDICATOR.call(block)
 
     LOAD_AND_SHOW = Func("load_and_show", load_and_show)
 
@@ -179,18 +177,14 @@ def build_boot_bank(
         LD.A_mn16(block, AUTO_INDICATOR_FLAG_ADDR)
         OR.A(block)
         JR_Z(block, "update_speed_indicator_end")
+        LOAD_SPEED_PATTERN.call(block)
 
         LD.HL_mn16(block, AUTO_INTERVAL_ADDR)
         LD.A_H(block)
         OR.L(block)
-        JR_Z(block, "update_speed_indicator_off")
+        JR_Z(block, "update_speed_indicator_use_hidden")
+
         LD.A_mn16(block, AUTO_SPEED_INDEX_ADDR)
-        JR(block, "update_speed_indicator_have_index")
-
-        block.label("update_speed_indicator_off")
-        LD.A_n8(block, speed_level_count)
-
-        block.label("update_speed_indicator_have_index")
         LD.L_A(block)
         LD.H_n8(block, 0)
         ADD.HL_HL(block)
@@ -200,6 +194,12 @@ def build_boot_bank(
         ADD.HL_HL(block)
         LD.DE_label(block, "SPEED_ATTR_TABLE")
         ADD.HL_DE(block)
+        JR(block, "update_speed_indicator_copy")
+
+        block.label("update_speed_indicator_use_hidden")
+        LD.HL_label(block, "SPEED_ATTR_HIDDEN")
+
+        block.label("update_speed_indicator_copy")
         LD.DE_n16(block, SPRITE_ATTR_TABLE_ADDR)
         LD.BC_n16(block, attr_bytes_per_level)
         CALL(block, LDIRVM)
@@ -417,7 +417,6 @@ def build_boot_bank(
 
     LD.A_n8(b, 1 if enable_speed_indicator else 0)
     LD.mn16_A(b, AUTO_INDICATOR_FLAG_ADDR)
-    LOAD_SPEED_PATTERN.call(b)
     LD.A_n8(b, initial_speed_level & 0xFF)
     LD.mn16_A(b, AUTO_SPEED_INDEX_ADDR)
     LD.mn16_A(b, AUTO_SPEED_PREV_ADDR)
@@ -533,14 +532,18 @@ def build_boot_bank(
             speed_attr_data.extend(
                 [y, SPEED_INDICATOR_X, SPEED_INDICATOR_PATTERN_ID, SPEED_INDICATOR_COLOR]
             )
-    for _ in range(speed_level_count):
-        speed_attr_data.extend([0xD0, SPEED_INDICATOR_X, SPEED_INDICATOR_PATTERN_ID, SPEED_INDICATOR_COLOR])
 
     b.label("SPEED_ATTR_TABLE")
     DB(b, *speed_attr_data)
 
+    b.label("SPEED_ATTR_HIDDEN")
+    hidden_attr_data: list[int] = []
+    for _ in range(speed_level_count):
+        hidden_attr_data.extend([0xD0, SPEED_INDICATOR_X, SPEED_INDICATOR_PATTERN_ID, SPEED_INDICATOR_COLOR])
+    DB(b, *hidden_attr_data)
+
     b.label("SPEED_PATTERN")
-    speed_pattern = [0x18] * 8
+    speed_pattern = [0xCC, 0x66, 0x33, 0x19, 0x33, 0x66, 0xCC, 0x00]
     DB(b, *speed_pattern)
 
     return bytes(pad_bytes(list(b.finalize(origin=0x4000)), PAGE_SIZE, 0x00))
