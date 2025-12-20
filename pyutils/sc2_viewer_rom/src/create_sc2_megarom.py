@@ -48,6 +48,8 @@ SNSMAT = 0x0141
 
 SPRITE_ATTR_TABLE_ADDR = 0x1B00
 SPRITE_PATTERN_TABLE_ADDR = 0x3800
+SPRITE_ATTR_TABLE_SIZE = 0x80
+SPRITE_PATTERN_TABLE_SIZE = 0x800
 SPEED_INDICATOR_PATTERN_ID = 0x00
 SPEED_INDICATOR_COLOR = 0x0F
 SPEED_INDICATOR_X = 0xF8
@@ -134,6 +136,7 @@ def build_boot_bank(
     start_paused: bool,
     enable_speed_indicator: bool,
     instruction_autostart_seconds: int,
+    copy_sprite_tables: bool,
 ) -> bytes:
     if not 1 <= image_count <= 0xFF:
         raise ValueError("image_count must be between 1 and 255")
@@ -156,9 +159,27 @@ def build_boot_bank(
         LD.A_C(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
         LD.HL_n16(block, 0x8000)
-        LD.DE_n16(block, 0x0000)
-        LD.BC_n16(block, VRAM_SIZE)
-        CALL(block, LDIRVM)
+        if copy_sprite_tables:
+            LD.DE_n16(block, 0x0000)
+            LD.BC_n16(block, VRAM_SIZE)
+            CALL(block, LDIRVM)
+        else:
+            LD.DE_n16(block, 0x0000)
+            LD.BC_n16(block, SPRITE_ATTR_TABLE_ADDR)
+            CALL(block, LDIRVM)
+            LD.HL_n16(
+                block,
+                0x8000 + SPRITE_ATTR_TABLE_ADDR + SPRITE_ATTR_TABLE_SIZE,
+            )
+            LD.DE_n16(block, SPRITE_ATTR_TABLE_ADDR + SPRITE_ATTR_TABLE_SIZE)
+            LD.BC_n16(
+                block,
+                SPRITE_PATTERN_TABLE_ADDR
+                - (SPRITE_ATTR_TABLE_ADDR + SPRITE_ATTR_TABLE_SIZE),
+            )
+            CALL(block, LDIRVM)
+        LOAD_SPEED_PATTERN.call(block)
+        UPDATE_SPEED_INDICATOR.call(block)
 
     LOAD_AND_SHOW = Func("load_and_show", load_and_show)
 
@@ -695,6 +716,7 @@ def build_rom(
     start_paused: bool,
     enable_speed_indicator: bool,
     instruction_autostart_seconds: int,
+    copy_sprite_tables: bool,
 ) -> bytes:
     max_images = MAX_BANKS - 1
     image_count = len(images)
@@ -721,6 +743,7 @@ def build_rom(
         start_paused,
         enable_speed_indicator,
         instruction_autostart_seconds,
+        copy_sprite_tables,
     )
     banks = [bank0]
 
@@ -805,7 +828,16 @@ def parse_args() -> argparse.Namespace:
         const=0,
         help="Disable auto-start and wait for a key press on the instruction screen.",
     )
-    parser.set_defaults(with_instructions=True, speed_indicator=False)
+    parser.add_argument(
+        "--copy-sprite-vram",
+        dest="copy_sprite_vram",
+        action="store_true",
+        help=(
+            "Copy sprite attribute/pattern data from each page when loading. "
+            "Disabled by default to preserve sprite-based indicators."
+        ),
+    )
+    parser.set_defaults(with_instructions=True, speed_indicator=False, copy_sprite_vram=False)
     return parser.parse_args()
 
 
@@ -878,6 +910,7 @@ def main() -> None:
         start_paused,
         args.speed_indicator,
         args.instruction_autostart,
+        args.copy_sprite_vram,
     )
     out_path = resolve_output_path(args.output, sc2_paths[0])
     out_path.write_bytes(rom_bytes)
