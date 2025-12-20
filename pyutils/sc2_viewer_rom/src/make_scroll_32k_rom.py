@@ -1,73 +1,36 @@
 #!/usr/bin/env python3
 """
-MSX1 用・2画面縦スクロールエンジン（8ドット単位）ROM ビルダー仕様。
-MSX1 で 2枚の SCREEN2 画像を持ち、カーソル上下で 8ドット＝1キャラ行単位でスクロール
-ネームテーブル パターンジェネレータ カラーテーブル を ROM から VRAM に反映する
-8ドットスクロールエンジンを構築する。
+MSX1 縦スクロール ROM ビルダー。
 
-ASCII16 の MegaROM として、バンク0にエンジンと初期化コードを、以降のバンクに
-RowPackage を配置する。mmsxxasmhelper のマクロを利用してスロット有効化、スタック
-レジスタ退避、MSX2 のデフォルトパレット初期化などをまとめて行う。
+これまで 2 枚の `.sc2` を受け取っていたが、代わりに縦長の PNG を 1 枚受け取り、
+以下の手順で ROM を生成する:
 
-ROM 内部構造
-スクロール処理で1行にアクセスしやすいデータ構造をあらかじめ作っておく。
+1. 入力 PNG を左上基準で横 256px にトリミング。足りない場合は右側を背景色でパディング。
+2. 縦は 8px 単位になるように下側へパディング（背景色指定可 / 既定は黒）。
+3. C++ 製 `msx1pq_cli`（PATH もしくは引数で指定）で前処理なしのまま MSX1 ルール準拠の
+   パレット PNG を生成。
+4. 8 ドット幅内 2 色ルールに従うラインデータ（パターン + 色: 各 32byte/行）へ変換し、
+   ASCII16 MegaROM のデータバンクに格納。
+
 RowPackage:
-1 logical 行（SCREEN2 の 1行）を以下の構造で ROM に保存する：
-    pattern[1] ; パターンジェネレータ（1バイト）x 32文字
-    color[1] ; カラーテーブル（1バイト）x 32文字
-    32 バイト + 32 バイト = 64 バイト
-    合計 64 バイト
-必要ない物
-    ネームテーブル（1行 32文字）… 動的に決定できる
-    スプライト属性テーブル
-    スプライトパターンジェネレータ
+    pattern[1] ; パターンジェネレータ（1バイト）x 32 文字
+    color[1]   ; カラーテーブル（1バイト）x 32 文字
+    合計 64 バイト / 1 ライン
 
-画像は 2 枚（各 24 行）なので：
-image1 RowPackage[ 0] ~ RowPackage[23]
-image1 RowPackage[24] ~ RowPackage[47]
-64 × 48 = 3072 バイト → 32KB ROM に十分余裕をもって収まる。
-
-＊SCREEN2 VRAM 仕様
-Pattern Generator : 0000h–17FFh
-Name Table : 1800h–1AFFh
-Color Table : 2000h–37FFh
-
-＊スクロール位置を指定した全面書き換え
-top_row(0~24)の値を見て2画面分のRowPackage全体必要な部分を決定。
-ネームテーブルは機械的に埋めて、パターンジェネレータとカラーテーブルは
-RowPackageから該当部分を取り出してVRAMに書き込む。
-
-＊手抜きなスクロール処理
-
-差分は考えずスクロール位置を指定した全面書き換えを行う。
-まずはこれで実装を行い画面のみだれやパフォーマンスが許容できるか確認する。
-
-＊まじめなスクロール処理
-
-まずVRAM領域が3分割で荒れている事は考えずに知世を記す。
-
-＞カラーテーブル・パターンジェネレータ
-▼ 下スクロール top_row++（最大 24）
-現在の一番上の行に対応するテーブルを次にスクロールして出てくる内容[top_row+23]で書き換える
-
-▲ 上スクロール top_row--（最小 0）
-現在の一番下の行に対応するテーブルを次にスクロールして出てくる内容[top_row]で書き換える
-
-＞ネームテーブル
-▼ 下スクロール ネームテーブル行を上へ1行詰める
- 見えなくなる一番上の行内容をを一番下の行に移動する
-▲ 上スクロール（scroll up）  ネームテーブル行を下へ1行詰める
-　見えなくなる一番下の行内容をを一番↑の行に移動する
-
-以上で基本的な考え方はいいのだが、実際には VRAM 領域が縦に3分割して
-8行ずつになっているため、8行単位で処理を行う必要がある。
+VRAM のパターンジェネレータ / カラーテーブル全面を書き換える前提のシンプルな ROM を
+構築する。スクロール処理自体は別途マシン語側で行う想定。
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
+from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
+from tempfile import TemporaryDirectory
 
 from mmsxxasmhelper.core import ADD, Block, CALL, DEC, Func, INC, JR, JR_NZ, LD, POP, PUSH
 from mmsxxasmhelper.msxutils import (
@@ -84,15 +47,14 @@ from mmsxxasmhelper.msxutils import (
     store_stack_pointer_macro,
 )
 from mmsxxasmhelper.utils import pad_bytes
+from PIL import Image
+from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
 
 PAGE_SIZE = 0x4000
 ROM_BASE = 0x4000
 
 ASCII16_PAGE2_REG = 0x7000
 DATA_BANK_ADDR = 0x8000
-
-VRAM_SIZE = 0x4000
-SC2_HEADER_SIZE = 7
 
 # VDP / SCREEN2 VRAM レイアウト
 PATTERN_BASE = 0x0000
@@ -101,47 +63,161 @@ COLOR_BASE = 0x2000
 
 # MSX RAM での作業領域
 WORK_RAM_BASE = 0xC000
-
-ROW_COUNT = 24
+TARGET_WIDTH = 256
+VISIBLE_ROWS = 24
 
 
 def int_from_str(value: str) -> int:
     return int(value, 0)
 
 
-def sc2_to_vram(sc2_bytes: bytes) -> bytes:
-    length = len(sc2_bytes)
-    if length == VRAM_SIZE + SC2_HEADER_SIZE:
-        sc2_bytes = sc2_bytes[SC2_HEADER_SIZE:]
-        length = len(sc2_bytes)
-    if length != VRAM_SIZE:
-        raise ValueError("SC2 image must be 0x4000 bytes (optionally +7 header)")
-
-    vram = bytearray(sc2_bytes)
-    vram[0x3800:0x4000] = b"\x00" * 0x800
-    return bytes(vram)
+@contextmanager
+def open_workdir(path: Path | None):
+    if path is None:
+        with TemporaryDirectory() as tmp:
+            yield Path(tmp)
+    else:
+        path.mkdir(parents=True, exist_ok=True)
+        yield path
 
 
-def build_row_packages(image_bytes: bytes) -> bytes:
+def prepare_image(path: Path, background: tuple[int, int, int]) -> Image.Image:
+    """Crop/pad the input to 256px width and multiple-of-8 height."""
+
+    img = Image.open(path).convert("RGB")
+    width, height = img.size
+
+    cropped_width = min(width, TARGET_WIDTH)
+    cropped = img.crop((0, 0, cropped_width, height))
+
+    new_height = ((height + 7) // 8) * 8
+    canvas = Image.new("RGB", (TARGET_WIDTH, new_height), background)
+    canvas.paste(cropped, (0, 0))
+    return canvas
+
+
+def find_msx1pq_cli(path: Path | None) -> Path:
+    if path is not None:
+        if path.is_file():
+            return path
+        raise SystemExit(f"msx1pq_cli not found: {path}")
+
+    resolved = shutil.which("msx1pq_cli")
+    if not resolved:
+        raise SystemExit("msx1pq_cli not found in PATH. Provide --msx1pq-cli.")
+    return Path(resolved)
+
+
+def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_suffix = "_msx"
+    cmd = [
+        str(cli),
+        "-i",
+        str(prepared_png),
+        "-o",
+        str(output_dir),
+        "--no-preprocess",
+        "--out-suffix",
+        out_suffix,
+        "--force",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            "msx1pq_cli failed:\n"
+            f"command: {' '.join(cmd)}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+
+    out_path = output_dir / f"{prepared_png.stem}{out_suffix}{prepared_png.suffix}"
+    if not out_path.is_file():
+        raise SystemExit(f"Expected output not found: {out_path}")
+    return out_path
+
+
+def nearest_palette_index(rgb: Sequence[int]) -> int:
+    """Return the closest MSX1 palette index (0-based) for an RGB triple."""
+
+    r, g, b = rgb
+    best_idx = 0
+    best_dist = float("inf")
+    for idx, (pr, pg, pb) in enumerate(BASIC_COLORS_MSX1):
+        dist = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
+        if dist < best_dist:
+            best_dist = dist
+            best_idx = idx
+    return best_idx
+
+
+def palette_distance(idx_a: int, idx_b: int) -> int:
+    ra, ga, ba = BASIC_COLORS_MSX1[idx_a]
+    rb, gb, bb = BASIC_COLORS_MSX1[idx_b]
+    return (ra - rb) ** 2 + (ga - gb) ** 2 + (ba - bb) ** 2
+
+
+def restrict_two_colors(indices: list[int]) -> list[int]:
+    """Ensure a block uses at most two colors.
+
+    `msx1pq_cli` で 8dot 2 色ルールが守られている前提だが、念のため
+    3 色以上のブロックを 2 色に丸める安全弁を入れておく。
     """
-    1画面のバイト列から RowPackage[24] を生成。
-    RowPackage:
-        pattern * 32
-        color   * 32
-    """
-    if len(image_bytes) != VRAM_SIZE:
-        raise ValueError("image must be 0x4000 bytes after normalization")
 
-    pattern_gen = image_bytes[:0x1800]
-    color_table = image_bytes[0x2000:0x3800]
+    unique = set(indices)
+    if len(unique) <= 2:
+        return indices
+
+    counts = Counter(indices)
+    allowed = [color for color, _ in counts.most_common(2)]
+
+    remapped: list[int] = []
+    for idx in indices:
+        if idx in allowed:
+            remapped.append(idx)
+            continue
+        remapped.append(min(allowed, key=lambda candidate: palette_distance(idx, candidate)))
+
+    return remapped
+
+
+def build_row_packages_from_image(image: Image.Image) -> tuple[bytes, int]:
+    """Convert a quantized image into RowPackage bytes and return (bytes, row_count)."""
+
+    width, height = image.size
+    if width != TARGET_WIDTH:
+        raise ValueError(f"Width must be {TARGET_WIDTH}, got {width}")
+
+    palette_indices = [nearest_palette_index(rgb) for rgb in image.convert("RGB").getdata()]
 
     rows: list[bytes] = []
-    for row in range(ROW_COUNT):
-        pattern_line = pattern_gen[row * 32 : (row + 1) * 32]
-        color_line = color_table[row * 32 : (row + 1) * 32]
-        rows.append(pattern_line + color_line)
+    for y in range(height):
+        base = y * width
+        pattern_line = bytearray()
+        color_line = bytearray()
 
-    return b"".join(rows)
+        for tx in range(32):
+            start = base + tx * 8
+            block = palette_indices[start : start + 8]
+            block = restrict_two_colors(block)
+
+            color_min = min(block)
+            color_max = max(block)
+            fg_color = color_max + 1  # MSX palette code (1-15)
+            bg_color = color_min + 1
+
+            pattern_byte = 0
+            for idx in block:
+                pattern_byte <<= 1
+                if idx == color_max:
+                    pattern_byte |= 0x01
+
+            pattern_line.append(pattern_byte & 0xFF)
+            color_line.append(((fg_color & 0x0F) << 4) | (bg_color & 0x0F))
+
+        rows.append(bytes(pattern_line + color_line))
+
+    return b"".join(rows), height
 
 
 def build_init_name_table_func() -> Func:
@@ -178,7 +254,7 @@ def build_init_name_table_func() -> Func:
 INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
-def build_draw_page_func() -> Func:
+def build_draw_page_func(row_count: int) -> Func:
     def draw_page(block: Block) -> None:
         # C = data bank number
         LD.A_C(block)
@@ -187,7 +263,7 @@ def build_draw_page_func() -> Func:
         LD.HL_n16(block, DATA_BANK_ADDR)
         LD.DE_n16(block, PATTERN_BASE)
         LD.IY_n16(block, COLOR_BASE)
-        LD.A_n8(block, ROW_COUNT)
+        LD.A_n8(block, row_count)
 
         block.label("DRAW_PAGE_LOOP")
         LD.BC_n16(block, 32)
@@ -210,7 +286,7 @@ def build_draw_page_func() -> Func:
     return Func("draw_page_call", draw_page)
 
 
-DRAW_PAGE_CALL = build_draw_page_func()
+DRAW_PAGE_CALL = build_draw_page_func(VISIBLE_ROWS)
 
 
 def build_boot_bank(data_banks: Iterable[int], fill_byte: int) -> bytes:
@@ -256,32 +332,48 @@ def build_data_bank(row_packages: bytes, fill_byte: int) -> bytes:
     return bytes(pad_bytes(list(row_packages), PAGE_SIZE, fill_byte))
 
 
-def build(image0: bytes, image1: bytes, fill_byte: int = 0xFF) -> bytes:
+def build(row_packages: bytes, fill_byte: int = 0xFF) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
+    if not row_packages:
+        raise ValueError("row_packages must not be empty")
 
-    packages = [build_row_packages(image0), build_row_packages(image1)]
+    data_banks: list[bytes] = []
+    for offset in range(0, len(row_packages), PAGE_SIZE):
+        chunk = row_packages[offset : offset + PAGE_SIZE]
+        data_banks.append(build_data_bank(chunk, fill_byte))
 
-    banks = [
-        build_boot_bank(range(1, len(packages) + 1), fill_byte),
-    ]
-    for pkg in packages:
-        banks.append(build_data_bank(pkg, fill_byte))
-
+    banks = [build_boot_bank(range(1, len(data_banks) + 1), fill_byte)]
+    banks.extend(data_banks)
     return b"".join(banks)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="MSX1 SCREEN2 1枚目表示 ROM ビルダー（スクロール前段階＋色＆パレット）"
+        description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
     )
-    parser.add_argument("image0", type=Path, help="1枚目 .sc2 (上側 / まず表示する画像)")
-    parser.add_argument("image1", type=Path, help="2枚目 .sc2 (今は未使用)")
+    parser.add_argument("input", type=Path, help="縦長 PNG（横256pxトリミング／右パディング）")
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
         help="出力 ROM ファイル名（未指定なら自動命名）",
+    )
+    parser.add_argument(
+        "--background",
+        type=str,
+        default="#000000",
+        help="右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
+    )
+    parser.add_argument(
+        "--msx1pq-cli",
+        type=Path,
+        help="msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
+    )
+    parser.add_argument(
+        "--workdir",
+        type=Path,
+        help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
     )
     parser.add_argument(
         "--fill-byte",
@@ -295,20 +387,30 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    if not args.image0.is_file():
-        raise SystemExit(f"not found: {args.image0}")
-    if not args.image1.is_file():
-        raise SystemExit(f"not found: {args.image1}")
+    if not args.input.is_file():
+        raise SystemExit(f"not found: {args.input}")
 
-    img0 = sc2_to_vram(args.image0.read_bytes())
-    img1 = sc2_to_vram(args.image1.read_bytes())
+    background = parse_color(args.background)
+    msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
 
-    rom = build(img0, img1, fill_byte=args.fill_byte)
+    with open_workdir(args.workdir) as workdir:
+        prepared = workdir / f"{args.input.stem}_prepared.png"
+        prepared_image = prepare_image(args.input, background)
+        prepared_image.save(prepared)
+
+        quantized_path = run_msx1pq_cli(msx1pq_cli, prepared, workdir)
+        quantized_image = Image.open(quantized_path)
+        row_packages, row_count = build_row_packages_from_image(quantized_image)
+
+        if row_count % 8 != 0:
+            raise SystemExit("Internal error: quantized image height must be 8-dot aligned")
+
+        rom = build(row_packages, fill_byte=args.fill_byte)
 
     out = args.output
     if out is None:
-        name = f"{args.image0.stem}_scroll_{args.image1.stem}[ASCII16]"
-        out = args.image0.with_name(name).with_suffix(".rom")
+        name = f"{args.input.stem}_scroll[{row_count}px][ASCII16]"
+        out = args.input.with_name(name).with_suffix(".rom")
 
     try:
         out.write_bytes(rom)
