@@ -12,6 +12,38 @@
 - `VISIBLE_ROWS` が 24 固定のまま RowPackage を 1 ピクセル行とみなしているため、192 行（=SCREEN 2 表示領域）を書かずに 24 行で止まり、以降のパターン／カラーは初期化値や未定義領域に依存します。この高さ不足も表示ノイズの一因になります。【F:pyutils/sc2_viewer_rom/src/create_scroll_megarom.py†L247-L284】【F:pyutils/sc2_viewer_rom/src/create_scroll_megarom.py†L375-L406】
 - スクロール下方向では `ROW_COUNT - VISIBLE_ROWS` を上限にしていますが、RowPackage を 1 ピクセル行と見なす設計では `VISIBLE_ROWS` を 192 に揃えないと全画面を書けず、上限計算と VRAM 更新範囲が一致しません。行単位とパターン単位のズレが積み重なって VRAM のどこが有効なのか読みづらい状態です。【F:pyutils/sc2_viewer_rom/src/create_scroll_megarom.py†L446-L485】
 
+## 8 行単位のレイアウトを考慮した実装方針
+- SCREEN 2 では「パターン番号 × 8 行」が 1 キャラクタに相当し、ネームテーブルの 1 マス（8x8）を構成する 8 行分のパターンデータは **同じパターン番号の +0〜+7 バイト** に積み上がります。したがって、描画時は「画像上の行番号」を `line_in_tile = ROW % 8` と `tile_y = ROW / 8` に分解し、パターン書き込み先を `PATTERN_BASE + (tile_y * 256 + tile_x) * 8 + line_in_tile` とする必要があります。同様にカラーテーブルも `COLOR_BASE + (tile_y * 256 + tile_x) * 8 + line_in_tile` の形で 8 行を束ねるとレイアウトが崩れません。
+- RowPackage を 1 ピクセル行で持つ前提はそのままにしつつ、VRAM へ書き込む際に「tile_y を bank/page として切り替え、line_in_tile をアドレス末尾に加算」する形にすれば、8 行境界を跨いでも同一パターン番号に 8 行分が正しく蓄積されます。
+- 描画ループでは `VISIBLE_ROWS` を 192 に広げ、`tile_y` が変わったタイミングでページレジスタ（`ASCII16_PAGE2_REG`）を更新しつつ、`line_in_tile` を用いたアドレス計算で 32 タイル分のパターン／カラーをそれぞれ 8 行目まで埋めるのが安全な流れです。
+
+### 8 行整列させた書き込みの擬似コード（概念）
+```asm
+; row = SCROLL_OFFSET + visible_y
+    LD      HL,(SCROLL_OFFSET_ADDR)
+    ADD     HL,visible_y         ; HL = row
+    LD      A,L
+    AND     7
+    LD      line_in_tile,A       ; 0..7
+    SRL     H
+    RR      L
+    SRL     H
+    RR      L
+    SRL     H
+    RR      L                    ; HL = tile_y = row / 8
+
+; bank 切り替え（tile_y 上位 8 ビットぶん）
+    LD      A,H
+    ADD     A,D                  ; D=DATA_BANK_BASE/ASCII16 page基底
+    LD      (ASCII16_PAGE2_REG),A
+
+; tile_y 下位 8 ビットをオフセットとして、パターンの書き込み先を計算
+    LD      A,L
+    LD      dest_base_hi,A       ; (tile_y_low * 256) * 8 = tile_y_low << 3
+    ; 以降 dest = PATTERN_BASE + (tile_y_low<<3)*32 + tile_x*8 + line_in_tile
+```
+（実際には `tile_y_low<<3` と `tile_x<<3` を加算し、最後に `line_in_tile` を足す。カラーも同じ式で `COLOR_BASE` に切り替える。）
+
 ## 1 枚目をスクロール位置 0 で固定表示するコード例
 1 枚目だけスクロールを許可しない場合は、描画前に画像番号を 0 に固定し、オフセットをゼロクリアしたうえでキー入力のスクロール処理をスキップするガードを入れるだけで足ります。以下は `build_boot_bank` 内に追記するイメージの擬似コードです。
 
