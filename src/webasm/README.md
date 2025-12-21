@@ -81,8 +81,11 @@ emcc -O3 \
   src/webasm/MSX1PQWebBindings.cpp \
   src/core/MSX1PQCore.cpp src/core/MSX1PQOutput.cpp src/core/MSX1PQPalettes.cpp src/core/lodepng.cpp \
   -s ENVIRONMENT=web \
-  -s MODULARIZE=1 -s EXPORT_NAME="MSX1PQ" \
+  -s EXPORT_ES6=1 \
+  -s MODULARIZE=1 \
+  -s EXPORT_NAME="createMSX1PQ" \
   -s EXPORTED_FUNCTIONS='["_msx1pq_create_context","_msx1pq_destroy_context","_msx1pq_set_option_i","_msx1pq_set_option_f","_msx1pq_quantize_rgba_into","_msx1pq_get_last_rgba","_msx1pq_encode_png_from_rgba","_msx1pq_get_last_png","_msx1pq_encode_sc2_from_rgba","_msx1pq_get_last_sc2","_msx1pq_malloc","_msx1pq_free"]' \
+  -s SINGLE_FILE=0 \
   -s ALLOW_MEMORY_GROWTH=0 \
   -s INITIAL_MEMORY=268435456 \
   -s MALLOC="emmalloc" \
@@ -96,7 +99,9 @@ emcc -O3 \
 ```js
 import createMSX1PQ from './msx1pq.js';
 
-const mod = await createMSX1PQ();
+const mod = await createMSX1PQ({
+  locateFile: (p) => new URL(p, import.meta.url).toString(), // dist/msx1pq.wasm への解決
+});
 const ctx = mod._msx1pq_create_context();
 
 // 一度だけ確保して使い回す
@@ -181,3 +186,61 @@ async function exportSc2() {
 - `inputPtr`, `viewPtr` は一度確保して再利用。毎フレームの malloc/free を避ける。
 - `msx1pq_get_last_*` で得たポインタは **次の量子化/エンコードまで有効**。サイズが変わると再確保されるので、そのたびに View を取り直す。
 - SC2 は 256x192 固定。それ以外のサイズを渡すとエラーコード `-2` を返す。
+
+## dist の配置と読み込み例（web 専用）
+
+- 出力は `src/webasm/dist/msx1pq.js` / `src/webasm/dist/msx1pq.wasm`。`SINGLE_FILE=0` のため wasm は JS と別ファイルのまま配置する。
+- ブラウザのみをターゲットするため `-s ENVIRONMENT=web` を付与。Node.js 向けの shim は生成されない。
+- 複数インスタンスでもグローバルを汚染しないよう `-s MODULARIZE=1 -s EXPORT_NAME=createMSX1PQ -s EXPORT_ES6=1` とし、ESM のファクトリ関数からモジュールを生成する。
+
+### ESM からの読み込み（1 インスタンス）
+
+```js
+import createMSX1PQ from './dist/msx1pq.js';
+
+const mod = await createMSX1PQ({
+  locateFile: (p) => new URL(p, import.meta.url).toString(), // dist フォルダに置いた wasm を解決
+});
+```
+
+### 同一ページで 2 インスタンス生成する例
+
+```js
+import createMSX1PQ from './dist/msx1pq.js';
+
+const [modA, modB] = await Promise.all([
+  createMSX1PQ({ locateFile: (p) => new URL(p, import.meta.url).toString() }),
+  createMSX1PQ({ locateFile: (p) => new URL(p, import.meta.url).toString() }),
+]);
+
+// 別々の ctx を作れば独立に処理できる
+const ctxA = modA._msx1pq_create_context();
+const ctxB = modB._msx1pq_create_context();
+```
+
+### index.html での動作確認（最小手順）
+
+1. `src/webasm/dist` をサーバーから配信可能な場所にコピーし、同じディレクトリに下記の `index.html` を置く。
+2. HTTP サーバーで `index.html` を開く（file:// では wasm 読み込みが失敗するため避ける）。
+3. 量子化処理を 1 回実行し、コンソールで結果が取得できることを確認する。
+
+```html
+<!doctype html>
+<script type="module">
+import createMSX1PQ from './msx1pq.js';
+
+const mod = await createMSX1PQ({
+  locateFile: (p) => new URL(p, import.meta.url).toString(),
+});
+const ctx = mod._msx1pq_create_context();
+const input = new Uint8Array(256 * 192 * 4); // 0 クリア
+const ptr = mod._msx1pq_malloc(input.length);
+const viewPtr = mod._msx1pq_malloc(8);
+const viewSizePtr = viewPtr + 4;
+mod.HEAPU8.set(input, ptr);
+mod._msx1pq_quantize_rgba_into(ctx, ptr, 256, 192, 0, 0, 0);
+mod._msx1pq_get_last_rgba(ctx, viewPtr, viewSizePtr);
+const outSize = mod.HEAP32[viewSizePtr >> 2];
+console.log('quantized size', outSize);
+</script>
+```
