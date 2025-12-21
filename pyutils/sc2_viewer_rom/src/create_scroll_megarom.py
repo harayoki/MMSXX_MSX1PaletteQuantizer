@@ -64,6 +64,7 @@ from mmsxxasmhelper.core import (
     DEC,
     Func,
     INC,
+    JP,
     JR,
     JR_C,
     JR_NC,
@@ -431,7 +432,7 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.mn16_A(b, CURRENT_IMAGE_ADDR)
     LD.HL_n16(b, 0)
     LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
-    JR(b, "DRAW_CURRENT_IMAGE")
+    JP(b, "DRAW_CURRENT_IMAGE")
 
     b.label("HANDLE_SCROLL_UP")
     LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
@@ -440,7 +441,7 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     JR_Z(b, "MAIN_LOOP")
     DEC.HL(b)
     LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
-    JR(b, "DRAW_CURRENT_IMAGE")
+    JP(b, "DRAW_CURRENT_IMAGE")
 
     b.label("HANDLE_SCROLL_DOWN")
     # Load row count for current image
@@ -480,7 +481,7 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     INC.HL(b)
     LD.A_D(b)
     LD.mHL_A(b)
-    JR(b, "DRAW_CURRENT_IMAGE")
+    JP(b, "DRAW_CURRENT_IMAGE")
 
     restore_stack_pointer_macro(b)
 
