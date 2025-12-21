@@ -15,9 +15,8 @@ except ImportError:
 
 def clear_a(b: Block) -> None:
     """Aレジスタを0クリアする簡単マクロ。"""
-
     # LD A,0
-    b.emit(0x3E, 0x00)
+    LD.A_n8(b, 0x00)
 
 
 # 2) 関数本体サンプル

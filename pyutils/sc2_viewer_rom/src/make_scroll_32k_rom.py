@@ -169,12 +169,10 @@ def draw_page_call(b: Block) -> None:
     1ページ分の RowPackage データを VRAM に転送する関数
     """
 
-    start_addr = "PACKED_DATA"
+    START_ADDR = "PACKED_DATA"
 
     # HL = RowPackage 先頭
-    # TODO 直接バイト列を書かない仕組みにしたい LD.HL_label的なのを
-    pos = b.emit(0x21, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, start_addr)
+    LD.HL_label(b, START_ADDR)
 
     # DE = PATTERN_BASE / IY = COLOR_BASE
     LD.DE_n16(b, PATTERN_BASE)
@@ -189,24 +187,24 @@ def draw_page_call(b: Block) -> None:
     ldirvm_macro(b, length=31)
 
     # 次のパターン出力先を退避
-    b.emit(0xD5)  # PUSH DE
+    PUSH.DE(b)
 
     # カラーの出力先 (IY) を DE にセット
-    b.emit(0xFD, 0xE5)  # PUSH IY
-    b.emit(0xD1)        # POP DE
+    PUSH.IY(b)
+    POP.DE(b)
 
     # 1行分転送 BCレジスタ破壊
     ldirvm_macro(b, length=32)
 
     # IY += 32 (次行のカラー位置)
     LD.BC_n16(b, 32)
-    b.emit(0xFD, 0x09)  # ADD IY,BC
+    ADD.IY_BC(b)
 
     # 次行のパターン出力先を復帰
-    b.emit(0xD1)  # POP DE
+    POP.DE(b)
 
     # 24行処理するまでループ
-    b.emit(0x3D)  # DEC A
+    DEC.A(b)
     JP_Z(b, "DRAW_PAGE_LOOP")
 
 

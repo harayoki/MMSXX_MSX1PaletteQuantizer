@@ -12,6 +12,7 @@ from mmsxxasmhelper.utils import *
 
 
 __all__ = [
+    # "call_subrom_macro",
     "place_msx_rom_header_macro",
     "store_stack_pointer_macro",
     "restore_stack_pointer_macro",
@@ -20,77 +21,67 @@ __all__ = [
     "init_screen2_macro",
     "set_screen_mode_macro",
     "set_screen_colors_macro",
+    "enaslt_macro",
     "ldirvm_macro",
-    "test_fill_vram_macro",
-    # "with_register_preserve",
+    # "set_palette_macro",
+
+    "VDP_CTRL",
+    "VDP_DATA",
+    "VDP_PAL",
 ]
-
-RegisterName = Literal["AF", "BC", "DE", "HL", "IX", "IY"]
 P = ParamSpec("P")
-
-
-_PUSH_OPCODES: dict[RegisterName, tuple[int, ...]] = {
-    "AF": (0xF5,),
-    "BC": (0xC5,),
-    "DE": (0xD5,),
-    "HL": (0xE5,),
-    "IX": (0xDD, 0xE5),
-    "IY": (0xFD, 0xE5),
-}
-
-_POP_OPCODES: dict[RegisterName, tuple[int, ...]] = {
-    "AF": (0xF1,),
-    "BC": (0xC1,),
-    "DE": (0xD1,),
-    "HL": (0xE1,),
-    "IX": (0xDD, 0xE1),
-    "IY": (0xFD, 0xE1),
-}
-
-
-def _emit_push(b: Block, reg: RegisterName) -> None:
-    b.emit(*_PUSH_OPCODES[reg])
-
-
-def _emit_pop(b: Block, reg: RegisterName) -> None:
-    b.emit(*_POP_OPCODES[reg])
 
 
 def with_register_preserve(
     macro: Callable[Concatenate[Block, P], None]
 ) -> Callable[Concatenate[Block, P], None]:
     """マクロ呼び出しの前後に PUSH/POP を挿入するデコレータ。
-
-    ``preserve_regs`` キーワード引数で退避するレジスタを指定できる。
+    ``regs_preserve`` キーワード引数で退避するレジスタを指定できる。
     何も指定しなければ PUSH/POP は行われない。
+
+    @with_register_preserveの記述をマクロ関数に記述すると有効になるが
+    どのレジスタを保護するのあユーザーに細かくゆだねたい場合以外は使わない方針
+    各マクロでPUSH POP対応を行う 理由は呼び出し元でどのレジスタを保護すべきか考えさせたくないため
+
     """
 
     @wraps(macro)
     def wrapper(
         b: Block,
         *args: P.args,
-        preserve_regs: Sequence[RegisterName] = (),
+        regs_preserve: Sequence[RegNames16] = (),
         **kwargs: P.kwargs,
     ) -> None:
-        regs = tuple(preserve_regs)
+        regs = tuple(regs_preserve)
         for reg in regs:
-            _emit_push(b, reg)
+            PUSH.r(b, reg)
 
         macro(b, *args, **kwargs)
 
         for reg in reversed(regs):
-            _emit_pop(b, reg)
+            POP.r(b, reg)
 
     return wrapper
 
+
 # システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
 SP_TEMP_RAM = 0xF300
+
 
 # BIOS コールアドレス
 LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
+ENASLT = 0x0024  # スロット切り替え
+RSLREG = 0x0138  # 現在のスロット情報取得
+# EXPTBL = 0xFCC1  # 拡張スロット情報
+# EXPTBL_MINUS_1 = EXPTBL -1
+# CALSLT = 0x001C  # インタースロットCALL（任意スロットの任意アドレスを呼ぶ）
+# SUBROM = 0x015C  # SUB-ROM内ルーチンCALL（IX指定・IYにSUB-ROMスロット必須）
+
+# サブROM内 コールアドレス
+SETPLET = 0x014D
 
 # カラー関連システム変数 (MSX1/2 共通)
 FORCLR = 0xF3E9  # 前景色
@@ -98,11 +89,24 @@ BAKCLR = 0xF3EA  # 背景色
 BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
 
-VDP_DATA = 98   # VDPデータポート
-VDP_CTRL = 99   # VDPコントロールポート
+VDP_DATA = 0x98   # VDPデータポート
+VDP_CTRL = 0x99   # VDPコントロールポート
+VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
-@with_register_preserve
-def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+
+# def call_subrom_macro(b: Block, address: int) -> None:
+# 上手くいかないのでいったんつぶす
+#     """
+#     SUB-ROM内ルーチン呼び出し
+#     - 入力: IX=呼び先アドレス（SUB-ROM内）
+#     - 備考: スロット指定はBIOS側が処理する想定（IYは予約=保持）
+#     """
+#     # LD.IY_mn16(b, EXPTBL_MINUS_1)  # IY = SUB-ROMスロット系情報
+#     LD.IX_n16(b, address)
+#     CALL(b, SUBROM)
+
+
+def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
     """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
 
     "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
@@ -131,10 +135,9 @@ def store_stack_pointer_macro(b: Block) -> None:
     ADD.HL_SP(b)  # HL = SP
     LD.mn16_HL(b, SP_TEMP_RAM)  # SP_TEMP_RAM にSP保存
 
-    # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+2)へ設定
-    LD.HL_n16(b, SP_TEMP_RAM)
-    INC.HL(b)
-    INC.HL(b)
+    # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+4)へ設定
+    # (PUSH 時のデクリメントで退避した SP の領域を踏まないように 4 バイト空ける)
+    LD.HL_n16(b, SP_TEMP_RAM + 4)
     LD.SP_HL(b)
 
 
@@ -144,14 +147,40 @@ def restore_stack_pointer_macro(b: Block) -> None:
     LD.SP_HL(b)
 
 
+def enaslt_macro(b: Block) -> None:
+    """ENASLT (#0024) を呼び出してスロットを有効化するマクロ。
+
+    現在のスロット情報を ``RSLREG`` で取得し、ページ 2 (0x8000–0xBFFF)
+    を対象に ENASLT を実行する。レジスタ変更: A, HL。
+    """
+
+    b.emit(
+        0xCD,
+        RSLREG & 0xFF,
+        (RSLREG >> 8) & 0xFF,  # CALL 0138h
+        0x0F,  # RRCA
+        0x0F,  # RRCA
+        0xE6,
+        0x03,  # AND 03h
+        0x21,
+        0x00,
+        0x80,  # LD HL,8000h
+        0xCD,
+        ENASLT & 0xFF,
+        (ENASLT >> 8) & 0xFF,  # CALL 0024h
+    )
+
+
 def palette_bytes(r: int, g: int, b: int) -> tuple[int, int]:
     """MSX2 パレットの 2 バイト表現を作る。
 
     - 1 バイト目: 0R2 R1 R0 B2 B1 B0 0 (R/B はビット 4–6 / 1–3)
     - 2 バイト目: 0000 G2 G1 G0
     """
-
-    return ((r & 0b111) << 4) | ((b & 0b111) << 1), g & 0b111
+    # r = int(r * 7 / 255)
+    # g = int(g * 7 / 255)
+    # b = int(b * 7 / 255)
+    return ((r & 0x07) << 4) | (b & 0x07), g & 0x07
 
 
 # MSX2 環境向け MSX1 カラーパレット (R,G,B: 0–7)
@@ -175,51 +204,40 @@ _MSX2_PALETTE_BYTES = [
 ]
 
 
-@with_register_preserve
-def get_msxver_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def get_msxver_macro(b: Block) -> None:
     """MSX バージョンを A レジスタに読み出す。
     レジスタ変更: A
     """
     LD.A_mn16(b, MSXVER)
 
 
-@with_register_preserve
-def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+def set_msx2_palette_default_macro(b: Block) -> None:
     """MSX2 以上でデフォルトパレットを設定するマクロ。
-
     レジスタ変更: A, B, HL（MSX2 判定とループ処理で使用）。
 
     """
 
     # --- MSX バージョン確認 ---
-    get_msxver_macro(b)  # A = MSXVER
+    get_msxver_macro(b)
     CP.n8(b, 0x00)
-    debug_trap(b)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
     JP_Z(b, "__MSX2_PAL_SET_END__")
 
     # R#16 に color index 0 をセット
-    # OUT 99h,0
-    LD.A_n8(b, 0x00)
-    b.emit(0xD3, 0x99)
-
-    # OUT 99h,80h+16  ; レジスタ16指定
-    LD.A_n8(b, 0x80 + 16)
-    b.emit(0xD3, 0x99)
+    OUT_A(b, VDP_CTRL, 0x00)
+    OUT_A(b, VDP_CTRL, 0x80 + 16)
 
     # HL = PALETTE_DATA
-    pos2 = b.emit(0x21, 0x00, 0x00)  # LD HL,nn
-    b.add_abs16_fixup(pos2 + 1, "__PALETTE_DATA__")
+    LD.HL_label(b, "__PALETTE_DATA__")
 
     # B = 32 (16色×2バイト)
     LD.B_n8(b, 32)
 
     b.label("__MSX2_PAL_LOOP__")
-    b.emit(0x7E)        # LD A,(HL)
-    b.emit(0xD3, 0x9A)  # OUT (9Ah),A
-    b.emit(0x23)        # INC HL
-    disp = (b.labels["__MSX2_PAL_LOOP__"] - (b.pc + 1)) & 0xFF
-    b.emit(0x10, disp)  # DJNZ __MSX2_PAL_LOOP__
+    LD.A_mHL(b)
+    OUT(b, VDP_PAL)
+    INC.HL(b)
+    DJNZ(b, "__MSX2_PAL_LOOP__")
 
     b.label("__MSX2_PAL_SET_END__")
     # パレットデータ本体（実行されない領域）
@@ -228,9 +246,12 @@ def set_msx2_palette_default_macro(b: Block, *, preserve_regs: Sequence[Register
     DB(b, *_MSX2_PALETTE_BYTES)
     b.label("__MSX2_PAL_DATA_END__")
 
+    # print("-----")
+    # print(_MSX2_PALETTE_BYTES)
+    # print("-----")
 
-@with_register_preserve
-def set_screen_mode_macro(b: Block, mode: int, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
+
+def set_screen_mode_macro(b: Block, mode: int) -> None:
     """CHGMOD を呼び出して画面モードを設定する。
     レジスタ変更: A（CHGMOD 呼び出しにより AF なども破壊される可能性あり）。
     """
@@ -245,30 +266,9 @@ def init_screen2_macro(b: Block) -> None:
     b.emit(0xCD, INIGRP & 0xFF, (INIGRP >> 8) & 0xFF)
 
 
-@with_register_preserve
-def test_fill_vram_macro(b: Block, color: int = 0, *, preserve_regs: Sequence[RegisterName] = ()) -> None:
-    """VRAMをテスト用に塗りつぶすマクロ。
-    レジスタ変更: A, BC
-    """
-
-    # DI(b)
-    OUT(b, VDP_CTRL, 0x00)
-    OUT(b, VDP_CTRL, 0x40)
-    LD.BC_n16(b, 0x0800)
-    b.label("TEST_FILL_LOOP")
-    OUT(b, VDP_DATA, color)
-    DEC.BC(b)
-    LD.A_B(b)
-    OR.C(b)
-    JP_NZ(b, "TEST_FILL_LOOP")
-    # EI(b)
-
-
-@with_register_preserve
 def set_screen_colors_macro(
     b: Block, foreground: int, background: int, border: int,
-        current_screen_mode: int, *, preserve_regs: Sequence[RegisterName] = ()
-) -> None:
+        current_screen_mode: int) -> None:
     """MSX1/2 共通の画面色設定マクロ。
 
     FORCLR/BAKCLR/BDRCLR を指定した値に設定して CHGCLR を呼び出す。
@@ -277,21 +277,6 @@ def set_screen_colors_macro(
     レジスタ変更: A（CHGCLR 呼び出しにより AF なども破壊される可能性あり）。
 
     """
-
-    # 直前に VDP を操作する場合のコード？
-    # OUT(b, VDP_CTRL, 0)   # VRAMアドレスの下位バイト
-    # OUT(b, VDP_CTRL, 40)  # VRAMアドレスの上位バイト + VRAM書き込みフラグ(C=1)
-    # OUT(b, VDP_DATA, background & 0x0F)  # 背景色指定
-
-    # DI(b)
-
-    # vdpを初期化するコード？
-    # OUT(b, VDP_CTRL, 0x02)
-    # OUT(b, VDP_CTRL, 0x80)
-    # LD.A_n8(b, 0xE0)
-    # AND.n8(b, 0xFD)
-    # OUT(b, VDP_CTRL)
-    # OUT(b, VDP_CTRL, 0x81)
 
     # FORCLR
     LD.A_n8(b, foreground & 0x0F)
@@ -309,18 +294,15 @@ def set_screen_colors_macro(
     LD.A_n8(b, current_screen_mode)
 
     # CALL CHGCLR
-    # CALL(b, CHGCLR)  # コールすると固まってしまうのでいったんコメントアウトしておく
+    CALL(b, CHGCLR)
 
-    # EI(b)
 
-@with_register_preserve
 def ldirvm_macro(
     b: Block,
     *,
     source: int | None = None,
     dest: int | None = None,
     length: int | None = None,
-    preserve_regs: Sequence[RegisterName] = (),
 ) -> None:
     """LDIRVM (#005C) を呼び出すマクロ。
 
@@ -343,3 +325,40 @@ def ldirvm_macro(
         LD.BC_n16(b, length & 0xFFFF)
 
     b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
+
+
+# def set_palette_macro(
+#         block: Block,
+#         color: int, r: int, g: int, b: int,
+#         msx1_safe: bool = True,
+#         preserve_regs_de: bool = False,
+# ) -> None:
+#     """
+#     SETPLET サブロムコールでパレットを設定（MSX2以降）
+#     ※ 動作未確認
+#     :param block: Block
+#     :param color: color 1 ~ 15
+#     :param r: red 1 ~ 7
+#     :param g: green 1 ~ 7
+#     :param b: blue 1 ~ 7
+#     :param msx1_safe: msx1では処理を実行しないコードを挿入するか
+#     :param preserve_regs_de: DEレジスタを保護
+#     """
+#     color = color & 0x0F
+#     r = r & 0x07
+#     g = g & 0x07
+#     b = b & 0x07
+#     if msx1_safe:
+#         get_msxver_macro(block)
+#         CP.n8(block, 0x00)
+#         RET_Z(block)
+#     if preserve_regs_de:
+#         PUSH.DE(block)
+#     LD.D_n8(block, color)
+#     LD.A_n8(block, (r << 4) + b)
+#     LD.E_n8(block, g)
+#     if preserve_regs_de:
+#         POP.DE(block)
+#     # call_subrom_macro(block, SETPLET)
+
+
