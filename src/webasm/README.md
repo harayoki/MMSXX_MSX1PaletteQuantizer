@@ -84,12 +84,12 @@ emcc -O3 \
   -s MODULARIZE=1 -s EXPORT_NAME="MSX1PQ" \
   -s EXPORTED_FUNCTIONS='["_msx1pq_create_context","_msx1pq_destroy_context","_msx1pq_set_option_i","_msx1pq_set_option_f","_msx1pq_quantize_rgba_into","_msx1pq_get_last_rgba","_msx1pq_encode_png_from_rgba","_msx1pq_get_last_png","_msx1pq_encode_sc2_from_rgba","_msx1pq_get_last_sc2","_msx1pq_malloc","_msx1pq_free"]' \
   -s ALLOW_MEMORY_GROWTH=0 \
-  -s INITIAL_MEMORY=134217728 \
+  -s INITIAL_MEMORY=268435456 \
   -s MALLOC="emmalloc" \
-  -o dist/msx1pq.js
+  -o src/webasm/dist/msx1pq.js
 ```
 
-- 256x192 + 作業バッファなら 128 MiB 固定で十分。より大きい入力を扱う場合は `INITIAL_MEMORY` を増やす。どうしても足りない場合のみ `-s ALLOW_MEMORY_GROWTH=1` にし、量子化後は毎回ポインタを取り直す。
+- 256x192 + 作業バッファなら 128 MiB 固定で十分。HFDまで扱う場合は 256 MiB とする。より大きい入力を扱う場合は `INITIAL_MEMORY` を増やす。どうしても足りない場合のみ `-s ALLOW_MEMORY_GROWTH=1` にし、量子化後は毎回ポインタを取り直す。
 
 ## JS 最小サンプル（Canvas プレビュー + PNG/SC2 生成）
 
