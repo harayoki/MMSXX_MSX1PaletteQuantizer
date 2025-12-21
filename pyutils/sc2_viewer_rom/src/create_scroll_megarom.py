@@ -51,11 +51,32 @@ import shutil
 import subprocess
 from collections import Counter
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 from tempfile import TemporaryDirectory
+from typing import Iterable, Sequence
 
-from mmsxxasmhelper.core import ADD, Block, CALL, DEC, Func, INC, JR, JR_NZ, LD, POP, PUSH
+from mmsxxasmhelper.core import (
+    ADD,
+    Block,
+    CALL,
+    CP,
+    DEC,
+    Func,
+    INC,
+    JR,
+    JR_C,
+    JR_NC,
+    JR_NZ,
+    JR_Z,
+    LD,
+    OR,
+    POP,
+    PUSH,
+    XOR,
+    DB,
+    DW,
+)
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
     CHGMOD,
@@ -88,6 +109,24 @@ COLOR_BASE = 0x2000
 WORK_RAM_BASE = 0xC000
 TARGET_WIDTH = 256
 VISIBLE_ROWS = 24
+ROW_BYTES = 64
+ROWS_PER_BANK = PAGE_SIZE // ROW_BYTES
+
+CHSNS = 0x009C
+CHGET = 0x009F
+
+KEY_SPACE = 0x20
+KEY_UP = 0x1E
+KEY_DOWN = 0x1F
+
+CURRENT_IMAGE_ADDR = WORK_RAM_BASE
+SCROLL_OFFSET_ADDR = WORK_RAM_BASE + 1
+
+
+@dataclass
+class ImageEntry:
+    start_bank: int
+    row_count: int
 
 
 def int_from_str(value: str) -> int:
@@ -104,10 +143,10 @@ def open_workdir(path: Path | None):
         yield path
 
 
-def prepare_image(path: Path, background: tuple[int, int, int]) -> Image.Image:
+def prepare_image(image: Image.Image, background: tuple[int, int, int]) -> Image.Image:
     """Crop/pad the input to 256px width and multiple-of-8 height."""
 
-    img = Image.open(path).convert("RGB")
+    img = image.convert("RGB")
     width, height = img.size
 
     cropped_width = min(width, TARGET_WIDTH)
@@ -277,42 +316,18 @@ def build_init_name_table_func() -> Func:
 INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
-def build_draw_page_func(row_count: int) -> Func:
-    def draw_page(block: Block) -> None:
-        # C = data bank number
-        LD.A_C(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
+def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> bytes:
+    if not image_entries:
+        raise ValueError("image_entries must not be empty")
 
-        LD.HL_n16(block, DATA_BANK_ADDR)
-        LD.DE_n16(block, PATTERN_BASE)
-        LD.IY_n16(block, COLOR_BASE)
-        LD.A_n8(block, row_count)
+    start_banks = [entry.start_bank for entry in image_entries]
+    row_counts = [entry.row_count for entry in image_entries]
 
-        block.label("DRAW_PAGE_LOOP")
-        LD.BC_n16(block, 32)
-        CALL(block, LDIRVM)
+    if any(bank < 1 or bank > 0xFF for bank in start_banks):
+        raise ValueError("start_bank must fit in 1 byte and be >= 1")
+    if any(count <= 0 or count > 0xFFFF for count in row_counts):
+        raise ValueError("row_count must fit in 2 bytes and be positive")
 
-        PUSH.DE(block)
-        PUSH.IY(block)
-        POP.DE(block)
-
-        LD.BC_n16(block, 32)
-        CALL(block, LDIRVM)
-
-        LD.BC_n16(block, 32)
-        ADD.IY_BC(block)
-        POP.DE(block)
-
-        DEC.A(block)
-        JR_NZ(block, "DRAW_PAGE_LOOP")
-
-    return Func("draw_page_call", draw_page)
-
-
-DRAW_PAGE_CALL = build_draw_page_func(VISIBLE_ROWS)
-
-
-def build_boot_bank(data_banks: Iterable[int], fill_byte: int) -> bytes:
     b = Block()
 
     place_msx_rom_header_macro(b, entry_point=ROM_BASE + 0x10)
@@ -334,39 +349,194 @@ def build_boot_bank(data_banks: Iterable[int], fill_byte: int) -> bytes:
 
     INIT_NAME_TABLE_CALL.call(b)
 
-    for bank_index in data_banks:
-        LD.C_n8(b, bank_index)
-        DRAW_PAGE_CALL.call(b)
-        break
+    LD.A_n8(b, 0)
+    LD.mn16_A(b, CURRENT_IMAGE_ADDR)
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
 
-    loop_start = "main_loop"
-    b.label(loop_start)
-    JR(b, loop_start)
+    b.label("DRAW_CURRENT_IMAGE")
+    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    LD.E_A(b)  # E = index
+
+    LD.HL_label(b, "IMAGE_START_BANK_TABLE")
+    LD.D_n8(b, 0)
+    ADD.HL_DE(b)
+    LD.A_mHL(b)
+    LD.D_A(b)  # D = start bank
+
+    LD.DE_n16(b, PATTERN_BASE)
+    LD.IY_n16(b, COLOR_BASE)
+
+    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
+    LD.B_H(b)
+    LD.C_L(b)  # BC = current offset (rows)
+
+    LD.A_n8(b, VISIBLE_ROWS)
+    b.label("DRAW_ROW_LOOP")
+    LD.A_B(b)
+    ADD.A_D(b)
+    LD.mn16_A(b, ASCII16_PAGE2_REG)
+
+    LD.L_C(b)
+    LD.H_n8(b, 0)
+    for _ in range(6):
+        ADD.HL_HL(b)
+    LD.DE_n16(b, DATA_BANK_ADDR)
+    ADD.HL_DE(b)
+
+    PUSH.BC(b)
+    LD.BC_n16(b, 32)
+    CALL(b, LDIRVM)
+
+    PUSH.DE(b)
+    PUSH.IY(b)
+    POP.DE(b)
+
+    LD.BC_n16(b, 32)
+    CALL(b, LDIRVM)
+
+    LD.BC_n16(b, 32)
+    ADD.IY_BC(b)
+    POP.DE(b)
+
+    POP.BC(b)
+    INC.BC(b)
+    DEC.A(b)
+    JR_NZ(b, "DRAW_ROW_LOOP")
+
+    JR(b, "MAIN_LOOP")
+
+    b.label("MAIN_LOOP")
+    CALL(b, CHSNS)
+    CP.n8(b, 0)
+    JR_Z(b, "MAIN_LOOP")
+
+    CALL(b, CHGET)
+    CP.n8(b, KEY_SPACE)
+    JR_Z(b, "HANDLE_NEXT_IMAGE")
+    CP.n8(b, KEY_UP)
+    JR_Z(b, "HANDLE_SCROLL_UP")
+    CP.n8(b, KEY_DOWN)
+    JR_Z(b, "HANDLE_SCROLL_DOWN")
+    JR(b, "MAIN_LOOP")
+
+    b.label("HANDLE_NEXT_IMAGE")
+    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    INC.A(b)
+    CP.n8(b, len(image_entries))
+    JR_C(b, "STORE_IMAGE_INDEX")
+    LD.A_n8(b, 0)
+
+    b.label("STORE_IMAGE_INDEX")
+    LD.mn16_A(b, CURRENT_IMAGE_ADDR)
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
+    JR(b, "DRAW_CURRENT_IMAGE")
+
+    b.label("HANDLE_SCROLL_UP")
+    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "MAIN_LOOP")
+    DEC.HL(b)
+    LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
+    JR(b, "DRAW_CURRENT_IMAGE")
+
+    b.label("HANDLE_SCROLL_DOWN")
+    # Load row count for current image
+    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    LD.E_A(b)
+    LD.HL_label(b, "IMAGE_ROW_COUNT_TABLE")
+    LD.D_n8(b, 0)
+    ADD.HL_DE(b)
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+
+    LD.A_D(b)
+    OR.E(b)
+    JR_Z(b, "MAIN_LOOP")
+
+    LD.H_D(b)
+    LD.L_E(b)
+    LD.DE_n16(b, VISIBLE_ROWS)
+    XOR.A(b)
+    b.emit(0xED, 0x52)  # SBC HL,DE
+    JR_C(b, "MAIN_LOOP")
+    JR_Z(b, "MAIN_LOOP")
+
+    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
+    LD.D_H(b)
+    LD.E_L(b)
+    INC.DE(b)
+    XOR.A(b)
+    b.emit(0xED, 0x52)  # SBC HL,DE (HL = max_offset - candidate)
+    JR_C(b, "MAIN_LOOP")
+
+    LD.HL_n16(b, SCROLL_OFFSET_ADDR)
+    LD.A_E(b)
+    LD.mHL_A(b)
+    INC.HL(b)
+    LD.A_D(b)
+    LD.mHL_A(b)
+    JR(b, "DRAW_CURRENT_IMAGE")
 
     restore_stack_pointer_macro(b)
 
     INIT_NAME_TABLE_CALL.define(b)
-    DRAW_PAGE_CALL.define(b)
+
+    b.label("IMAGE_START_BANK_TABLE")
+    DB(b, *start_banks)
+
+    b.label("IMAGE_ROW_COUNT_TABLE")
+    for count in row_counts:
+        DW(b, count)
 
     return bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
 
 
-def build_data_bank(row_packages: bytes, fill_byte: int) -> bytes:
-    return bytes(pad_bytes(list(row_packages), PAGE_SIZE, fill_byte))
+def split_row_packages_into_banks(row_packages: bytes, fill_byte: int) -> list[bytes]:
+    if len(row_packages) % ROW_BYTES != 0:
+        raise ValueError("row_packages length must be a multiple of ROW_BYTES")
+
+    banks: list[bytes] = []
+    current = bytearray()
+
+    for offset in range(0, len(row_packages), ROW_BYTES):
+        row = row_packages[offset : offset + ROW_BYTES]
+        if len(current) + len(row) > PAGE_SIZE:
+            banks.append(bytes(pad_bytes(list(current), PAGE_SIZE, fill_byte)))
+            current = bytearray()
+        current.extend(row)
+
+    banks.append(bytes(pad_bytes(list(current), PAGE_SIZE, fill_byte)))
+    return banks
 
 
-def build(row_packages: bytes, fill_byte: int = 0xFF) -> bytes:
+def build(image_row_packages: Sequence[bytes], fill_byte: int = 0xFF) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
-    if not row_packages:
-        raise ValueError("row_packages must not be empty")
+    if not image_row_packages:
+        raise ValueError("image_row_packages must not be empty")
 
+    image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    for offset in range(0, len(row_packages), PAGE_SIZE):
-        chunk = row_packages[offset : offset + PAGE_SIZE]
-        data_banks.append(build_data_bank(chunk, fill_byte))
+    next_bank = 1
 
-    banks = [build_boot_bank(range(1, len(data_banks) + 1), fill_byte)]
+    for package in image_row_packages:
+        if not package:
+            raise ValueError("row_packages must not be empty")
+
+        banks = split_row_packages_into_banks(package, fill_byte)
+        image_entries.append(ImageEntry(start_bank=next_bank, row_count=len(package) // ROW_BYTES))
+        data_banks.extend(banks)
+        next_bank += len(banks)
+
+    if next_bank > 0x100:
+        raise ValueError("Total bank count exceeds 255, which is unsupported")
+
+    banks = [build_boot_bank(image_entries, fill_byte)]
     banks.extend(data_banks)
     return b"".join(banks)
 
@@ -375,7 +545,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
     )
-    parser.add_argument("input", type=Path, help="縦長 PNG（横256pxトリミング／右パディング）")
+    parser.add_argument(
+        "-i",
+        "--input",
+        dest="input",
+        metavar="PNG",
+        type=Path,
+        nargs="+",
+        action="append",
+        required=True,
+        help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
+    )
     parser.add_argument(
         "-o",
         "--output",
@@ -407,33 +587,68 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def concatenate_images_vertically(images: Sequence[Image.Image]) -> Image.Image:
+    height = sum(img.height for img in images)
+    canvas = Image.new("RGB", (TARGET_WIDTH, height))
+
+    y = 0
+    for img in images:
+        canvas.paste(img, (0, y))
+        y += img.height
+
+    return canvas
+
+
 def main() -> None:
     args = parse_args()
-
-    if not args.input.is_file():
-        raise SystemExit(f"not found: {args.input}")
 
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
 
+    input_groups: list[list[Path]] = [list(group) for group in args.input]
+    prepared_images: list[tuple[str, Image.Image]] = []
+
+    for group in input_groups:
+        if not group:
+            raise SystemExit("Empty input group is not allowed")
+
+        loaded_images: list[Image.Image] = []
+        for path in group:
+            if not path.is_file():
+                raise SystemExit(f"not found: {path}")
+            loaded_images.append(prepare_image(Image.open(path), background))
+
+        merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
+        group_name = "+".join(path.stem for path in group)
+        prepared_images.append((group_name, merged))
+
+    row_packages_list: list[bytes] = []
+    row_counts: list[int] = []
+
     with open_workdir(args.workdir) as workdir:
-        prepared = workdir / f"{args.input.stem}_prepared.png"
-        prepared_image = prepare_image(args.input, background)
-        prepared_image.save(prepared)
+        for idx, (group_name, image) in enumerate(prepared_images):
+            prepared_path = workdir / f"{idx:02d}_{group_name}_prepared.png"
+            image.save(prepared_path)
 
-        quantized_path = run_msx1pq_cli(msx1pq_cli, prepared, workdir)
-        quantized_image = Image.open(quantized_path)
-        row_packages, row_count = build_row_packages_from_image(quantized_image)
+            quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
+            quantized_image = Image.open(quantized_path)
+            row_packages, row_count = build_row_packages_from_image(quantized_image)
 
-        if row_count % 8 != 0:
-            raise SystemExit("Internal error: quantized image height must be 8-dot aligned")
+            if row_count % 8 != 0:
+                raise SystemExit("Internal error: quantized image height must be 8-dot aligned")
 
-        rom = build(row_packages, fill_byte=args.fill_byte)
+            row_packages_list.append(row_packages)
+            row_counts.append(row_count)
+
+        rom = build(row_packages_list, fill_byte=args.fill_byte)
 
     out = args.output
     if out is None:
-        name = f"{args.input.stem}_scroll[{row_count}px][ASCII16]"
-        out = args.input.with_name(name).with_suffix(".rom")
+        if len(prepared_images) == 1:
+            name = f"{prepared_images[0][0]}_scroll[{row_counts[0]}px][ASCII16]"
+        else:
+            name = f"{prepared_images[0][0]}_scroll{len(prepared_images)}imgs[ASCII16]"
+        out = Path.cwd() / f"{name}.rom"
 
     try:
         out.write_bytes(rom)
