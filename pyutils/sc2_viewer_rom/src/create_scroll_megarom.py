@@ -130,32 +130,27 @@ SCROLL_OFFSET_ADDR = WORK_RAM_BASE + 1
 
 def draw_row_macro(
     b: Block,
-    *,
-    scroll_offset_reg: str,
-    row_from_top_reg: str,
 ) -> None:
     """現在のスクロール位置と画面内の行番号を受けて1行分を描画するマクロ。
 
-    Args:
-        b: 出力対象の Block。
-        scroll_offset_reg: スクロール位置を保持している 16bit レジスタ（現状 HL のみ対応）。
-        row_from_top_reg: 画面内の上からの行番号を保持している 8bit レジスタ（現状 C のみ対応）。
+    Regs:
+        C 現在描画している行数 ( 0 ~ 23)
+        D レジスタに画像番号
+        HL レジスタにスクロール位置
+        IY カラーテーブル位置
     """
 
-    if scroll_offset_reg != "HL":
-        raise ValueError("scroll_offset_reg must be HL")
-    if row_from_top_reg != "C":
-        raise ValueError("row_from_top_reg must be C")
-
-    # HL（スクロール位置）を退避しつつ、現在のバンク番号をASCII16_PAGE2_REGへセット
-    # H は行オフセットの上位バイトで、256 行で 1 バンク進む。
-    # D は画像ごとの開始バンク番号なので、足し合わせて実際に切り替えるべきバンクを得る。
+    # バンク切り替え
+    #  HL（スクロール位置）を退避しつつ、現在のバンク番号をASCII16_PAGE2_REGへセット
+    #  H は行オフセットの上位バイトで、256 行で 1 バンク進む。
+    #  D は画像ごとの開始バンク番号なので、足し合わせて実際に切り替えるべきバンクを得る。
     PUSH.HL(b)
     LD.A_H(b)
     ADD.A_D(b)
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
-    # HL = 行オフセット * 64byte + DATA_BANK_ADDR でRowPackage先頭アドレスを算出
+    # ソースデータの位置を計算
+    # HL = 行オフセット * (32byte + 32byte) + DATA_BANK_ADDR でRowPackage先頭アドレスを算出
     for _ in range(6):
         ADD.HL_HL(b)
     LD.DE_n16(b, DATA_BANK_ADDR)
@@ -436,11 +431,14 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.C_n8(b, 0)  # C = 画面内の上からの行番号（0〜）
     LD.HL_mn16(b, SCROLL_OFFSET_ADDR)  # HL = 現在のオフセット（行数）
     b.label("DRAW_ROW_LOOP")
-    draw_row_macro(
-        b,
-        scroll_offset_reg="HL",
-        row_from_top_reg="C",
-    )
+    """
+    draw_row_macro
+        C 現在描画している行数 ( 0 ~ 23)
+        D レジスタに画像番号
+        HL レジスタにスクロール位置
+        IY カラーテーブル位置
+    """
+    draw_row_macro(b)
 
     INC.C(b)  # 次の行番号に進める
     INC.HL(b)  # HL++ で次の行のオフセットへ進める
@@ -448,6 +446,8 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     DJNZ(b, "DRAW_ROW_LOOP")  # B != 0 なら次の行を描画
 
     JR(b, "MAIN_LOOP")
+
+    loop_infinite_macro(b)  # temp halt
 
     b.label("MAIN_LOOP")
     CALL(b, CHSNS)
