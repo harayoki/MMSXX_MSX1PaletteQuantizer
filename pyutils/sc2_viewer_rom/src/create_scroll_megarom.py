@@ -47,8 +47,10 @@ NEXT
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -91,7 +93,7 @@ from mmsxxasmhelper.msxutils import (
     set_msx2_palette_default_macro,
     store_stack_pointer_macro,
 )
-from mmsxxasmhelper.utils import pad_bytes
+from mmsxxasmhelper.utils import pad_bytes, loop_infinite_macro, debug_trap, set_debug
 from PIL import Image
 from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
 
@@ -173,7 +175,7 @@ def find_msx1pq_cli(path: Path | None) -> Path:
 
 def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_suffix = "_msx"
+    out_suffix = "_quantized"
     cmd = [
         str(cli),
         "-i",
@@ -202,7 +204,6 @@ def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
 
 def nearest_palette_index(rgb: Sequence[int]) -> int:
     """Return the closest MSX1 palette index (0-based) for an RGB triple."""
-
     r, g, b = rgb
     best_idx = 0
     best_dist = float("inf")
@@ -211,6 +212,7 @@ def nearest_palette_index(rgb: Sequence[int]) -> int:
         if dist < best_dist:
             best_dist = dist
             best_idx = idx
+
     return best_idx
 
 
@@ -231,6 +233,8 @@ def restrict_two_colors(indices: list[int]) -> list[int]:
     if len(unique) <= 2:
         return indices
 
+    raise ValueError(f"{unique} colors in 8 dots.")
+
     counts = Counter(indices)
     allowed = [color for color, _ in counts.most_common(2)]
 
@@ -250,35 +254,37 @@ def build_row_packages_from_image(image: Image.Image) -> tuple[bytes, int]:
     width, height = image.size
     if width != TARGET_WIDTH:
         raise ValueError(f"Width must be {TARGET_WIDTH}, got {width}")
+    if height % 8 > 0:
+        raise ValueError(f"Height must be 8x size, got {height}")
 
-    palette_indices = [nearest_palette_index(rgb) for rgb in image.convert("RGB").getdata()]
-
+    palette_indices = \
+        [nearest_palette_index(rgb) for rgb in image.convert("RGB").getdata()]  # 左上から右へ走査
     rows: list[bytes] = []
-    for y in range(height):
-        base = y * width
-        pattern_line = bytearray()
-        color_line = bytearray()
 
-        for tx in range(32):
-            start = base + tx * 8
-            block = palette_indices[start : start + 8]
-            block = restrict_two_colors(block)
+    for yy in range(int(height / 8)):
+        pattern_line = bytearray()  # パターンジェネレータ
+        color_line = bytearray()  # カラーテーブル
+        for xx in range(int(width / 8)):
+            for y in range(8):
+                base = (yy * 8 + y) * width + xx * 8
+                block = palette_indices[base : base + 8]
+                block = restrict_two_colors(block)
+                color_min = min(block)
+                color_max = max(block)
+                fg_color = color_max + 1  # MSX palette code (1-15)
+                bg_color = color_min + 1
 
-            color_min = min(block)
-            color_max = max(block)
-            fg_color = color_max + 1  # MSX palette code (1-15)
-            bg_color = color_min + 1
-
-            pattern_byte = 0
-            for idx in block:
-                pattern_byte <<= 1
-                if idx == color_max:
-                    pattern_byte |= 0x01
-
-            pattern_line.append(pattern_byte & 0xFF)
-            color_line.append(((fg_color & 0x0F) << 4) | (bg_color & 0x0F))
-
+                pattern_byte = 0
+                for idx in block:
+                    pattern_byte <<= 1
+                    if idx == color_max:
+                        pattern_byte |= 0x01
+                pattern_line.append(pattern_byte & 0xFF)
+                dat = (fg_color & 0x0F) << 4 | (bg_color & 0x0F)
+                color_line.append(dat)
         rows.append(bytes(pattern_line + color_line))
+        # print(f"#{yy}")
+        # print(f"\trows: {rows[-1]}")
 
     return b"".join(rows), height
 
@@ -290,7 +296,6 @@ def build_init_name_table_func() -> Func:
         LD.A_n8(block, 0)
         block.label("CREATE_NAME_TABLE_LOOP")
         LD.mHL_A(block)
-        LD.mHL_n8(block, 0)
         INC.HL(block)
         INC.A(block)
         JR_NZ(block, "CREATE_NAME_TABLE_LOOP")
@@ -320,6 +325,8 @@ INIT_NAME_TABLE_CALL = build_init_name_table_func()
 def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
+
+    set_debug(True)
 
     start_banks = [entry.start_bank for entry in image_entries]
     row_counts = [entry.row_count for entry in image_entries]
@@ -620,7 +627,7 @@ def main() -> None:
             loaded_images.append(prepare_image(Image.open(path), background))
 
         merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
-        group_name = "+".join(path.stem for path in group)
+        group_name = "-".join(path.stem for path in group)
         prepared_images.append((group_name, merged))
 
     row_packages_list: list[bytes] = []
@@ -632,6 +639,7 @@ def main() -> None:
             image.save(prepared_path)
 
             quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
+            os.unlink(prepared_path)
             quantized_image = Image.open(quantized_path)
             row_packages, row_count = build_row_packages_from_image(quantized_image)
 
