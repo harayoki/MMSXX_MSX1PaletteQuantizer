@@ -72,6 +72,7 @@ from mmsxxasmhelper.core import (
     JR_NC,
     JR_NZ,
     JR_Z,
+    DJNZ,
     LD,
     OR,
     POP,
@@ -92,6 +93,7 @@ from mmsxxasmhelper.msxutils import (
     restore_stack_pointer_macro,
     set_msx2_palette_default_macro,
     store_stack_pointer_macro,
+    ldirvm_macro,
 )
 from mmsxxasmhelper.utils import pad_bytes, loop_infinite_macro, debug_trap, set_debug
 from PIL import Image
@@ -407,7 +409,7 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     POP.HL(b)  # 行オフセット（HL）を復帰
     INC.HL(b)  # HL++ で次の行のオフセットへ進める
     DEC.B(b)  # B-- で行数カウンタを減算
-    JR_NZ(b, "DRAW_ROW_LOOP")  # B != 0 なら次の行を描画
+    DJNZ(b, "DRAW_ROW_LOOP")  # B != 0 なら次の行を描画
 
     JR(b, "MAIN_LOOP")
 

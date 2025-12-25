@@ -297,32 +297,31 @@ def set_screen_colors_macro(
     CALL(b, CHGCLR)
 
 
+@with_register_preserve
 def ldirvm_macro(
     b: Block,
     *,
-    source: int | None = None,
-    dest: int | None = None,
-    length: int | None = None,
+    source_HL: int | None = None,
+    dest_DE: int | None = None,
+    length_BC: int | None = None,
+    regs_preserve: Sequence[RegNames16] = ()
 ) -> None:
     """LDIRVM (#005C) を呼び出すマクロ。
-
     HL:元アドレス, DE:VRAM先頭, BC:バイト数 を引数で上書きできる。
     いずれも ``None`` の場合は呼び出し元でレジスタが適切にセットされて
     いる前提で、そのまま BIOS コールだけを行う。
-
     レジスタ変更: HL, DE, BC（引数指定時に上書き）。BIOS 呼び出しによって
     AF/BC/DE/HL が破壊される前提で使用する。
-
     """
 
-    if source is not None:
-        LD.HL_n16(b, source & 0xFFFF)
+    if source_HL is not None:
+        LD.HL_n16(b, source_HL & 0xFFFF)
 
-    if dest is not None:
-        LD.DE_n16(b, dest & 0xFFFF)
+    if dest_DE is not None:
+        LD.DE_n16(b, dest_DE & 0xFFFF)
 
-    if length is not None:
-        LD.BC_n16(b, length & 0xFFFF)
+    if length_BC is not None:
+        LD.BC_n16(b, length_BC & 0xFFFF)
 
     b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
 
