@@ -112,6 +112,10 @@ COLOR_BASE = 0x2000
 
 # MSX RAM での作業領域
 WORK_RAM_BASE = 0xC000
+PATTERN_RAM_BASE = WORK_RAM_BASE
+PATTERN_RAM_SIZE = 0x1800
+COLOR_RAM_BASE = WORK_RAM_BASE
+COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 VISIBLE_ROWS = 24
 ROW_BYTES = 64
@@ -124,20 +128,20 @@ KEY_SPACE = 0x20
 KEY_UP = 0x1E
 KEY_DOWN = 0x1F
 
-CURRENT_IMAGE_ADDR = WORK_RAM_BASE
-SCROLL_OFFSET_ADDR = WORK_RAM_BASE + 1
+CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE
+SCROLL_OFFSET_ADDR = CURRENT_IMAGE_ADDR + 1
 
 
-def draw_row_macro(
+def draw_pattern_row_macro(
     b: Block,
 ) -> None:
-    """現在のスクロール位置と画面内の行番号を受けて1行分を描画するマクロ。
+    """現在のスクロール位置と画面内の行番号を受けてパターンを描画するマクロ。
 
     Regs:
         C 現在描画している行数 ( 0 ~ 23)
         D レジスタに画像番号
         HL レジスタにスクロール位置
-        IY カラーテーブル位置
+        DE パターンテーブル書き込み先
     """
 
     # バンク切り替え
@@ -145,6 +149,7 @@ def draw_row_macro(
     #  H は行オフセットの上位バイトで、256 行で 1 バンク進む。
     #  D は画像ごとの開始バンク番号なので、足し合わせて実際に切り替えるべきバンクを得る。
     PUSH.HL(b)
+    PUSH.DE(b)
     LD.A_H(b)
     ADD.A_D(b)
     LD.mn16_A(b, ASCII16_PAGE2_REG)
@@ -155,25 +160,46 @@ def draw_row_macro(
         ADD.HL_HL(b)
     LD.DE_n16(b, DATA_BANK_ADDR)
     ADD.HL_DE(b)
+    POP.DE(b)
 
-    # パターンテーブルへ32byteコピー（DE=PATTERN_BASE、BC=32）
+    # パターンテーブルへ32byteコピー（DE=PATTERN_RAM_BASE、BC=32）
     PUSH.BC(b)
     LD.BC_n16(b, 32)
-    CALL(b, LDIRVM)
+    b.emit(0xED, 0xB0)  # LDIR
+    POP.BC(b)
+    POP.HL(b)
 
-    # カラーテーブル用にDEへCOLOR_BASE（IY）の値をセット
+
+def draw_color_row_macro(
+    b: Block,
+) -> None:
+    """現在のスクロール位置と画面内の行番号を受けてカラーを描画するマクロ。
+
+    Regs:
+        C 現在描画している行数 ( 0 ~ 23)
+        D レジスタに画像番号
+        HL レジスタにスクロール位置
+        DE カラーテーブル書き込み先
+    """
+
+    # バンク切り替え
+    PUSH.HL(b)
     PUSH.DE(b)
-    PUSH.IY(b)
+    LD.A_H(b)
+    ADD.A_D(b)
+    LD.mn16_A(b, ASCII16_PAGE2_REG)
+
+    # ソースデータの位置を計算
+    for _ in range(6):
+        ADD.HL_HL(b)
+    LD.DE_n16(b, DATA_BANK_ADDR + 32)
+    ADD.HL_DE(b)
     POP.DE(b)
 
     # カラーテーブルへ32byteコピー
+    PUSH.BC(b)
     LD.BC_n16(b, 32)
-    CALL(b, LDIRVM)
-
-    # 次の行のCOLOR_BASE/IY位置に進める
-    LD.BC_n16(b, 32)
-    ADD.IY_BC(b)
-    POP.DE(b)
+    b.emit(0xED, 0xB0)  # LDIR
 
     POP.BC(b)
     POP.HL(b)
@@ -424,26 +450,37 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.A_mHL(b)
     LD.D_A(b)  # D = start bank
 
-    LD.DE_n16(b, PATTERN_BASE)
-    LD.IY_n16(b, COLOR_BASE)
+    # パターン
+    LD.DE_n16(b, PATTERN_RAM_BASE)
 
     LD.B_n8(b, VISIBLE_ROWS)  # Bレジスタに描画する行数（VISIBLE_ROWS）をセットしてループ回数を用意
     LD.C_n8(b, 0)  # C = 画面内の上からの行番号（0〜）
     LD.HL_mn16(b, SCROLL_OFFSET_ADDR)  # HL = 現在のオフセット（行数）
-    b.label("DRAW_ROW_LOOP")
-    """
-    draw_row_macro
-        C 現在描画している行数 ( 0 ~ 23)
-        D レジスタに画像番号
-        HL レジスタにスクロール位置
-        IY カラーテーブル位置
-    """
-    draw_row_macro(b)
+    b.label("DRAW_PATTERN_ROW_LOOP")
+    draw_pattern_row_macro(b)
 
     INC.C(b)  # 次の行番号に進める
     INC.HL(b)  # HL++ で次の行のオフセットへ進める
     DEC.B(b)  # B-- で行数カウンタを減算
-    DJNZ(b, "DRAW_ROW_LOOP")  # B != 0 なら次の行を描画
+    DJNZ(b, "DRAW_PATTERN_ROW_LOOP")  # B != 0 なら次の行を描画
+
+    ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
+
+    # カラー
+    LD.DE_n16(b, COLOR_RAM_BASE)
+
+    LD.B_n8(b, VISIBLE_ROWS)
+    LD.C_n8(b, 0)
+    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
+    b.label("DRAW_COLOR_ROW_LOOP")
+    draw_color_row_macro(b)
+
+    INC.C(b)
+    INC.HL(b)
+    DEC.B(b)
+    DJNZ(b, "DRAW_COLOR_ROW_LOOP")
+
+    ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
 
     JR(b, "MAIN_LOOP")
 
