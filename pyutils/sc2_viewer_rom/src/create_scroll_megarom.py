@@ -375,42 +375,39 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.DE_n16(b, PATTERN_BASE)
     LD.IY_n16(b, COLOR_BASE)
 
-    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
-    LD.B_H(b)
-    LD.C_L(b)  # BC = current offset (rows)
-
-    LD.A_n8(b, VISIBLE_ROWS)
+    LD.B_n8(b, VISIBLE_ROWS)  # Bレジスタに描画する行数（VISIBLE_ROWS）をセットしてループ回数を用意
+    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)  # HL = 現在のオフセット（行数）
     b.label("DRAW_ROW_LOOP")
-    LD.A_B(b)
-    ADD.A_D(b)
-    LD.mn16_A(b, ASCII16_PAGE2_REG)
+    PUSH.HL(b)  # HL（行オフセット）を退避してループ内の計算用に保護
+    LD.A_H(b)  # A = 行オフセット上位8ビット（H）
+    ADD.A_D(b)  # A = start bank(D) + 行オフセット上位、行ごとのページを決定
+    LD.mn16_A(b, ASCII16_PAGE2_REG)  # ASCII16のページレジスタに現在行のデータバンクを設定
 
-    LD.L_C(b)
-    LD.H_n8(b, 0)
     for _ in range(6):
-        ADD.HL_HL(b)
-    LD.DE_n16(b, DATA_BANK_ADDR)
-    ADD.HL_DE(b)
+        ADD.HL_HL(b)  # HL = HL * 2 を6回繰り返し、オフセットを64倍して1行（64バイト）分のアドレスを算出
+    LD.DE_n16(b, DATA_BANK_ADDR)  # DE = データバンク先頭アドレス
+    ADD.HL_DE(b)  # HL = データバンク先頭 + 行オフセットで現在行のパターン先頭を指す
 
-    PUSH.BC(b)
-    LD.BC_n16(b, 32)
-    CALL(b, LDIRVM)
+    PUSH.BC(b)  # B（ループカウンタ）を含むBCを保存してLDirVM用に退避
+    LD.BC_n16(b, 32)  # BC = 32バイト（1行のパターン領域）
+    CALL(b, LDIRVM)  # パターンジェネレータ領域に32バイト転送
 
-    PUSH.DE(b)
-    PUSH.IY(b)
-    POP.DE(b)
+    PUSH.DE(b)  # DE（現在行のパターン先頭）を退避
+    PUSH.IY(b)  # IY（カラー転送先）をDEに渡すため退避
+    POP.DE(b)  # DE = IY（カラー転送先アドレス）に差し替え
 
-    LD.BC_n16(b, 32)
-    CALL(b, LDIRVM)
+    LD.BC_n16(b, 32)  # BC = 32バイト（1行のカラー領域）※退避したループカウンタは未復帰
+    CALL(b, LDIRVM)  # カラーテーブルへ32バイト転送
 
-    LD.BC_n16(b, 32)
-    ADD.IY_BC(b)
-    POP.DE(b)
+    LD.BC_n16(b, 32)  # BC = 32バイト分を色テーブル転送後のIY加算用に準備
+    ADD.IY_BC(b)  # IY = IY + 32 で次行のカラー転送先へ進める
+    POP.DE(b)  # DE を元のパターン先頭アドレスに戻す
 
-    POP.BC(b)
-    INC.BC(b)
-    DEC.A(b)
-    JR_NZ(b, "DRAW_ROW_LOOP")
+    POP.BC(b)  # 退避していたループカウンタを復帰
+    POP.HL(b)  # 行オフセット（HL）を復帰
+    INC.HL(b)  # HL++ で次の行のオフセットへ進める
+    DEC.B(b)  # B-- で行数カウンタを減算
+    JR_NZ(b, "DRAW_ROW_LOOP")  # B != 0 なら次の行を描画
 
     JR(b, "MAIN_LOOP")
 
