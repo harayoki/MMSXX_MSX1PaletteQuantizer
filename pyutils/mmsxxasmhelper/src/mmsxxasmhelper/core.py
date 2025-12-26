@@ -945,6 +945,36 @@ class LD:
         b.emit(0x77)
 
     @staticmethod
+    def mHL_B(b: Block) -> None:
+        """LD (HL),B"""
+        b.emit(0x70)
+
+    @staticmethod
+    def mHL_C(b: Block) -> None:
+        """LD (HL),C"""
+        b.emit(0x71)
+
+    @staticmethod
+    def mHL_D(b: Block) -> None:
+        """LD (HL),D"""
+        b.emit(0x72)
+
+    @staticmethod
+    def mHL_E(b: Block) -> None:
+        """LD (HL),E"""
+        b.emit(0x73)
+
+    @staticmethod
+    def mHL_H(b: Block) -> None:
+        """LD (HL),H"""
+        b.emit(0x74)
+
+    @staticmethod
+    def mHL_L(b: Block) -> None:
+        """LD (HL),L"""
+        b.emit(0x75)
+
+    @staticmethod
     def A_mHL(b: Block) -> None:
         """LD A,(HL)"""
         b.emit(0x7E)
