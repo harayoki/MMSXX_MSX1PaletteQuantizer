@@ -506,6 +506,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true"
     )
     parser.add_argument(
+        "--debug-image-index",
+        type=int,
+        default=0,
+        help="--use-debug-image 時に埋め込む番号",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -548,10 +554,56 @@ def concatenate_images_vertically(images: Sequence[Image.Image]) -> Image.Image:
     return canvas
 
 
-def create_debug_image_data_list() -> List[ImageData]:
-    pattern = bytes((i % 256 for i in range(PATTERN_RAM_SIZE)))
-    color = bytes((255 - (i % 256) for i in range(COLOR_RAM_SIZE)))
-    return [ImageData(pattern=pattern, color=color, tile_rows=SCREEN_TILE_ROWS)]
+def _embed_label(data: bytearray, label: str) -> None:
+    label_bytes = label.encode("ascii")
+    length = len(data)
+    for idx, value in enumerate(label_bytes):
+        if idx >= length:
+            break
+        data[idx] = value
+
+
+def _fill_with_story(data: bytearray, story: str, start: int = 0) -> None:
+    story_bytes = story.encode("ascii")
+    if not story_bytes:
+        return
+
+    for idx in range(start, len(data)):
+        data[idx] = story_bytes[(idx - start) % len(story_bytes)]
+
+
+def create_debug_image_data_list(debug_image_index: int) -> List[ImageData]:
+    pattern = bytearray()
+    for i in range(PATTERN_RAM_SIZE):
+        line_block = (i // 8) % 4
+        if line_block == 0:
+            pattern.append(0xFF)
+        elif line_block == 1:
+            pattern.append(0x00)
+        elif line_block == 2:
+            pattern.append(0xAA)
+        else:
+            pattern.append(0x55)
+
+    color = bytearray()
+    for i in range(COLOR_RAM_SIZE):
+        fg = (i // 8) % 15 + 1
+        bg = (i // 64) % 16
+        if fg == bg:
+            bg = (bg + 1) % 16
+        color.append((fg << 4) | bg)
+
+    pattern_label = f"PATTERN[{debug_image_index}] SCROLL VIEWER DEBUG"
+    color_label = f"color[{debug_image_index}] scroll viewer debug"
+    _embed_label(pattern, pattern_label)
+    _embed_label(color, color_label)
+
+    story = "scroll viewer debug story fills the screen with test data. "
+    pattern_story = story.upper()
+    _fill_with_story(pattern, pattern_story, start=len(pattern_label))
+    _fill_with_story(color, story, start=len(color_label))
+
+    return [ImageData(pattern=bytes(pattern), color=bytes(color), tile_rows=SCREEN_TILE_ROWS)]
 
 
 def main() -> None:
@@ -566,7 +618,7 @@ def main() -> None:
     rom: bytes
 
     if args.use_debug_image:
-        image_data_list = create_debug_image_data_list()
+        image_data_list = create_debug_image_data_list(args.debug_image_index)
     else:
         for group in input_groups:
             if not group:
@@ -607,7 +659,7 @@ def main() -> None:
         elif prepared_images:
             name = f"{prepared_images[0][0]}_scroll{len(prepared_images)}imgs[ASCII16]"
         else:
-            name = "debug_scroll[ASCII16]"
+            name = f"debug_scroll{args.debug_image_index}[ASCII16]"
         out = Path.cwd() / f"{name}.rom"
 
     try:
