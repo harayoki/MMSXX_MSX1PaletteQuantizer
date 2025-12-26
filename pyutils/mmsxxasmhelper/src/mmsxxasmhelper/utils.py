@@ -15,6 +15,7 @@ __all__ = [
     "loop_infinite_macro",
     "set_debug",
     "debug_trap",
+    "print_bytes",
 ]
 
 JIFFY_ADDR = 0xFC9E
@@ -101,3 +102,18 @@ def debug_trap(b: Block) -> None:
     if not DEBUG:
         return
     HALT(b)
+
+
+#
+# ---------------------------------------------------------------------------
+# 便利python関数
+# ---------------------------------------------------------------------------
+
+def print_bytes(data: bytes, step: int = 16, address: int | None = 0) -> None:
+    for i in range(0, len(data), step):
+        chunk = data[i:i + step]
+        chunk = ' '.join(f'{b:02x}' for b in chunk)
+        if address is not None:
+            chunk = f"{address: 05x}: {chunk}"
+            address += step
+        print(chunk)

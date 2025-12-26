@@ -56,7 +56,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, List
 
 from mmsxxasmhelper.core import (
     ADD,
@@ -80,6 +80,7 @@ from mmsxxasmhelper.core import (
     XOR,
     DB,
     DW,
+    NOP,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -95,7 +96,7 @@ from mmsxxasmhelper.msxutils import (
     store_stack_pointer_macro,
     ldirvm_macro,
 )
-from mmsxxasmhelper.utils import pad_bytes, loop_infinite_macro, debug_trap, set_debug
+from mmsxxasmhelper.utils import pad_bytes, loop_infinite_macro, debug_trap, set_debug, print_bytes
 from PIL import Image
 from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
 
@@ -138,7 +139,6 @@ def draw_pattern_row_macro(
     """現在のスクロール位置と画面内の行番号を受けてパターンを描画するマクロ。
 
     Regs:
-        C 現在描画している行数 ( 0 ~ 23)
         D レジスタに画像番号
         HL レジスタにスクロール位置
         DE パターンテーブル書き込み先
@@ -155,18 +155,20 @@ def draw_pattern_row_macro(
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
     # ソースデータの位置を計算
-    # HL = 行オフセット * (32byte + 32byte) + DATA_BANK_ADDR でRowPackage先頭アドレスを算出
-    for _ in range(6):
+    # HL = 行オフセット * (32byte) + DATA_BANK_ADDR でRowPackage先頭アドレスを算出
+    for _ in range(5):
         ADD.HL_HL(b)
-    LD.DE_n16(b, DATA_BANK_ADDR)
+    PUSH.HL(b)
+    LD.DE_n16(b, DATA_BANK_ADDR)  # 0x8000
     ADD.HL_DE(b)
-    POP.DE(b)
+    # VRAMアドレスを調整 DE += 行オフセット * 32
+    POP.DE(b)  # DE = HL in stack
 
-    # パターンテーブルへ32byteコピー（DE=PATTERN_RAM_BASE、BC=32）
+    # パターンテーブルへ32byteコピー（HL=SOURCE DE=PATTERN_RAM_BASE、BC=32）
     PUSH.BC(b)
-    LD.BC_n16(b, 32)
-    b.emit(0xED, 0xB0)  # LDIR
+    ldirvm_macro(b, length_BC=32)
     POP.BC(b)
+    POP.DE(b)
     POP.HL(b)
 
 
@@ -190,7 +192,7 @@ def draw_color_row_macro(
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
     # ソースデータの位置を計算
-    for _ in range(6):
+    for _ in range(5):
         ADD.HL_HL(b)
     LD.DE_n16(b, DATA_BANK_ADDR + 32)
     ADD.HL_DE(b)
@@ -361,9 +363,7 @@ def build_row_packages_from_image(image: Image.Image) -> tuple[bytes, int]:
                 dat = (fg_color & 0x0F) << 4 | (bg_color & 0x0F)
                 color_line.append(dat)
         rows.append(bytes(pattern_line + color_line))
-        # print(f"#{yy}")
-        # print(f"\trows: {rows[-1]}")
-
+    # print_bytes(rows[0])
     return b"".join(rows), height
 
 
@@ -454,17 +454,19 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.DE_n16(b, PATTERN_RAM_BASE)
 
     LD.B_n8(b, VISIBLE_ROWS)  # Bレジスタに描画する行数（VISIBLE_ROWS）をセットしてループ回数を用意
-    LD.C_n8(b, 0)  # C = 画面内の上からの行番号（0〜）
     LD.HL_mn16(b, SCROLL_OFFSET_ADDR)  # HL = 現在のオフセット（行数）
     b.label("DRAW_PATTERN_ROW_LOOP")
     draw_pattern_row_macro(b)
 
-    INC.C(b)  # 次の行番号に進める
     INC.HL(b)  # HL++ で次の行のオフセットへ進める
     DEC.B(b)  # B-- で行数カウンタを減算
     DJNZ(b, "DRAW_PATTERN_ROW_LOOP")  # B != 0 なら次の行を描画
 
     ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
+
+    NOP(b, 2)  # 目印
+    loop_infinite_macro(b)  # temp halt
+    NOP(b, 2)  # 目印
 
     # カラー
     LD.DE_n16(b, COLOR_RAM_BASE)
@@ -604,9 +606,11 @@ def build(image_row_packages: Sequence[bytes], fill_byte: int = 0xFF) -> bytes:
     data_banks: list[bytes] = []
     next_bank = 1
 
-    for package in image_row_packages:
+    for i, package in enumerate(image_row_packages):
         if not package:
             raise ValueError("row_packages must not be empty")
+        print(f"* packing image #{i} size:{len(package)}")
+        # print_bytes(package[:100])
 
         banks = split_row_packages_into_banks(package, fill_byte)
         image_entries.append(ImageEntry(start_bank=next_bank, row_count=len(package) // ROW_BYTES))
@@ -635,6 +639,10 @@ def parse_args() -> argparse.Namespace:
         action="append",
         required=True,
         help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
+    )
+    parser.add_argument(
+        "--use-debug-image",
+        action="store_true"
     )
     parser.add_argument(
         "-o",
@@ -679,6 +687,15 @@ def concatenate_images_vertically(images: Sequence[Image.Image]) -> Image.Image:
     return canvas
 
 
+def create_debug_row_packages_list() -> List[bytes]:
+    data: bytes = bytes()
+    for i in range(32*24):
+        data += bytes([i % 256]*8)
+    for i in range(32*24*8):
+        data += bytes([255 - (i % 256)]*8)
+    return [data]
+
+
 def main() -> None:
     args = parse_args()
 
@@ -687,41 +704,46 @@ def main() -> None:
 
     input_groups: list[list[Path]] = [list(group) for group in args.input]
     prepared_images: list[tuple[str, Image.Image]] = []
-
-    for group in input_groups:
-        if not group:
-            raise SystemExit("Empty input group is not allowed")
-
-        loaded_images: list[Image.Image] = []
-        for path in group:
-            if not path.is_file():
-                raise SystemExit(f"not found: {path}")
-            loaded_images.append(prepare_image(Image.open(path), background))
-
-        merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
-        group_name = "-".join(path.stem for path in group)
-        prepared_images.append((group_name, merged))
-
     row_packages_list: list[bytes] = []
     row_counts: list[int] = []
+    rom: bytes
 
-    with open_workdir(args.workdir) as workdir:
-        for idx, (group_name, image) in enumerate(prepared_images):
-            prepared_path = workdir / f"{idx:02d}_{group_name}_prepared.png"
-            image.save(prepared_path)
+    if args.use_debug_image:
+        row_packages_list = create_debug_row_packages_list()
+    else:
+        for group in input_groups:
+            if not group:
+                raise SystemExit("Empty input group is not allowed")
 
-            quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
-            os.unlink(prepared_path)
-            quantized_image = Image.open(quantized_path)
-            row_packages, row_count = build_row_packages_from_image(quantized_image)
+            loaded_images: list[Image.Image] = []
+            for path in group:
+                if not path.is_file():
+                    raise SystemExit(f"not found: {path}")
+                loaded_images.append(prepare_image(Image.open(path), background))
 
-            if row_count % 8 != 0:
-                raise SystemExit("Internal error: quantized image height must be 8-dot aligned")
+            merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
+            group_name = "-".join(path.stem for path in group)
+            prepared_images.append((group_name, merged))
 
-            row_packages_list.append(row_packages)
-            row_counts.append(row_count)
+        with open_workdir(args.workdir) as workdir:
+            for idx, (group_name, image) in enumerate(prepared_images):
+                prepared_path = workdir / f"{idx:02d}_{group_name}_prepared.png"
+                image.save(prepared_path)
+                # print(f"prepared iamge #{idx} {prepared_path} created")
 
-        rom = build(row_packages_list, fill_byte=args.fill_byte)
+                quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
+                os.unlink(prepared_path)
+                quantized_image = Image.open(quantized_path)
+                print(f"* quantized iamge #{idx} {quantized_path} created")
+                row_packages, row_count = build_row_packages_from_image(quantized_image)
+
+                if row_count % 8 != 0:
+                    raise SystemExit("Internal error: quantized image height must be 8-dot aligned")
+
+                row_packages_list.append(row_packages)
+                row_counts.append(row_count)
+
+    rom = build(row_packages_list, fill_byte=args.fill_byte)
 
     out = args.output
     if out is None:
