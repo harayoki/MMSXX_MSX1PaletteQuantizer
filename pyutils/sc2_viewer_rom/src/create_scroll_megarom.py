@@ -455,7 +455,8 @@ def pack_image_into_banks(image: ImageData, fill_byte: int) -> list[bytes]:
 
     payload.extend(image.color)
 
-    padded = bytes(pad_bytes(list(payload), PAGE_SIZE, fill_byte))
+    total_size = ((len(payload) + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE
+    padded = bytes(pad_bytes(list(payload), total_size, fill_byte))
     return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)]
 
 
