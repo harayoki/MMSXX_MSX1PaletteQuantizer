@@ -9,18 +9,12 @@ MSX1 縦スクロール ROM ビルダー。
 3. `msx1pq_cli`（PATH もしくは引数で指定）を用いて MSX1 ルール準拠の PNG を生成。
     ※ 美しくするための前処理や加工は行われず機械的に変換する。
     質の高い画像にしたい場合はあらかじめmsx1pq_cliや他のツールで対応しておく。
-4. １ラインデータ（パターン + 色: 各 32byte/行）ごとの可変長データ（RowPackage）に加工して
+4. 画像ごとに16バイトヘッダを付け、パターンテーブル全体とカラーテーブル全体を
    ASCII16 MegaROM のデータバンクに格納。
 5. ビューアーとともにROMデータとして出力。
 
-RowPackage:
-    pattern[1] ; パターンジェネレータ（1バイト）x 32 文字
-    color[1]   ; カラーテーブル（1バイト）x 32 文字
-    合計 64 バイト / 1 ライン
-
 実装中
-・RowPackageを並べたデータを1画面文表示
-・指定位置から全画面書き換え
+・16バイトヘッダから行数や色データ開始バンクを読み取り1画面分を描画
 
 NEXT
 RAMからVRAMコピーなどを用いて（実際のアルゴリズムは未定）速さを考慮しつつ
@@ -118,98 +112,28 @@ PATTERN_RAM_SIZE = 0x1800
 COLOR_RAM_BASE = WORK_RAM_BASE
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
-VISIBLE_ROWS = 24
-ROW_BYTES = 64
-ROWS_PER_BANK = PAGE_SIZE // ROW_BYTES
+SCREEN_TILE_ROWS = 24
+IMAGE_HEADER_SIZE = 16
 
 CHSNS = 0x009C
 CHGET = 0x009F
 
-KEY_SPACE = 0x20
-KEY_UP = 0x1E
-KEY_DOWN = 0x1F
-
 CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE
-SCROLL_OFFSET_ADDR = CURRENT_IMAGE_ADDR + 1
+CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1
+CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1
+CURRENT_IMAGE_COLOR_BANK_OFFSET_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2
 
-
-def draw_pattern_row_macro(
-    b: Block,
-) -> None:
-    """現在のスクロール位置と画面内の行番号を受けてパターンを描画するマクロ。
-
-    Regs:
-        D レジスタに画像番号
-        HL レジスタにスクロール位置
-        DE パターンテーブル書き込み先
-    """
-
-    # バンク切り替え
-    #  HL（スクロール位置）を退避しつつ、現在のバンク番号をASCII16_PAGE2_REGへセット
-    #  H は行オフセットの上位バイトで、256 行で 1 バンク進む。
-    #  D は画像ごとの開始バンク番号なので、足し合わせて実際に切り替えるべきバンクを得る。
-    PUSH.HL(b)
-    PUSH.DE(b)
-    LD.A_H(b)
-    ADD.A_D(b)
-    LD.mn16_A(b, ASCII16_PAGE2_REG)
-
-    # ソースデータの位置を計算
-    # HL = 行オフセット * (32byte) + DATA_BANK_ADDR でRowPackage先頭アドレスを算出
-    for _ in range(5):
-        ADD.HL_HL(b)
-    PUSH.HL(b)
-    LD.DE_n16(b, DATA_BANK_ADDR)  # 0x8000
-    ADD.HL_DE(b)
-    # VRAMアドレスを調整 DE += 行オフセット * 32
-    POP.DE(b)  # DE = HL in stack
-
-    # パターンテーブルへ32byteコピー（HL=SOURCE DE=PATTERN_RAM_BASE、BC=32）
-    PUSH.BC(b)
-    ldirvm_macro(b, length_BC=32)
-    POP.BC(b)
-    POP.DE(b)
-    POP.HL(b)
-
-
-def draw_color_row_macro(
-    b: Block,
-) -> None:
-    """現在のスクロール位置と画面内の行番号を受けてカラーを描画するマクロ。
-
-    Regs:
-        C 現在描画している行数 ( 0 ~ 23)
-        D レジスタに画像番号
-        HL レジスタにスクロール位置
-        DE カラーテーブル書き込み先
-    """
-
-    # バンク切り替え
-    PUSH.HL(b)
-    PUSH.DE(b)
-    LD.A_H(b)
-    ADD.A_D(b)
-    LD.mn16_A(b, ASCII16_PAGE2_REG)
-
-    # ソースデータの位置を計算
-    for _ in range(5):
-        ADD.HL_HL(b)
-    LD.DE_n16(b, DATA_BANK_ADDR + 32)
-    ADD.HL_DE(b)
-    POP.DE(b)
-
-    # カラーテーブルへ32byteコピー
-    PUSH.BC(b)
-    LD.BC_n16(b, 32)
-    b.emit(0xED, 0xB0)  # LDIR
-
-    POP.BC(b)
-    POP.HL(b)
 
 @dataclass
 class ImageEntry:
     start_bank: int
-    row_count: int
+
+
+@dataclass
+class ImageData:
+    pattern: bytes
+    color: bytes
+    tile_rows: int
 
 
 def int_from_str(value: str) -> int:
@@ -328,8 +252,8 @@ def restrict_two_colors(indices: list[int]) -> list[int]:
     return remapped
 
 
-def build_row_packages_from_image(image: Image.Image) -> tuple[bytes, int]:
-    """Convert a quantized image into RowPackage bytes and return (bytes, row_count)."""
+def build_image_data_from_image(image: Image.Image) -> ImageData:
+    """Convert a quantized image into pattern/color bytes."""
 
     width, height = image.size
     if width != TARGET_WIDTH:
@@ -339,7 +263,8 @@ def build_row_packages_from_image(image: Image.Image) -> tuple[bytes, int]:
 
     palette_indices = \
         [nearest_palette_index(rgb) for rgb in image.convert("RGB").getdata()]  # 左上から右へ走査
-    rows: list[bytes] = []
+    patterns: list[bytes] = []
+    colors: list[bytes] = []
 
     for yy in range(int(height / 8)):
         pattern_line = bytearray()  # パターンジェネレータ
@@ -362,9 +287,11 @@ def build_row_packages_from_image(image: Image.Image) -> tuple[bytes, int]:
                 pattern_line.append(pattern_byte & 0xFF)
                 dat = (fg_color & 0x0F) << 4 | (bg_color & 0x0F)
                 color_line.append(dat)
-        rows.append(bytes(pattern_line + color_line))
-    # print_bytes(rows[0])
-    return b"".join(rows), height
+        patterns.append(bytes(pattern_line))
+        colors.append(bytes(color_line))
+
+    tile_rows = height // 8
+    return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
 
 
 def build_init_name_table_func() -> Func:
@@ -407,12 +334,9 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     set_debug(True)
 
     start_banks = [entry.start_bank for entry in image_entries]
-    row_counts = [entry.row_count for entry in image_entries]
 
     if any(bank < 1 or bank > 0xFF for bank in start_banks):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
-    if any(count <= 0 or count > 0xFFFF for count in row_counts):
-        raise ValueError("row_count must fit in 2 bytes and be positive")
 
     b = Block()
 
@@ -437,132 +361,59 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
 
     LD.A_n8(b, 0)
     LD.mn16_A(b, CURRENT_IMAGE_ADDR)
-    LD.HL_n16(b, 0)
-    LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
 
-    b.label("DRAW_CURRENT_IMAGE")
-    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
-    LD.E_A(b)  # E = index
-
+    # 1枚目のみを表示。ヘッダ先頭の行数やカラーデータ先頭バンクへのオフセットは
+    # 今後スペースキーで次の画像に進む際に使う想定。
     LD.HL_label(b, "IMAGE_START_BANK_TABLE")
-    LD.D_n8(b, 0)
-    ADD.HL_DE(b)
     LD.A_mHL(b)
-    LD.D_A(b)  # D = start bank
+    LD.mn16_A(b, CURRENT_IMAGE_START_BANK_ADDR)
+    LD.mn16_A(b, ASCII16_PAGE2_REG)
 
-    # パターン
-    LD.DE_n16(b, PATTERN_RAM_BASE)
-
-    LD.B_n8(b, VISIBLE_ROWS)  # Bレジスタに描画する行数（VISIBLE_ROWS）をセットしてループ回数を用意
-    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)  # HL = 現在のオフセット（行数）
-    b.label("DRAW_PATTERN_ROW_LOOP")
-    draw_pattern_row_macro(b)
-
-    INC.HL(b)  # HL++ で次の行のオフセットへ進める
-    DEC.B(b)  # B-- で行数カウンタを減算
-    DJNZ(b, "DRAW_PATTERN_ROW_LOOP")  # B != 0 なら次の行を描画
-
-    ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
-
-    NOP(b, 2)  # 目印
-    loop_infinite_macro(b)  # temp halt
-    NOP(b, 2)  # 目印
-
-    # カラー
-    LD.DE_n16(b, COLOR_RAM_BASE)
-
-    LD.B_n8(b, VISIBLE_ROWS)
-    LD.C_n8(b, 0)
-    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
-    b.label("DRAW_COLOR_ROW_LOOP")
-    draw_color_row_macro(b)
-
-    INC.C(b)
-    INC.HL(b)
-    DEC.B(b)
-    DJNZ(b, "DRAW_COLOR_ROW_LOOP")
-
-    ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
-
-    JR(b, "MAIN_LOOP")
-
-    loop_infinite_macro(b)  # temp halt
-
-    b.label("MAIN_LOOP")
-    CALL(b, CHSNS)
-    CP.n8(b, 0)
-    JR_Z(b, "MAIN_LOOP")
-
-    CALL(b, CHGET)
-    CP.n8(b, KEY_SPACE)
-    JR_Z(b, "HANDLE_NEXT_IMAGE")
-    CP.n8(b, KEY_UP)
-    JR_Z(b, "HANDLE_SCROLL_UP")
-    CP.n8(b, KEY_DOWN)
-    JR_Z(b, "HANDLE_SCROLL_DOWN")
-    JR(b, "MAIN_LOOP")
-
-    b.label("HANDLE_NEXT_IMAGE")
-    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
-    INC.A(b)
-    CP.n8(b, len(image_entries))
-    JR_C(b, "STORE_IMAGE_INDEX")
-    LD.A_n8(b, 0)
-
-    b.label("STORE_IMAGE_INDEX")
-    LD.mn16_A(b, CURRENT_IMAGE_ADDR)
-    LD.HL_n16(b, 0)
-    LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
-    JP(b, "DRAW_CURRENT_IMAGE")
-
-    b.label("HANDLE_SCROLL_UP")
-    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
-    LD.A_H(b)
-    OR.L(b)
-    JR_Z(b, "MAIN_LOOP")
-    DEC.HL(b)
-    LD.mn16_HL(b, SCROLL_OFFSET_ADDR)
-    JP(b, "DRAW_CURRENT_IMAGE")
-
-    b.label("HANDLE_SCROLL_DOWN")
-    # Load row count for current image
-    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
-    LD.E_A(b)
-    LD.HL_label(b, "IMAGE_ROW_COUNT_TABLE")
-    LD.D_n8(b, 0)
-    ADD.HL_DE(b)
-    ADD.HL_DE(b)
+    # ヘッダ読み込み（行数とカラーデータまでのバンクオフセット）
+    LD.HL_n16(b, DATA_BANK_ADDR)
     LD.E_mHL(b)
     INC.HL(b)
     LD.D_mHL(b)
-
-    LD.A_D(b)
-    OR.E(b)
-    JR_Z(b, "MAIN_LOOP")
-
-    LD.H_D(b)
-    LD.L_E(b)
-    LD.DE_n16(b, VISIBLE_ROWS)
-    XOR.A(b)
-    b.emit(0xED, 0x52)  # SBC HL,DE
-    JR_C(b, "MAIN_LOOP")
-    JR_Z(b, "MAIN_LOOP")
-
-    LD.HL_mn16(b, SCROLL_OFFSET_ADDR)
-    LD.D_H(b)
-    LD.E_L(b)
-    INC.DE(b)
-    XOR.A(b)
-    b.emit(0xED, 0x52)  # SBC HL,DE (HL = max_offset - candidate)
-    JR_C(b, "MAIN_LOOP")
-
-    LD.HL_n16(b, SCROLL_OFFSET_ADDR)
-    LD.A_E(b)
-    LD.mHL_A(b)
+    LD.HL_n16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.mHL_E(b)
     INC.HL(b)
-    LD.A_D(b)
-    LD.mHL_A(b)
-    JP(b, "DRAW_CURRENT_IMAGE")
+    LD.mHL_D(b)
+
+    LD.HL_n16(b, DATA_BANK_ADDR + 2)
+    LD.C_mHL(b)
+    INC.HL(b)
+    LD.B_mHL(b)
+    LD.HL_n16(b, CURRENT_IMAGE_COLOR_BANK_OFFSET_ADDR)
+    LD.mHL_C(b)
+    INC.HL(b)
+    LD.mHL_B(b)
+
+    # パターン（画面24タイル分）
+    LD.HL_n16(b, DATA_BANK_ADDR + IMAGE_HEADER_SIZE)
+    LD.DE_n16(b, PATTERN_RAM_BASE)
+    LD.BC_n16(b, PATTERN_RAM_SIZE)
+    b.emit(0xED, 0xB0)  # LDIR
+
+    ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
+
+    # カラー
+    LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
+    LD.HL_n16(b, CURRENT_IMAGE_COLOR_BANK_OFFSET_ADDR)
+    LD.C_mHL(b)
+    INC.HL(b)
+    LD.B_mHL(b)
+    ADD.A_C(b)
+    ADD.A_B(b)
+    LD.mn16_A(b, ASCII16_PAGE2_REG)
+
+    LD.HL_n16(b, DATA_BANK_ADDR)
+    LD.DE_n16(b, COLOR_RAM_BASE)
+    LD.BC_n16(b, COLOR_RAM_SIZE)
+    b.emit(0xED, 0xB0)  # LDIR
+
+    ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
+
+    loop_infinite_macro(b)
 
     restore_stack_pointer_macro(b)
 
@@ -571,49 +422,58 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     b.label("IMAGE_START_BANK_TABLE")
     DB(b, *start_banks)
 
-    b.label("IMAGE_ROW_COUNT_TABLE")
-    for count in row_counts:
-        DW(b, count)
-
     return bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
 
 
-def split_row_packages_into_banks(row_packages: bytes, fill_byte: int) -> list[bytes]:
-    if len(row_packages) % ROW_BYTES != 0:
-        raise ValueError("row_packages length must be a multiple of ROW_BYTES")
+def pack_image_into_banks(image: ImageData, fill_byte: int) -> list[bytes]:
+    if image.tile_rows <= 0 or image.tile_rows > 0xFFFF:
+        raise ValueError("tile_rows must fit in 2 bytes and be positive")
 
-    banks: list[bytes] = []
-    current = bytearray()
+    expected_length = image.tile_rows * 256
+    if len(image.pattern) != expected_length:
+        raise ValueError("pattern data length mismatch")
+    if len(image.color) != expected_length:
+        raise ValueError("color data length mismatch")
 
-    for offset in range(0, len(row_packages), ROW_BYTES):
-        row = row_packages[offset : offset + ROW_BYTES]
-        if len(current) + len(row) > PAGE_SIZE:
-            banks.append(bytes(pad_bytes(list(current), PAGE_SIZE, fill_byte)))
-            current = bytearray()
-        current.extend(row)
+    payload = bytearray()
+    payload.extend(b"\x00" * IMAGE_HEADER_SIZE)  # placeholder header
+    payload.extend(image.pattern)
 
-    banks.append(bytes(pad_bytes(list(current), PAGE_SIZE, fill_byte)))
-    return banks
+    pattern_padding = (-len(payload)) % PAGE_SIZE
+    payload.extend([fill_byte] * pattern_padding)
+
+    color_bank_offset = len(payload) // PAGE_SIZE
+    if color_bank_offset > 0xFF:
+        raise ValueError("color_bank_offset must fit in 1 byte")
+
+    header = bytearray(IMAGE_HEADER_SIZE)
+    header[0] = image.tile_rows & 0xFF
+    header[1] = (image.tile_rows >> 8) & 0xFF
+    header[2] = color_bank_offset & 0xFF
+    header[3] = (color_bank_offset >> 8) & 0xFF
+    payload[:IMAGE_HEADER_SIZE] = header
+
+    payload.extend(image.color)
+
+    padded = bytes(pad_bytes(list(payload), PAGE_SIZE, fill_byte))
+    return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)]
 
 
-def build(image_row_packages: Sequence[bytes], fill_byte: int = 0xFF) -> bytes:
+def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
-    if not image_row_packages:
-        raise ValueError("image_row_packages must not be empty")
+    if not images:
+        raise ValueError("images must not be empty")
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
     next_bank = 1
 
-    for i, package in enumerate(image_row_packages):
-        if not package:
-            raise ValueError("row_packages must not be empty")
-        print(f"* packing image #{i} size:{len(package)}")
-        # print_bytes(package[:100])
+    for i, image in enumerate(images):
+        print(f"* packing image #{i} tiles:{image.tile_rows}")
 
-        banks = split_row_packages_into_banks(package, fill_byte)
-        image_entries.append(ImageEntry(start_bank=next_bank, row_count=len(package) // ROW_BYTES))
+        banks = pack_image_into_banks(image, fill_byte)
+        image_entries.append(ImageEntry(start_bank=next_bank))
         data_banks.extend(banks)
         next_bank += len(banks)
 
@@ -687,13 +547,10 @@ def concatenate_images_vertically(images: Sequence[Image.Image]) -> Image.Image:
     return canvas
 
 
-def create_debug_row_packages_list() -> List[bytes]:
-    data: bytes = bytes()
-    for i in range(32*24):
-        data += bytes([i % 256]*8)
-    for i in range(32*24*8):
-        data += bytes([255 - (i % 256)]*8)
-    return [data]
+def create_debug_image_data_list() -> List[ImageData]:
+    pattern = bytes((i % 256 for i in range(PATTERN_RAM_SIZE)))
+    color = bytes((255 - (i % 256) for i in range(COLOR_RAM_SIZE)))
+    return [ImageData(pattern=pattern, color=color, tile_rows=SCREEN_TILE_ROWS)]
 
 
 def main() -> None:
@@ -704,12 +561,11 @@ def main() -> None:
 
     input_groups: list[list[Path]] = [list(group) for group in args.input]
     prepared_images: list[tuple[str, Image.Image]] = []
-    row_packages_list: list[bytes] = []
-    row_counts: list[int] = []
+    image_data_list: list[ImageData] = []
     rom: bytes
 
     if args.use_debug_image:
-        row_packages_list = create_debug_row_packages_list()
+        image_data_list = create_debug_image_data_list()
     else:
         for group in input_groups:
             if not group:
@@ -735,22 +591,22 @@ def main() -> None:
                 os.unlink(prepared_path)
                 quantized_image = Image.open(quantized_path)
                 print(f"* quantized iamge #{idx} {quantized_path} created")
-                row_packages, row_count = build_row_packages_from_image(quantized_image)
+                image_data = build_image_data_from_image(quantized_image)
+                image_data_list.append(image_data)
 
-                if row_count % 8 != 0:
-                    raise SystemExit("Internal error: quantized image height must be 8-dot aligned")
+    if not image_data_list:
+        raise SystemExit("No images were prepared")
 
-                row_packages_list.append(row_packages)
-                row_counts.append(row_count)
-
-    rom = build(row_packages_list, fill_byte=args.fill_byte)
+    rom = build(image_data_list, fill_byte=args.fill_byte)
 
     out = args.output
     if out is None:
         if len(prepared_images) == 1:
-            name = f"{prepared_images[0][0]}_scroll[{row_counts[0]}px][ASCII16]"
-        else:
+            name = f"{prepared_images[0][0]}_scroll[{image_data_list[0].tile_rows * 8}px][ASCII16]"
+        elif prepared_images:
             name = f"{prepared_images[0][0]}_scroll{len(prepared_images)}imgs[ASCII16]"
+        else:
+            name = "debug_scroll[ASCII16]"
         out = Path.cwd() / f"{name}.rom"
 
     try:
