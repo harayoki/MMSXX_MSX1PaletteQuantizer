@@ -388,10 +388,33 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     INC.HL(b)
     LD.mHL_B(b)
 
+    # パターン／カラーバッファをゼロクリアして、画像より下の領域を黒で埋める。
+    XOR.A(b)
+    LD.HL_n16(b, PATTERN_RAM_BASE)
+    LD.DE_n16(b, PATTERN_RAM_BASE + 1)
+    LD.BC_n16(b, PATTERN_RAM_SIZE - 1)
+    LD.mHL_A(b)
+    b.emit(0xED, 0xB0)  # LDIR
+
+    LD.HL_n16(b, COLOR_RAM_BASE)
+    LD.DE_n16(b, COLOR_RAM_BASE + 1)
+    LD.BC_n16(b, COLOR_RAM_SIZE - 1)
+    LD.mHL_A(b)
+    b.emit(0xED, 0xB0)  # LDIR
+
+    # 画像のタイル行数（行数は 8 ドット単位）。SCREEN2 表示領域 24 行を上限に
+    # コピーサイズを決める。
+    LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
+    CP.n8(b, SCREEN_TILE_ROWS)
+    JR_NC(b, "ROW_COUNT_OK")
+    LD.A_n8(b, SCREEN_TILE_ROWS)
+    b.label("ROW_COUNT_OK")
+    LD.B_A(b)
+    LD.C_n8(b, 0x00)
+
     # パターン（画面24タイル分）
     LD.HL_n16(b, DATA_BANK_ADDR + IMAGE_HEADER_SIZE)
     LD.DE_n16(b, PATTERN_RAM_BASE)
-    LD.BC_n16(b, PATTERN_RAM_SIZE)
     b.emit(0xED, 0xB0)  # LDIR
 
     ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
@@ -406,9 +429,17 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     ADD.A_B(b)
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
+    # 色データも表示領域分だけ読み出す。
+    LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
+    CP.n8(b, SCREEN_TILE_ROWS)
+    JR_NC(b, "ROW_COUNT_OK_COLOR")
+    LD.A_n8(b, SCREEN_TILE_ROWS)
+    b.label("ROW_COUNT_OK_COLOR")
+    LD.B_A(b)
+    LD.C_n8(b, 0x00)
+
     LD.HL_n16(b, DATA_BANK_ADDR)
     LD.DE_n16(b, COLOR_RAM_BASE)
-    LD.BC_n16(b, COLOR_RAM_SIZE)
     b.emit(0xED, 0xB0)  # LDIR
 
     ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
