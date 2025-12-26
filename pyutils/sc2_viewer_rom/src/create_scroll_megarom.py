@@ -624,15 +624,17 @@ def create_debug_image_data_list(debug_image_index: int) -> List[ImageData]:
             bg = (bg + 1) % 16
         color.append((fg << 4) | bg)
 
-    pattern_label = f"PATTERN[{debug_image_index}] SCROLL VIEWER DEBUG"
-    color_label = f"color[{debug_image_index}] scroll viewer debug"
-    _embed_label(pattern, pattern_label)
-    _embed_label(color, color_label)
+    if debug_image_index > 0:
+        pattern_label = f"PATTERN[{debug_image_index}] SCROLL VIEWER DEBUG"
+        color_label = f"color[{debug_image_index}] scroll viewer debug"
+        _embed_label(pattern, pattern_label)
+        _embed_label(color, color_label)
 
-    story = "scroll viewer debug story fills the screen with test data. "
-    pattern_story = story.upper()
-    _fill_with_story(pattern, pattern_story, start=len(pattern_label))
-    _fill_with_story(color, story, start=len(color_label))
+        if debug_image_index > 1:
+            story = "scroll viewer debug story fills the screen with test data. "
+            pattern_story = story.upper()
+            _fill_with_story(pattern, pattern_story, start=len(pattern_label))
+            _fill_with_story(color, story, start=len(color_label))
 
     return [ImageData(pattern=bytes(pattern), color=bytes(color), tile_rows=SCREEN_TILE_ROWS)]
 
