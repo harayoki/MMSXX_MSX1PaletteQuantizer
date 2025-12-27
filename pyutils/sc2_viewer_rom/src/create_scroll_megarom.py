@@ -515,13 +515,17 @@ def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
         )
         data_banks.extend(banks)
         pattern_address = DATA_BANK_ADDR
+        pattern_rom_offset = start_bank * PAGE_SIZE + (pattern_address - DATA_BANK_ADDR)
         print(
             "  pattern generator: "
-            f"bank={start_bank} address=0x{pattern_address:04X}"
+            f"bank={start_bank} address=0x{pattern_address:04X} "
+            f"ROM offset=0x{pattern_rom_offset:06X}"
         )
+        color_rom_offset = color_bank * PAGE_SIZE + (color_address - DATA_BANK_ADDR)
         print(
             "  color table: "
-            f"bank={color_bank} address=0x{color_address:04X}"
+            f"bank={color_bank} address=0x{color_address:04X} "
+            f"ROM offset=0x{color_rom_offset:06X}"
         )
         next_bank += len(banks)
 
