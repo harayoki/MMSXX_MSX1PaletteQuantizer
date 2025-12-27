@@ -419,7 +419,7 @@ def build_boot_bank(
     # コピーサイズを決める。
     LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
     CP.n8(b, SCREEN_TILE_ROWS)
-    JR_NC(b, "ROW_COUNT_OK")
+    JR_C(b, "ROW_COUNT_OK")
     LD.A_n8(b, SCREEN_TILE_ROWS)
     b.label("ROW_COUNT_OK")
     LD.B_A(b)
@@ -439,7 +439,7 @@ def build_boot_bank(
     # 色データも表示領域分だけ読み出す。
     LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
     CP.n8(b, SCREEN_TILE_ROWS)
-    JR_NC(b, "ROW_COUNT_OK_COLOR")
+    JR_C(b, "ROW_COUNT_OK_COLOR")
     LD.A_n8(b, SCREEN_TILE_ROWS)
     b.label("ROW_COUNT_OK_COLOR")
     LD.B_A(b)
