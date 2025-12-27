@@ -530,6 +530,10 @@ def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
                 start_bank,
                 image.tile_rows & 0xFF,
                 (image.tile_rows >> 8) & 0xFF,
+                # カラーテーブルのバンク＆アドレス情報は パターンジェネレータ側から計算できるが
+                # デバッグなどのやりやすさを考え、埋め込んでおく。将来的になくしてもいい。
+                # 255 枚 * 6 byte =　1.494.. k Bytes : 現状
+                # 255 枚 * 3 byte =　0.747.. k Bytes : 省けるバイト数 1kない 現状のブートバンクは余裕があるので許容
                 color_bank & 0xFF,
                 color_address & 0xFF,
                 (color_address >> 8) & 0xFF,
