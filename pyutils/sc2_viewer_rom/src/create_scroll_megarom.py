@@ -483,7 +483,17 @@ def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes]
     return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)], pattern_size
 
 
-def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
+def log_and_store(message: str, log_lines: list[str] | None) -> None:
+    print(message)
+    if log_lines is not None:
+        log_lines.append(message)
+
+
+def build(
+    images: Sequence[ImageData],
+    fill_byte: int = 0xFF,
+    log_lines: list[str] | None = None,
+) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
     if not images:
@@ -495,7 +505,7 @@ def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
     header_bytes: list[int] = []
 
     for i, image in enumerate(images):
-        print(f"* packing image #{i} tiles:{image.tile_rows}")
+        log_and_store(f"* packing image #{i} tiles:{image.tile_rows}", log_lines)
 
         start_bank = next_bank
         banks, pattern_size = pack_image_into_banks(image, fill_byte)
@@ -516,16 +526,18 @@ def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
         data_banks.extend(banks)
         pattern_address = DATA_BANK_ADDR
         pattern_rom_offset = start_bank * PAGE_SIZE + (pattern_address - DATA_BANK_ADDR)
-        print(
+        log_and_store(
             "  pattern generator: "
             f"bank={start_bank} address=0x{pattern_address:04X} "
-            f"ROM offset=0x{pattern_rom_offset:06X}"
+            f"ROM offset=0x{pattern_rom_offset:06X}",
+            log_lines,
         )
         color_rom_offset = color_bank * PAGE_SIZE + (color_address - DATA_BANK_ADDR)
-        print(
+        log_and_store(
             "  color table: "
             f"bank={color_bank} address=0x{color_address:04X} "
-            f"ROM offset=0x{color_rom_offset:06X}"
+            f"ROM offset=0x{color_rom_offset:06X}",
+            log_lines,
         )
         next_bank += len(banks)
 
@@ -613,6 +625,12 @@ def parse_args() -> argparse.Namespace:
         default=0xFF,
         help="未使用領域の埋め値 (default: 0xFF)",
     )
+    parser.add_argument(
+        "--rom-info",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="ROM情報テキストを出力するかどうか (default: ON)",
+    )
     return parser.parse_args()
 
 
@@ -688,6 +706,10 @@ def main() -> None:
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
 
+    log_lines: list[str] = []
+    input_format_counter: Counter[str] = Counter()
+    total_input_images = 0
+
     input_groups: list[list[Path]] = [list(group) for group in args.input]
     prepared_images: list[tuple[str, Image.Image]] = []
     image_data_list: list[ImageData] = []
@@ -695,6 +717,9 @@ def main() -> None:
 
     if args.use_debug_image:
         image_data_list = create_debug_image_data_list(args.debug_image_index)
+        log_lines.append(
+            f"Input images: {total_input_images} (debug image #{args.debug_image_index} used)"
+        )
     else:
         for group in input_groups:
             if not group:
@@ -704,11 +729,24 @@ def main() -> None:
             for path in group:
                 if not path.is_file():
                     raise SystemExit(f"not found: {path}")
-                loaded_images.append(prepare_image(Image.open(path), background))
+                with Image.open(path) as src:
+                    image_format = src.format or path.suffix.lstrip(".").upper() or "UNKNOWN"
+                    input_format_counter[image_format] += 1
+                    total_input_images += 1
+                    loaded_images.append(prepare_image(src, background))
 
             merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
             group_name = "-".join(path.stem for path in group)
             prepared_images.append((group_name, merged))
+
+        format_summary = ", ".join(
+            f"{fmt}={count}" for fmt, count in sorted(input_format_counter.items())
+        )
+        if not format_summary:
+            format_summary = "none"
+        log_lines.append(
+            f"Input images: {total_input_images} file(s); formats: {format_summary}"
+        )
 
         with open_workdir(args.workdir) as workdir:
             for idx, (group_name, image) in enumerate(prepared_images):
@@ -719,14 +757,17 @@ def main() -> None:
                 quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
                 os.unlink(prepared_path)
                 quantized_image = Image.open(quantized_path)
-                print(f"* quantized iamge #{idx} {quantized_path} created")
+                log_and_store(
+                    f"* quantized iamge #{idx} {quantized_path} created",
+                    log_lines,
+                )
                 image_data = build_image_data_from_image(quantized_image)
                 image_data_list.append(image_data)
 
     if not image_data_list:
         raise SystemExit("No images were prepared")
 
-    rom = build(image_data_list, fill_byte=args.fill_byte)
+    rom = build(image_data_list, fill_byte=args.fill_byte, log_lines=log_lines)
 
     out = args.output
     if out is None:
@@ -742,7 +783,11 @@ def main() -> None:
         out.write_bytes(rom)
     except Exception as exc:  # pragma: no cover - CLI error path
         raise SystemExit(f"ERROR! failed to write ROM file: {exc}") from exc
-    print(f"Wrote {len(rom)} bytes to {out}")
+    log_and_store(f"Wrote {len(rom)} bytes to {out}", log_lines)
+
+    if args.rom_info:
+        rom_info_path = out.with_name(f"{out.stem}_rominfo.txt")
+        rom_info_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
