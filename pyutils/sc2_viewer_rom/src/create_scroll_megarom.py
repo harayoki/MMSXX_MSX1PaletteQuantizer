@@ -756,12 +756,13 @@ def main() -> None:
 
                 quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
                 os.unlink(prepared_path)
-                quantized_image = Image.open(quantized_path)
-                log_and_store(
-                    f"* quantized iamge #{idx} {quantized_path} created",
-                    log_lines,
-                )
-                image_data = build_image_data_from_image(quantized_image)
+                with Image.open(quantized_path) as quantized_image:
+                    width, height = quantized_image.size
+                    log_and_store(
+                        f"* quantized image #{idx} {quantized_path} created ({width}x{height}px)",
+                        log_lines,
+                    )
+                    image_data = build_image_data_from_image(quantized_image)
                 image_data_list.append(image_data)
 
     if not image_data_list:
