@@ -47,6 +47,6 @@ def test_debug_labels_include_lowercase(monkeypatch):
 
     # Color label is lower-case and lives at the beginning of the color bank
     color_pos = rom.find(b"color[2] scroll viewer debug")
-    assert color_pos >= mod.PAGE_SIZE * 2
-    assert color_pos % mod.PAGE_SIZE == 0
+    expected_color_pos = mod.PAGE_SIZE + mod.PATTERN_RAM_SIZE
+    assert color_pos == expected_color_pos
 
