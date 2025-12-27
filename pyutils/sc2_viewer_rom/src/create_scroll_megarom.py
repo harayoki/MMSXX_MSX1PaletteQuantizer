@@ -456,7 +456,7 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     return bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
 
 
-def pack_image_into_banks(image: ImageData, fill_byte: int) -> list[bytes]:
+def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
     if image.tile_rows <= 0 or image.tile_rows > 0xFFFF:
         raise ValueError("tile_rows must fit in 2 bytes and be positive")
 
@@ -488,7 +488,7 @@ def pack_image_into_banks(image: ImageData, fill_byte: int) -> list[bytes]:
 
     total_size = ((len(payload) + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE
     padded = bytes(pad_bytes(list(payload), total_size, fill_byte))
-    return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)]
+    return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)], color_bank_offset
 
 
 def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
@@ -504,9 +504,19 @@ def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
     for i, image in enumerate(images):
         print(f"* packing image #{i} tiles:{image.tile_rows}")
 
-        banks = pack_image_into_banks(image, fill_byte)
+        banks, color_bank_offset = pack_image_into_banks(image, fill_byte)
         image_entries.append(ImageEntry(start_bank=next_bank))
         data_banks.extend(banks)
+        pattern_address = DATA_BANK_ADDR + IMAGE_HEADER_SIZE
+        color_bank = next_bank + color_bank_offset
+        print(
+            "  pattern generator: "
+            f"bank={next_bank} address=0x{pattern_address:04X}"
+        )
+        print(
+            "  color table: "
+            f"bank={color_bank} address=0x{DATA_BANK_ADDR:04X}"
+        )
         next_bank += len(banks)
 
     if next_bank > 0x100:
