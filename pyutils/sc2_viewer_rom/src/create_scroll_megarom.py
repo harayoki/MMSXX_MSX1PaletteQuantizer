@@ -9,12 +9,15 @@ MSX1 縦スクロール ROM ビルダー。
 3. `msx1pq_cli`（PATH もしくは引数で指定）を用いて MSX1 ルール準拠の PNG を生成。
     ※ 美しくするための前処理や加工は行われず機械的に変換する。
     質の高い画像にしたい場合はあらかじめmsx1pq_cliや他のツールで対応しておく。
-4. 画像ごとに16バイトヘッダを付け、パターンテーブル全体とカラーテーブル全体を
+4. パターンジェネレータとカラーテーブルを隙間なく連結し、バンク境界をまたいで
    ASCII16 MegaROM のデータバンクに格納。
-5. ビューアーとともにROMデータとして出力。
+5. プログラム領域の直後に各画像 6 バイトのヘッダ（開始バンク、行数、色データ開始
+   バンクとアドレス）を 3 バイトずつの情報として並べ、最後に 4 バイトの終端情報を
+   付与。
+6. ビューアーとともにROMデータとして出力。
 
 実装中
-・16バイトヘッダから行数や色データ開始バンクを読み取り1画面分を描画
+・ヘッダテーブルの行数とカラーデータ開始情報を読み取り1画面分を描画
 
 NEXT
 RAMからVRAMコピーなどを用いて（実際のアルゴリズムは未定）速さを考慮しつつ
@@ -113,7 +116,8 @@ COLOR_RAM_BASE = WORK_RAM_BASE
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
-IMAGE_HEADER_SIZE = 16
+IMAGE_HEADER_ENTRY_SIZE = 6
+IMAGE_HEADER_END_SIZE = 4
 
 CHSNS = 0x009C
 CHGET = 0x009F
@@ -121,12 +125,16 @@ CHGET = 0x009F
 CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE
 CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1
 CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1
-CURRENT_IMAGE_COLOR_BANK_OFFSET_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2
+CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2
+CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1
 
 
 @dataclass
 class ImageEntry:
     start_bank: int
+    tile_rows: int
+    color_bank: int
+    color_address: int
 
 
 @dataclass
@@ -327,15 +335,17 @@ def build_init_name_table_func() -> Func:
 INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
-def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> bytes:
+def build_boot_bank(
+    image_entries: Sequence[ImageEntry],
+    header_bytes: Sequence[int],
+    fill_byte: int,
+) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
 
     set_debug(True)
 
-    start_banks = [entry.start_bank for entry in image_entries]
-
-    if any(bank < 1 or bank > 0xFF for bank in start_banks):
+    if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
 
     b = Block()
@@ -362,15 +372,14 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.A_n8(b, 0)
     LD.mn16_A(b, CURRENT_IMAGE_ADDR)
 
-    # 1枚目のみを表示。ヘッダ先頭の行数やカラーデータ先頭バンクへのオフセットは
+    # 1枚目のみを表示。ヘッダ先頭の行数やカラーデータ先頭位置は
     # 今後スペースキーで次の画像に進む際に使う想定。
-    LD.HL_label(b, "IMAGE_START_BANK_TABLE")
+    LD.HL_label(b, "IMAGE_HEADER_TABLE")
     LD.A_mHL(b)
     LD.mn16_A(b, CURRENT_IMAGE_START_BANK_ADDR)
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
-    # ヘッダ読み込み（行数とカラーデータまでのバンクオフセット）
-    LD.HL_n16(b, DATA_BANK_ADDR)
+    INC.HL(b)
     LD.E_mHL(b)
     INC.HL(b)
     LD.D_mHL(b)
@@ -379,14 +388,18 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     INC.HL(b)
     LD.mHL_D(b)
 
-    LD.HL_n16(b, DATA_BANK_ADDR + 2)
-    LD.C_mHL(b)
     INC.HL(b)
-    LD.B_mHL(b)
-    LD.HL_n16(b, CURRENT_IMAGE_COLOR_BANK_OFFSET_ADDR)
-    LD.mHL_C(b)
+    LD.A_mHL(b)
+    LD.mn16_A(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
+
     INC.HL(b)
-    LD.mHL_B(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    LD.HL_n16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+    LD.mHL_E(b)
+    INC.HL(b)
+    LD.mHL_D(b)
 
     # パターン／カラーバッファをゼロクリアして、画像より下の領域を黒で埋める。
     XOR.A(b)
@@ -413,20 +426,14 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.C_n8(b, 0x00)
 
     # パターン（画面24タイル分）
-    LD.HL_n16(b, DATA_BANK_ADDR + IMAGE_HEADER_SIZE)
+    LD.HL_n16(b, DATA_BANK_ADDR)
     LD.DE_n16(b, PATTERN_RAM_BASE)
     b.emit(0xED, 0xB0)  # LDIR
 
     ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
 
     # カラー
-    LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
-    LD.HL_n16(b, CURRENT_IMAGE_COLOR_BANK_OFFSET_ADDR)
-    LD.C_mHL(b)
-    INC.HL(b)
-    LD.B_mHL(b)
-    ADD.A_C(b)
-    ADD.A_B(b)
+    LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
     # 色データも表示領域分だけ読み出す。
@@ -438,7 +445,7 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
     LD.B_A(b)
     LD.C_n8(b, 0x00)
 
-    LD.HL_n16(b, DATA_BANK_ADDR)
+    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
     LD.DE_n16(b, COLOR_RAM_BASE)
     b.emit(0xED, 0xB0)  # LDIR
 
@@ -450,8 +457,8 @@ def build_boot_bank(image_entries: Sequence[ImageEntry], fill_byte: int) -> byte
 
     INIT_NAME_TABLE_CALL.define(b)
 
-    b.label("IMAGE_START_BANK_TABLE")
-    DB(b, *start_banks)
+    b.label("IMAGE_HEADER_TABLE")
+    DB(b, *header_bytes)
 
     return bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
 
@@ -467,28 +474,13 @@ def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes]
         raise ValueError("color data length mismatch")
 
     payload = bytearray()
-    payload.extend(b"\x00" * IMAGE_HEADER_SIZE)  # placeholder header
     payload.extend(image.pattern)
-
-    pattern_padding = (-len(payload)) % PAGE_SIZE
-    payload.extend([fill_byte] * pattern_padding)
-
-    color_bank_offset = len(payload) // PAGE_SIZE
-    if color_bank_offset > 0xFF:
-        raise ValueError("color_bank_offset must fit in 1 byte")
-
-    header = bytearray(IMAGE_HEADER_SIZE)
-    header[0] = image.tile_rows & 0xFF
-    header[1] = (image.tile_rows >> 8) & 0xFF
-    header[2] = color_bank_offset & 0xFF
-    header[3] = (color_bank_offset >> 8) & 0xFF
-    payload[:IMAGE_HEADER_SIZE] = header
-
     payload.extend(image.color)
 
     total_size = ((len(payload) + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE
     padded = bytes(pad_bytes(list(payload), total_size, fill_byte))
-    return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)], color_bank_offset
+    pattern_size = len(image.pattern)
+    return [padded[i : i + PAGE_SIZE] for i in range(0, len(padded), PAGE_SIZE)], pattern_size
 
 
 def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
@@ -500,29 +492,62 @@ def build(images: Sequence[ImageData], fill_byte: int = 0xFF) -> bytes:
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
     next_bank = 1
+    header_bytes: list[int] = []
 
     for i, image in enumerate(images):
         print(f"* packing image #{i} tiles:{image.tile_rows}")
 
-        banks, color_bank_offset = pack_image_into_banks(image, fill_byte)
-        image_entries.append(ImageEntry(start_bank=next_bank))
+        start_bank = next_bank
+        banks, pattern_size = pack_image_into_banks(image, fill_byte)
+        color_bank = start_bank + pattern_size // PAGE_SIZE
+        color_address = DATA_BANK_ADDR + (pattern_size % PAGE_SIZE)
+        if color_bank > 0xFF:
+            raise ValueError("color_bank must fit in 1 byte")
+        if not DATA_BANK_ADDR <= color_address < DATA_BANK_ADDR + PAGE_SIZE:
+            raise ValueError("color_address must stay within a single bank")
+        image_entries.append(
+            ImageEntry(
+                start_bank=start_bank,
+                tile_rows=image.tile_rows,
+                color_bank=color_bank,
+                color_address=color_address,
+            )
+        )
         data_banks.extend(banks)
-        pattern_address = DATA_BANK_ADDR + IMAGE_HEADER_SIZE
-        color_bank = next_bank + color_bank_offset
+        pattern_address = DATA_BANK_ADDR
         print(
             "  pattern generator: "
-            f"bank={next_bank} address=0x{pattern_address:04X}"
+            f"bank={start_bank} address=0x{pattern_address:04X}"
         )
         print(
             "  color table: "
-            f"bank={color_bank} address=0x{DATA_BANK_ADDR:04X}"
+            f"bank={color_bank} address=0x{color_address:04X}"
         )
         next_bank += len(banks)
+
+        header_bytes.extend(
+            [
+                start_bank,
+                image.tile_rows & 0xFF,
+                (image.tile_rows >> 8) & 0xFF,
+                color_bank & 0xFF,
+                color_address & 0xFF,
+                (color_address >> 8) & 0xFF,
+            ]
+        )
 
     if next_bank > 0x100:
         raise ValueError("Total bank count exceeds 255, which is unsupported")
 
-    banks = [build_boot_bank(image_entries, fill_byte)]
+    header_bytes.extend([0xFF] * IMAGE_HEADER_END_SIZE)
+
+    expected_header_length = (
+        len(image_entries) * IMAGE_HEADER_ENTRY_SIZE + IMAGE_HEADER_END_SIZE
+    )
+    if len(header_bytes) != expected_header_length:
+        raise AssertionError("header_bytes length mismatch")
+
+    banks = [build_boot_bank(image_entries, header_bytes, fill_byte)]
     banks.extend(data_banks)
     return b"".join(banks)
 
