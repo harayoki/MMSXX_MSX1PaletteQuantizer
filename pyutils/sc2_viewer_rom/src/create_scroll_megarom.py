@@ -282,15 +282,16 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
 
     palette_indices = \
         [nearest_palette_index(rgb) for rgb in image.convert("RGB").getdata()]  # 左上から右へ走査
-    patterns: list[bytes] = []
-    colors: list[bytes] = []
+    pattern_bytes = bytearray()
+    color_bytes = bytearray()
 
-    for yy in range(int(height / 8)):
-        pattern_line = bytearray()  # パターンジェネレータ
-        color_line = bytearray()  # カラーテーブル
-        for xx in range(int(width / 8)):
-            for y in range(8):
-                base = (yy * 8 + y) * width + xx * 8
+    tile_rows = height // 8
+    tiles_per_row = width // 8
+
+    for tile_y in range(tile_rows):
+        for tile_x in range(tiles_per_row):
+            for line_in_tile in range(8):
+                base = (tile_y * 8 + line_in_tile) * width + tile_x * 8
                 block = palette_indices[base : base + 8]
                 block = restrict_two_colors(block)
                 color_min = min(block)
@@ -303,14 +304,12 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
                     pattern_byte <<= 1
                     if idx == color_max:
                         pattern_byte |= 0x01
-                pattern_line.append(pattern_byte & 0xFF)
-                dat = (fg_color & 0x0F) << 4 | (bg_color & 0x0F)
-                color_line.append(dat)
-        patterns.append(bytes(pattern_line))
-        colors.append(bytes(color_line))
+                pattern_bytes.append(pattern_byte & 0xFF)
 
-    tile_rows = height // 8
-    return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
+                dat = (fg_color & 0x0F) << 4 | (bg_color & 0x0F)
+                color_bytes.append(dat)
+
+    return ImageData(pattern=bytes(pattern_bytes), color=bytes(color_bytes), tile_rows=tile_rows)
 
 
 def build_init_name_table_func() -> Func:
