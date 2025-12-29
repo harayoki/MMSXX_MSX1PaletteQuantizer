@@ -63,6 +63,7 @@ _sdk_temp_/
 tests/msx1pq_outputs/
 tests/msx1pq_autogen_input.png
 nuitka-crash-report.xml
+work/
 ~*
 *~
 *.rom

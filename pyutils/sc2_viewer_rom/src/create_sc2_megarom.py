@@ -38,10 +38,15 @@ INSTRUCTION_LAST_JIFFY_ADDR = 0xC00E
 INSTRUCTION_LINE_BUFFER_ADDR = 0xC010
 AUTO_INDICATOR_TIMEOUT_ADDR = 0xC026
 AUTO_INDICATOR_LAST_JIFFY_ADDR = 0xC028
+JOYPAD_PORT1_DIR_PREV_ADDR = 0xC02A
+JOYPAD_PORT2_DIR_PREV_ADDR = 0xC02B
+JOYPAD_TRIGGER_PREV_ADDR = 0xC02C
 
 CHSNS = 0x009C
 CHGET = 0x009F
 CHPUT = 0x00A2
+GTSTCK = 0x00D5
+GTTRIG = 0x00D8
 CHGCLR = 0x0062
 FORCLR = 0xF3E9
 BAKCLR = 0xF3EA
@@ -66,6 +71,14 @@ KEY_ESC = 0x1B
 KEYBOARD_ROW_SHIFT = 0x06
 KEYBOARD_SHIFT_MASK = 0x01
 
+JOYSTICK_PORT_1 = 0x01
+JOYSTICK_PORT_2 = 0x02
+
+TRIGGER_PORT1_PRIMARY = 0x01
+TRIGGER_PORT2_PRIMARY = 0x02
+TRIGGER_PORT1_SECONDARY = 0x03
+TRIGGER_PORT2_SECONDARY = 0x04
+
 INSTRUCTION_TEXT_STATIC = (
     "MMSXX SC2 VIEWER\r\n"
     "\r\n"
@@ -73,8 +86,10 @@ INSTRUCTION_TEXT_STATIC = (
     "SHIFT+SPACE: PREV\r\n"
     "DOWN: NEXT\r\n"
     "UP: PREV\r\n"
-    "SHIFT+DOWN: FASTER\r\n"
-    "SHIFT+UP: SLOWER\r\n"
+    "PAD UP or SHIFT+UP: FASTER\r\n"
+    "PAD DOWN or SHIFT+DOWN: SLOWER\r\n"
+    "A BUTTON: NEXT\r\n"
+    "B BUTTON: PREV\r\n"
     "ESC: FIRST\r\n"
     "\r\n"
 )
@@ -591,6 +606,166 @@ def build_boot_bank(
 
     SLOW_DOWN = Func("slow_down", slow_down)
 
+    def handle_joypad(block: Block) -> None:
+        # Read joystick directions
+        LD.A_n8(block, JOYSTICK_PORT_1)
+        CALL(block, GTSTCK)
+        LD.B_A(block)
+        LD.HL_n16(block, JOYPAD_PORT1_DIR_PREV_ADDR)
+        LD.C_mHL(block)
+        LD.mHL_A(block)
+
+        LD.A_n8(block, JOYSTICK_PORT_2)
+        CALL(block, GTSTCK)
+        LD.D_A(block)
+        LD.HL_n16(block, JOYPAD_PORT2_DIR_PREV_ADDR)
+        LD.E_mHL(block)
+        LD.mHL_A(block)
+
+        # Port 1 direction (edge from neutral)
+        LD.A_C(block)
+        OR.A(block)
+        JR_NZ(block, "handle_joypad_check_port2_dir")
+        LD.A_B(block)
+        OR.A(block)
+        JR_Z(block, "handle_joypad_check_port2_dir")
+        CP.n8(block, 0x01)
+        JR_Z(block, "handle_joypad_speed_up")
+        CP.n8(block, 0x02)
+        JR_Z(block, "handle_joypad_speed_up")
+        CP.n8(block, 0x08)
+        JR_Z(block, "handle_joypad_speed_up")
+        CP.n8(block, 0x05)
+        JR_Z(block, "handle_joypad_slow_down")
+        CP.n8(block, 0x04)
+        JR_Z(block, "handle_joypad_slow_down")
+        CP.n8(block, 0x06)
+        JR_Z(block, "handle_joypad_slow_down")
+
+        # Port 2 direction (edge from neutral)
+        block.label("handle_joypad_check_port2_dir")
+        LD.A_E(block)
+        OR.A(block)
+        JR_NZ(block, "handle_joypad_triggers")
+        LD.A_D(block)
+        OR.A(block)
+        JR_Z(block, "handle_joypad_triggers")
+        CP.n8(block, 0x01)
+        JR_Z(block, "handle_joypad_speed_up")
+        CP.n8(block, 0x02)
+        JR_Z(block, "handle_joypad_speed_up")
+        CP.n8(block, 0x08)
+        JR_Z(block, "handle_joypad_speed_up")
+        CP.n8(block, 0x05)
+        JR_Z(block, "handle_joypad_slow_down")
+        CP.n8(block, 0x04)
+        JR_Z(block, "handle_joypad_slow_down")
+        CP.n8(block, 0x06)
+        JR_Z(block, "handle_joypad_slow_down")
+
+        # Triggers (edge detection)
+        block.label("handle_joypad_triggers")
+        LD.B_n8(block, 0)
+
+        LD.A_n8(block, TRIGGER_PORT1_PRIMARY)
+        CALL(block, GTTRIG)
+        CP.n8(block, 0)
+        JR_Z(block, "handle_joypad_port1_btn2")
+        LD.A_B(block)
+        OR.n8(block, 0x01)
+        LD.B_A(block)
+
+        block.label("handle_joypad_port1_btn2")
+        LD.A_n8(block, TRIGGER_PORT1_SECONDARY)
+        CALL(block, GTTRIG)
+        CP.n8(block, 0)
+        JR_Z(block, "handle_joypad_port2_btn1")
+        LD.A_B(block)
+        OR.n8(block, 0x02)
+        LD.B_A(block)
+
+        block.label("handle_joypad_port2_btn1")
+        LD.A_n8(block, TRIGGER_PORT2_PRIMARY)
+        CALL(block, GTTRIG)
+        CP.n8(block, 0)
+        JR_Z(block, "handle_joypad_port2_btn2")
+        LD.A_B(block)
+        OR.n8(block, 0x04)
+        LD.B_A(block)
+
+        block.label("handle_joypad_port2_btn2")
+        LD.A_n8(block, TRIGGER_PORT2_SECONDARY)
+        CALL(block, GTTRIG)
+        CP.n8(block, 0)
+        JR_Z(block, "handle_joypad_store_triggers")
+        LD.A_B(block)
+        OR.n8(block, 0x08)
+        LD.B_A(block)
+
+        block.label("handle_joypad_store_triggers")
+        LD.HL_n16(block, JOYPAD_TRIGGER_PREV_ADDR)
+        LD.C_mHL(block)
+        LD.mHL_B(block)
+
+        LD.A_C(block)
+        AND.n8(block, 0x01)
+        JR_NZ(block, "handle_joypad_check_prev_btn2")
+        LD.A_B(block)
+        AND.n8(block, 0x01)
+        JR_Z(block, "handle_joypad_check_prev_btn2")
+        NEXT_IMAGE.call(block)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("handle_joypad_check_prev_btn2")
+        LD.A_C(block)
+        AND.n8(block, 0x02)
+        JR_NZ(block, "handle_joypad_check_port2_btn1_new")
+        LD.A_B(block)
+        AND.n8(block, 0x02)
+        JR_Z(block, "handle_joypad_check_port2_btn1_new")
+        PREV_IMAGE.call(block)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("handle_joypad_check_port2_btn1_new")
+        LD.A_C(block)
+        AND.n8(block, 0x04)
+        JR_NZ(block, "handle_joypad_check_port2_btn2_new")
+        LD.A_B(block)
+        AND.n8(block, 0x04)
+        JR_Z(block, "handle_joypad_check_port2_btn2_new")
+        NEXT_IMAGE.call(block)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("handle_joypad_check_port2_btn2_new")
+        LD.A_C(block)
+        AND.n8(block, 0x08)
+        JR_NZ(block, "handle_joypad_no_action")
+        LD.A_B(block)
+        AND.n8(block, 0x08)
+        JR_Z(block, "handle_joypad_no_action")
+        PREV_IMAGE.call(block)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("handle_joypad_speed_up")
+        SPEED_UP.call(block)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("handle_joypad_slow_down")
+        SLOW_DOWN.call(block)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("handle_joypad_no_action")
+        LD.A_n8(block, 0)
+        RET(block)
+
+    HANDLE_JOYPAD = Func("handle_joypad", handle_joypad)
+
     b.label("main")
     store_stack_pointer_macro(b)
     enaslt_macro(b)
@@ -695,6 +870,10 @@ def build_boot_bank(
     LD.mn16_HL(b, AUTO_INTERVAL_PREV_ADDR)
     LD.HL_n16(b, 0)
     LD.mn16_HL(b, AUTO_INDICATOR_TIMEOUT_ADDR)
+    LD.A_n8(b, 0)
+    LD.mn16_A(b, JOYPAD_PORT1_DIR_PREV_ADDR)
+    LD.mn16_A(b, JOYPAD_PORT2_DIR_PREV_ADDR)
+    LD.mn16_A(b, JOYPAD_TRIGGER_PREV_ADDR)
 
     if start_paused:
         LD.HL_n16(b, 0)
@@ -712,6 +891,9 @@ def build_boot_bank(
 
     b.label("main_loop")
     HANDLE_INDICATOR_TIMEOUT.call(b)
+    HANDLE_JOYPAD.call(b)
+    OR.A(b)
+    JR_NZ(b, "main_loop")
     CALL(b, CHSNS)
     CP.n8(b, 0)
     JR_Z(b, "main_loop_auto")
@@ -809,6 +991,7 @@ def build_boot_bank(
     HANDLE_INDICATOR_TIMEOUT.define(b)
     SPEED_UP.define(b)
     SLOW_DOWN.define(b)
+    HANDLE_JOYPAD.define(b)
     WAIT_SOUND_DURATION.define(b)
     PLAY_SPEED_UP_SOUND.define(b)
     PLAY_SLOW_DOWN_SOUND.define(b)
