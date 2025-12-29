@@ -186,34 +186,39 @@ def set_msx2_palette_default_macro(b: Block) -> None:
 
     """
 
+    msx2_pal_set_end_label = unique_label("__MSX2_PAL_SET_END__")
+    palette_data_label = unique_label("__PALETTE_DATA__")
+    msx2_pal_loop_label = unique_label("__MSX2_PAL_LOOP__")
+    msx2_pal_data_end_label = unique_label("__MSX2_PAL_DATA_END__")
+
     # --- MSX バージョン確認 ---
     get_msxver_macro(b)
     CP.n8(b, 0x00)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
-    JP_Z(b, "__MSX2_PAL_SET_END__")
+    JP_Z(b, msx2_pal_set_end_label)
 
     # R#16 に color index 0 をセット
     OUT_A(b, VDP_CTRL, 0x00)
     OUT_A(b, VDP_CTRL, 0x80 + 16)
 
     # HL = PALETTE_DATA
-    LD.HL_label(b, "__PALETTE_DATA__")
+    LD.HL_label(b, palette_data_label)
 
     # B = 32 (16色×2バイト)
     LD.B_n8(b, 32)
 
-    b.label("__MSX2_PAL_LOOP__")
+    b.label(msx2_pal_loop_label)
     LD.A_mHL(b)
     OUT(b, VDP_PAL)
     INC.HL(b)
-    DJNZ(b, "__MSX2_PAL_LOOP__")
+    DJNZ(b, msx2_pal_loop_label)
 
-    b.label("__MSX2_PAL_SET_END__")
+    b.label(msx2_pal_set_end_label)
     # パレットデータ本体（実行されない領域）
-    JP(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
-    b.label("__PALETTE_DATA__")
+    JP(b, msx2_pal_data_end_label)  # 直後のデータを実行しないようにスキップ
+    b.label(palette_data_label)
     DB(b, *_MSX2_PALETTE_BYTES)
-    b.label("__MSX2_PAL_DATA_END__")
+    b.label(msx2_pal_data_end_label)
 
     # print("-----")
     # print(_MSX2_PALETTE_BYTES)
