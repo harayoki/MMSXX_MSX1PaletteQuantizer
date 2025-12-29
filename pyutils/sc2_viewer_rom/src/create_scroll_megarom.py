@@ -69,6 +69,7 @@ from mmsxxasmhelper.core import (
     JR_NC,
     JR_NZ,
     JR_Z,
+    JR_n8,
     DJNZ,
     LD,
     OR,
@@ -93,7 +94,15 @@ from mmsxxasmhelper.msxutils import (
     store_stack_pointer_macro,
     ldirvm_macro,
 )
-from mmsxxasmhelper.utils import pad_bytes, loop_infinite_macro, debug_trap, set_debug, print_bytes
+from mmsxxasmhelper.utils import (
+    pad_bytes,
+    ldir_macro,
+    loop_infinite_macro,
+    debug_trap,
+    set_debug,
+    print_bytes
+)
+
 from PIL import Image
 from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
 
@@ -122,12 +131,11 @@ IMAGE_HEADER_END_SIZE = 4
 CHSNS = 0x009C
 CHGET = 0x009F
 
-CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE
-CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1
-CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1
-CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2
-CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1
-
+CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE  # 現在表示している画像のヘッダ開始位置（パターン領域の直後）
+CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
+CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
+CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2  # カラーパターンが置かれているバンク番号を保存するアドレス
+CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1  # カラーパターンの先頭アドレスを保存するアドレス
 
 @dataclass
 class ImageEntry:
@@ -237,8 +245,7 @@ def palette_distance(idx_a: int, idx_b: int) -> int:
 def restrict_two_colors(indices: list[int]) -> list[int]:
     """Ensure a block uses at most two colors.
 
-    `msx1pq_cli` で 8dot 2 色ルールが守られている前提だが、念のため
-    3 色以上のブロックを 2 色に丸める安全弁を入れておく。
+    `msx1pq_cli` で 8dot 2 色ルールが守られている前提
     """
 
     unique = set(indices)
@@ -247,17 +254,18 @@ def restrict_two_colors(indices: list[int]) -> list[int]:
 
     raise ValueError(f"{unique} colors in 8 dots.")
 
-    counts = Counter(indices)
-    allowed = [color for color, _ in counts.most_common(2)]
-
-    remapped: list[int] = []
-    for idx in indices:
-        if idx in allowed:
-            remapped.append(idx)
-            continue
-        remapped.append(min(allowed, key=lambda candidate: palette_distance(idx, candidate)))
-
-    return remapped
+    # 念のため 3 色以上のブロックを 2 色に丸める安全弁を入れておく？
+    # counts = Counter(indices)
+    # allowed = [color for color, _ in counts.most_common(2)]
+    #
+    # remapped: list[int] = []
+    # for idx in indices:
+    #     if idx in allowed:
+    #         remapped.append(idx)
+    #         continue
+    #     remapped.append(min(allowed, key=lambda candidate: palette_distance(idx, candidate)))
+    #
+    # return remapped
 
 
 def build_image_data_from_image(image: Image.Image) -> ImageData:
@@ -335,6 +343,18 @@ def build_init_name_table_func() -> Func:
 INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
+def calc_line_num_for_reg_a_macro(b: Block) -> None:
+    """
+    作業すべき行数をaレジスタに設定
+    """
+    LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)  # 何行？
+    CP.n8(b, SCREEN_TILE_ROWS)  # 1画面24行と比較
+    JR_n8(b, 2)  # 何どもマクロを使うのでラベルを使うのをやめる ラベルを被らないようにする仕組みが必要
+    # JR_C(b, "ROW_COUNT_OK")
+    LD.A_n8(b, SCREEN_TILE_ROWS)  # MAX 24行
+    # b.label("ROW_COUNT_OK")
+
+
 def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
@@ -369,9 +389,9 @@ def build_boot_bank(
 
     INIT_NAME_TABLE_CALL.call(b)
 
+    # 現在のページを記憶
     LD.A_n8(b, 0)
     LD.mn16_A(b, CURRENT_IMAGE_ADDR)
-
     # 1枚目のみを表示。ヘッダ先頭の行数やカラーデータ先頭位置は
     # 今後スペースキーで次の画像に進む際に使う想定。
     LD.HL_label(b, "IMAGE_HEADER_TABLE")
@@ -402,53 +422,48 @@ def build_boot_bank(
     LD.mHL_D(b)
 
     # パターン／カラーバッファをゼロクリアして、画像より下の領域を黒で埋める。
-    XOR.A(b)
-    LD.HL_n16(b, PATTERN_RAM_BASE)
-    LD.DE_n16(b, PATTERN_RAM_BASE + 1)
-    LD.BC_n16(b, PATTERN_RAM_SIZE - 1)
-    LD.mHL_A(b)
-    b.emit(0xED, 0xB0)  # LDIR
+    XOR.A(b)  # A=0
+    LD.HL_n16(b, PATTERN_RAM_BASE)  # 転送元 C000h
+    LD.mHL_A(b)  # C000h = 0
+    # コピー先とコピー元がかぶった連続メモリ転送で同じ値を配置 # 転送先 C001h # 転送バイト 0x1800
+    ldir_macro(b, dest_DE=PATTERN_RAM_BASE+1, length_BC=PATTERN_RAM_SIZE-1)
 
-    LD.HL_n16(b, COLOR_RAM_BASE)
-    LD.DE_n16(b, COLOR_RAM_BASE + 1)
-    LD.BC_n16(b, COLOR_RAM_SIZE - 1)
-    LD.mHL_A(b)
-    b.emit(0xED, 0xB0)  # LDIR
+    # 現状パターンとカラーのバッファは同じ位置なのでクリア処理はいらない
+    # LD.HL_n16(b, COLOR_RAM_BASE)
+    # LD.DE_n16(b, COLOR_RAM_BASE + 1)
+    # LD.BC_n16(b, COLOR_RAM_SIZE - 1)
+    # LD.mHL_A(b)
+    # b.emit(0xED, 0xB0)  # LDIR
 
-    # 画像のタイル行数（行数は 8 ドット単位）。SCREEN2 表示領域 24 行を上限に
-    # コピーサイズを決める。
-    LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
-    CP.n8(b, SCREEN_TILE_ROWS)
-    JR_C(b, "ROW_COUNT_OK")
-    LD.A_n8(b, SCREEN_TILE_ROWS)
-    b.label("ROW_COUNT_OK")
-    LD.B_A(b)
-    LD.C_n8(b, 0x00)
+    # 表示行数の確定 MAX24行 aレジスタに代入
+    calc_line_num_for_reg_a_macro(b)
 
-    # パターン（画面24タイル分）
-    LD.HL_n16(b, DATA_BANK_ADDR)
-    LD.DE_n16(b, PATTERN_RAM_BASE)
-    b.emit(0xED, 0xB0)  # LDIR
-
+    # パターン（画面24タイル分）RAM転送
+    LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数
+    ldir_macro(b, source_HL=DATA_BANK_ADDR, dest_DE=PATTERN_RAM_BASE)
+    # パターン（画面24タイル分）VRAM転送
     ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
 
-    # カラー
+    # カラーデータのあるバンクに切り替え
     LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
     LD.mn16_A(b, ASCII16_PAGE2_REG)
 
-    # 色データも表示領域分だけ読み出す。
-    LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
-    CP.n8(b, SCREEN_TILE_ROWS)
-    JR_C(b, "ROW_COUNT_OK_COLOR")
-    LD.A_n8(b, SCREEN_TILE_ROWS)
-    b.label("ROW_COUNT_OK_COLOR")
-    LD.B_A(b)
-    LD.C_n8(b, 0x00)
+    # 表示行数の確定 MAX24行 aレジスタに代入
+    calc_line_num_for_reg_a_macro(b)
 
-    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-    LD.DE_n16(b, COLOR_RAM_BASE)
-    b.emit(0xED, 0xB0)  # LDIR
+    # カラーテーブル（画面24タイル分）RAM転送
+    LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数
+    ldir_macro(b, source_HL=CURRENT_IMAGE_COLOR_ADDRESS_ADDR, dest_DE=COLOR_RAM_BASE)
 
+    # source_HL まちがってない？ TODO
+
+    NOP(b)
+    NOP(b)
+    loop_infinite_macro(b)
+    NOP(b)
+    NOP(b)
+
+    # カラーテーブル（画面24タイル分）VRAM転送
     ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
 
     loop_infinite_macro(b)
