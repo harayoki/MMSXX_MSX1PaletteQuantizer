@@ -32,6 +32,9 @@ v0で入っている機能:
   - .define(b): ラベル + body + RET を出力
   - .call(b): CALL 命令を出力(アドレスはfixupで解決)
 
+- ユーティリティ:
+  - unique_label(prefix="__L"): 他と重複しないラベル名を返す
+
 - 命令ラッパ:
   - JP 系: 無条件/条件付き絶対ジャンプ (JP, JP_Z, JP_NZ, JP_NC, JP_C, JP_PO, JP_PE, JP_P, JP_M, JP_mHL)
   - JR 系: 無条件/条件付き相対ジャンプ (JR, JR_Z, JR_NZ, JR_NC, JR_C) および DJNZ
@@ -57,6 +60,7 @@ __all__ = [
     "str_bytes", "const_string",
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
+    "unique_label",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
@@ -73,12 +77,25 @@ __all__ = [
 ]
 
 from dataclasses import dataclass
+from itertools import count
 from typing import Callable, Dict, List, Literal
 
 
 # ---------------------------------------------------------------------------
 # Block: コード構築の基本単位
 # ---------------------------------------------------------------------------
+
+_label_counter = count()
+
+
+def unique_label(prefix: str = "__L") -> str:
+    """衝突しないラベル名を生成するヘルパー。
+
+    マクロ内など同じラベル名を繰り返し使う状況で、
+    呼ぶたびにユニークな名前を得るために利用する。
+    """
+
+    return f"{prefix}{next(_label_counter)}"
 
 FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 
