@@ -64,6 +64,7 @@ __all__ = [
     "Func",
     "DB", "DW",
     "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR",
+    "LDIR",
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_A", "OUT_C",
@@ -1187,6 +1188,9 @@ class LD:
     def HL_label(b: Block, label: str) -> None:
         pos = b.emit(0x21, 0x00, 0x00)
         b.add_abs16_fixup(pos + 1, label)
+
+def LDIR(b: Block) -> None:
+    b.emit(0xED, 0xB0)
 
 
 # ---------------------------------------------------------------------------
