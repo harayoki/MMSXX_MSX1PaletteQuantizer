@@ -122,7 +122,7 @@ COLOR_BASE = 0x2000
 WORK_RAM_BASE = 0xC000
 PATTERN_RAM_BASE = WORK_RAM_BASE
 PATTERN_RAM_SIZE = 0x1800
-COLOR_RAM_BASE = WORK_RAM_BASE
+COLOR_RAM_BASE = PATTERN_RAM_BASE + PATTERN_RAM_SIZE
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
@@ -132,7 +132,7 @@ IMAGE_HEADER_END_SIZE = 4
 CHSNS = 0x009C
 CHGET = 0x009F
 
-CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE  # 現在表示している画像のヘッダ開始位置（パターン領域の直後）
+CURRENT_IMAGE_ADDR = COLOR_RAM_BASE + COLOR_RAM_SIZE  # 現在表示している画像のヘッダ開始位置（カラーデータ領域の直後）
 CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
 CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
 CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2  # カラーパターンが置かれているバンク番号を保存するアドレス
@@ -427,14 +427,11 @@ def build_boot_bank(
     LD.HL_n16(b, PATTERN_RAM_BASE)  # 転送元 C000h
     LD.mHL_A(b)  # C000h = 0
     # コピー先とコピー元がかぶった連続メモリ転送で同じ値を配置 # 転送先 C001h # 転送バイト 0x1800
-    ldir_macro(b, dest_DE=PATTERN_RAM_BASE+1, length_BC=PATTERN_RAM_SIZE-1)
+    ldir_macro(b, dest_DE=PATTERN_RAM_BASE + 1, length_BC=PATTERN_RAM_SIZE - 1)
 
-    # 現状パターンとカラーのバッファは同じ位置なのでクリア処理はいらない
-    # LD.HL_n16(b, COLOR_RAM_BASE)
-    # LD.DE_n16(b, COLOR_RAM_BASE + 1)
-    # LD.BC_n16(b, COLOR_RAM_SIZE - 1)
-    # LD.mHL_A(b)
-    # b.emit(0xED, 0xB0)  # LDIR
+    LD.HL_n16(b, COLOR_RAM_BASE)
+    LD.mHL_A(b)
+    ldir_macro(b, dest_DE=COLOR_RAM_BASE + 1, length_BC=COLOR_RAM_SIZE - 1)
 
     # 表示行数の確定 MAX24行 aレジスタに代入
     calc_line_num_for_reg_a_macro(b)
@@ -454,9 +451,8 @@ def build_boot_bank(
 
     # カラーテーブル（画面24タイル分）RAM転送
     LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数
-    ldir_macro(b, source_HL=CURRENT_IMAGE_COLOR_ADDRESS_ADDR, dest_DE=COLOR_RAM_BASE)
-
-    # source_HL まちがってない？ TODO
+    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+    ldir_macro(b, dest_DE=COLOR_RAM_BASE)
 
     NOP(b)
     NOP(b)
