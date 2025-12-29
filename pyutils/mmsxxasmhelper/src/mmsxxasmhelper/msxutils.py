@@ -15,6 +15,7 @@ __all__ = [
     "place_msx_rom_header_macro",
     # "fill_stack_macro",
     "store_stack_pointer_macro",
+    "init_stack_pointer_macro",
     "restore_stack_pointer_macro",
     "get_msxver_macro",
     "set_msx2_palette_default_macro",
@@ -31,11 +32,6 @@ __all__ = [
 ]
 P = ParamSpec("P")
 
-
-# 自プログラム専用のRAM領域（C000h–EFFFh）内に確保する一時ワーク。
-# ROMブート直後のBIOSスタックはFxxxh帯に来ることが多いため、
-# システムワークと衝突しないようF000h未満に置く。
-SP_TEMP_RAM = 0xEFE0
 
 
 # BIOS コールアドレス
@@ -179,19 +175,49 @@ qqq
 #     b.emit(0xED, 0xB0)  # LDIR
 
 
+# 候補1
+# システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
+# SP_TEMP_RAM1 = 0xF300
+SP_TEMP_RAM1 = 0xF37A
 
-def store_stack_pointer_macro(b: Block) -> None:
-    """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。"""
+# # 候補2
+# # 自プログラム専用のRAM領域（C000h–EFFFh）内に確保する一時ワーク。
+# # ROMブート直後のBIOSスタックはFxxxh帯に来ることが多い？？ため chatGPTの意見、
+# # システムワークと衝突しないようF000h未満に置く。
+# SP_TEMP_RAM2 = 0xEFE0
 
+# 候補2 ぎりぎり ここで良いGeminiの意見
+SP_TEMP_RAM3 = 0xF380
+
+
+def store_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM1) -> None:
+    """
+    ROM起動直後、スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。
+    既存のスタック値を残す安全版。（BASICにもどる場合など）
+    init_stack_pointer_macroを呼んだ方が無駄がないが、すでに動いてるものもあるので残す。
+    """
     # 元のスタックポインタ(SP)の値を RAM に退避する
     LD.HL_n16(b, 0)
     ADD.HL_SP(b)  # HL = SP
-    LD.mn16_HL(b, SP_TEMP_RAM)  # SP_TEMP_RAM にSP保存
+    LD.mn16_HL(b, address)  # SP_TEMP_RAM にSP保存
 
     # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+4)へ設定
     # (PUSH 時のデクリメントで退避した SP の領域を踏まないように 4 バイト空ける)
-    LD.HL_n16(b, SP_TEMP_RAM + 4)
+    LD.HL_n16(b, address + 4)
     LD.SP_HL(b)
+
+
+def restore_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM1) -> None:
+    """一時 RAM 領域に保存したスタックポインタ(SP)の値を復元するマクロ。"""
+    LD.HL_mn16(b, address)
+    LD.SP_HL(b)
+
+
+def init_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM3) -> None:
+    """
+    ROM起動直後、スタックポインタ(SP)の値を移動するマクロ
+    """
+    LD.SP_n16(b, address)
 
 
 # 上の物より無駄が少ないかもしれないバージョン 未検証
@@ -211,11 +237,6 @@ def store_stack_pointer_macro(b: Block) -> None:
 #     # EI（必要なら。割り込み禁止のまま走る設計なら外す）
 #     b.emit(0xFB)
 
-
-def restore_stack_pointer_macro(b: Block) -> None:
-    """一時 RAM 領域に保存したスタックポインタ(SP)の値を復元するマクロ。"""
-    LD.HL_mn16(b, SP_TEMP_RAM)
-    LD.SP_HL(b)
 
 
 def enaslt_macro(b: Block) -> None:

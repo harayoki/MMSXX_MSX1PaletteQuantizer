@@ -93,6 +93,7 @@ from mmsxxasmhelper.msxutils import (
     restore_stack_pointer_macro,
     set_msx2_palette_default_macro,
     store_stack_pointer_macro,
+    init_stack_pointer_macro,
     ldirvm_macro,
 )
 from mmsxxasmhelper.utils import (
@@ -383,7 +384,7 @@ def build_boot_bank(
     place_msx_rom_header_macro(b, entry_point=ROM_BASE + 0x10)
 
     b.label("start")
-    store_stack_pointer_macro(b)
+    init_stack_pointer_macro(b)
     enaslt_macro(b)
 
     LD.A_n8(b, 2)
@@ -475,7 +476,6 @@ def build_boot_bank(
     ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
 
     loop_infinite_macro(b)
-    restore_stack_pointer_macro(b)
 
     INIT_NAME_TABLE_CALL.define(b)
 
