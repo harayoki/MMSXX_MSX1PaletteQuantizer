@@ -4,7 +4,6 @@ MSX 関連マクロ & 関数 他
 
 from __future__ import annotations
 
-from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
 from mmsxxasmhelper.core import *
@@ -32,36 +31,6 @@ __all__ = [
 P = ParamSpec("P")
 
 
-def with_register_preserve(
-    macro: Callable[Concatenate[Block, P], None]
-) -> Callable[Concatenate[Block, P], None]:
-    """マクロ呼び出しの前後に PUSH/POP を挿入するデコレータ。
-    ``regs_preserve`` キーワード引数で退避するレジスタを指定できる。
-    何も指定しなければ PUSH/POP は行われない。
-
-    @with_register_preserveの記述をマクロ関数に記述すると有効になるが
-    どのレジスタを保護するのあユーザーに細かくゆだねたい場合以外は使わない方針
-    各マクロでPUSH POP対応を行う 理由は呼び出し元でどのレジスタを保護すべきか考えさせたくないため
-
-    """
-
-    @wraps(macro)
-    def wrapper(
-        b: Block,
-        *args: P.args,
-        regs_preserve: Sequence[RegNames16] = (),
-        **kwargs: P.kwargs,
-    ) -> None:
-        regs = tuple(regs_preserve)
-        for reg in regs:
-            PUSH.r(b, reg)
-
-        macro(b, *args, **kwargs)
-
-        for reg in reversed(regs):
-            POP.r(b, reg)
-
-    return wrapper
 
 
 # システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
