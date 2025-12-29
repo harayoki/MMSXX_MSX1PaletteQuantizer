@@ -101,7 +101,8 @@ from mmsxxasmhelper.utils import (
     loop_infinite_macro,
     debug_trap,
     set_debug,
-    print_bytes
+    print_bytes,
+    debug_print_labels,
 )
 
 from PIL import Image
@@ -132,6 +133,7 @@ IMAGE_HEADER_END_SIZE = 4
 CHSNS = 0x009C
 CHGET = 0x009F
 
+# 状況を保存するメモリアドレス
 CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE  # 現在表示している画像のヘッダ開始位置（パターン領域の直後）
 CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
 CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
@@ -360,6 +362,7 @@ def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
     fill_byte: int,
+    log_lines: List[str] | None = None,
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
@@ -368,6 +371,12 @@ def build_boot_bank(
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
+
+    log_and_store(f"CURRENT_IMAGE_ADDR: {CURRENT_IMAGE_ADDR: 05X}h", log_lines)
+    log_and_store(f"CURRENT_IMAGE_START_BANK_ADDR: {CURRENT_IMAGE_START_BANK_ADDR: 05X}h", log_lines)
+    log_and_store(f"CURRENT_IMAGE_ROW_COUNT_ADDR: {CURRENT_IMAGE_ROW_COUNT_ADDR: 05X}h", log_lines)
+    log_and_store(f"CURRENT_IMAGE_COLOR_BANK_ADDR: {CURRENT_IMAGE_COLOR_BANK_ADDR: 05X}h", log_lines)
+    log_and_store(f"CURRENT_IMAGE_COLOR_ADDRESS_ADDR: {CURRENT_IMAGE_COLOR_ADDRESS_ADDR: 05X}h", log_lines)
 
     b = Block()
 
@@ -393,26 +402,32 @@ def build_boot_bank(
     # 現在のページを記憶
     LD.A_n8(b, 0)
     LD.mn16_A(b, CURRENT_IMAGE_ADDR)
-    # 1枚目のみを表示。ヘッダ先頭の行数やカラーデータ先頭位置は
-    # 今後スペースキーで次の画像に進む際に使う想定。
-    LD.HL_label(b, "IMAGE_HEADER_TABLE")
-    LD.A_mHL(b)
-    LD.mn16_A(b, CURRENT_IMAGE_START_BANK_ADDR)
-    LD.mn16_A(b, ASCII16_PAGE2_REG)
 
+    # 最初の画像のデータを得る
+    LD.HL_label(b, "IMAGE_HEADER_TABLE")  # 各埋め込み画像のバンク番号やアドレスが書き込まれているアドレス
+    LD.A_mHL(b)
+    LD.mn16_A(b, CURRENT_IMAGE_START_BANK_ADDR)  # 保存
+    LD.mn16_A(b, ASCII16_PAGE2_REG)  # バンク切り替え
+
+    # DE = パターンジェネレータアドレス
     INC.HL(b)
     LD.E_mHL(b)
     INC.HL(b)
     LD.D_mHL(b)
+    # CURRENT_IMAGE_ROW_COUNT_ADDR = DE
+    PUSH.HL(b)
     LD.HL_n16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
     LD.mHL_E(b)
     INC.HL(b)
     LD.mHL_D(b)
+    POP.HL(b)
 
+    # CURRENT_IMAGE_COLOR_BANK_ADDR = COLOR TABLE BANK
     INC.HL(b)
     LD.A_mHL(b)
     LD.mn16_A(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
 
+    # CURRENT_IMAGE_COLOR_ADDRESS_ADDR = COLOR TABLE ADDRESS
     INC.HL(b)
     LD.E_mHL(b)
     INC.HL(b)
@@ -422,7 +437,7 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
 
-    # パターン／カラーバッファをゼロクリアして、画像より下の領域を黒で埋める。
+    # パターン／カラーバッファをゼロクリアして黒で埋める。
     XOR.A(b)  # A=0
     LD.HL_n16(b, PATTERN_RAM_BASE)  # 転送元 C000h
     LD.mHL_A(b)  # C000h = 0
@@ -438,10 +453,9 @@ def build_boot_bank(
 
     # 表示行数の確定 MAX24行 aレジスタに代入
     calc_line_num_for_reg_a_macro(b)
-
     # パターン（画面24タイル分）RAM転送
     LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数
-    ldir_macro(b, source_HL=DATA_BANK_ADDR, dest_DE=PATTERN_RAM_BASE)
+    ldir_macro(b, source_HL=DATA_BANK_ADDR, dest_DE=PATTERN_RAM_BASE)  # DATA_BANK_ADDR:0x8000
     # パターン（画面24タイル分）VRAM転送
     ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
 
@@ -451,24 +465,16 @@ def build_boot_bank(
 
     # 表示行数の確定 MAX24行 aレジスタに代入
     calc_line_num_for_reg_a_macro(b)
-
     # カラーテーブル（画面24タイル分）RAM転送
-    LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数
-    ldir_macro(b, source_HL=CURRENT_IMAGE_COLOR_ADDRESS_ADDR, dest_DE=COLOR_RAM_BASE)
-
-    # source_HL まちがってない？ TODO
-
-    NOP(b)
-    NOP(b)
-    loop_infinite_macro(b)
-    NOP(b)
-    NOP(b)
+    LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数 (24行)
+    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)  # source_HL
+    LD.DE_n16(b, COLOR_RAM_BASE)  # DE = C000H  # dest_DE
+    ldir_macro(b)
 
     # カラーテーブル（画面24タイル分）VRAM転送
     ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
 
     loop_infinite_macro(b)
-
     restore_stack_pointer_macro(b)
 
     INIT_NAME_TABLE_CALL.define(b)
@@ -476,7 +482,10 @@ def build_boot_bank(
     b.label("IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
 
-    return bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
+    data = bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
+    log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
+
+    return data
 
 
 def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
@@ -800,6 +809,7 @@ def main() -> None:
         out.write_bytes(rom)
     except Exception as exc:  # pragma: no cover - CLI error path
         raise SystemExit(f"ERROR! failed to write ROM file: {exc}") from exc
+    print()
     log_and_store(f"Wrote {len(rom)} bytes to {out}", log_lines)
 
     if args.rom_info:
