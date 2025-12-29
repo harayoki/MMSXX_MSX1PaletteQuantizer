@@ -181,7 +181,7 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
     """
     finalize 後に決定したラベルアドレスをダンプする。
     :param b: Block
-    :param origin:
+    :param origin: アドレスの
     :param stream:
     :param no_print: print しない（でテキストだけ得る）
     """
@@ -196,7 +196,7 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 
     messages = []
     for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
-        message = f"{origin + offset:04x}: {name}"
+        message = f"{origin + offset:04X}h: {name}"
         messages.append(message)
         if not no_print:
             print(message, file=stream)
