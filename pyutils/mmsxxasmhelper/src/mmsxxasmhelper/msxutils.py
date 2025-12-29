@@ -13,6 +13,7 @@ from mmsxxasmhelper.utils import *
 __all__ = [
     # "call_subrom_macro",
     "place_msx_rom_header_macro",
+    # "fill_stack_macro",
     "store_stack_pointer_macro",
     "restore_stack_pointer_macro",
     "get_msxver_macro",
@@ -31,10 +32,10 @@ __all__ = [
 P = ParamSpec("P")
 
 
-
-
-# システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
-SP_TEMP_RAM = 0xF300
+# 自プログラム専用のRAM領域（C000h–EFFFh）内に確保する一時ワーク。
+# ROMブート直後のBIOSスタックはFxxxh帯に来ることが多いため、
+# システムワークと衝突しないようF000h未満に置く。
+SP_TEMP_RAM = 0xEFE0
 
 
 # BIOS コールアドレス
@@ -96,27 +97,87 @@ qqq
     DB(b, *header)
 
 
-def fill_stack_macro(b: Block, stack_top: int = 0xEFFF, stack_size: int = 0x0200) -> None:
-    """
-    スタック領域を一定の値で塗りつぶしておく（利用範囲を見極めるため）
-    :param b: Block
-    :param stack_top: stack addr
-    :param stack_size:   default 0x0200 = 512b
-    """
-    start = stack_top - stack_size
+# def fill_stack_macro(b: Block, fill_value: int = 0xAA, stack_top: int = 0xEFFF, stack_size: int = 0x0200) -> None:
+#     """
+#     スタック領域を一定の値で塗りつぶしておく（利用範囲を見極めるため）
+#     :param b: Block
+#     :param fill_value: 埋める値
+#     :param stack_top: stack addr
+#     :param stack_size:   default 0x0200 = 512b
+#     """
+#     start = stack_top - stack_size
+#
+#     LD.HL_n16(b, start)
+#     LD.BC_n16(b, stack_size)
+#     LD.A_n8(b, fill_value)
+#
+#     fill_stack_loop = unique_label()
+#     b.label(fill_stack_loop)
+#     LD.mHL_A(b)
+#     INC.HL(b)
+#     DEC.BC(b)
+#     LD.A_B(b)
+#     OR.C(b)
+#     JP_NZ(b, fill_stack_loop)
 
-    LD.HL_n16(b, start)
-    LD.BC_n16(b, stack_size)
-    LD.A_n8(b, 0xAA)
 
-    fill_stack_loop = unique_label()
-    b.label(fill_stack_loop)
-    LD.mHL_A(b)
-    INC.HL(b)
-    DEC.BC(b)
-    LD.A_B(b)
-    OR.C(b)
-    JP_NZ(b, fill_stack_loop)
+# def fill_stack_macro(
+#     b: Block,
+#     fill_value: int = 0xAA,
+#     stack_top: int = 0xEFC0,  # SP_TEMP_RAM(0xEFE0)より少し下
+#     stack_size: int = 0x0200,
+# ) -> None:
+#     """
+#     [stack_top - stack_size .. stack_top - 1] を fill_value で埋める。
+#     Z80の LDIR で高速に複製する版。
+#     """
+#     if stack_size <= 0:
+#         return
+#
+#     start = (stack_top - stack_size) & 0xFFFF
+#
+#     # HL = start
+#     LD.HL_n16(b, start)
+#
+#     # (HL) = fill_value
+#     LD.A_n8(b, fill_value)
+#     LD.mHL_A(b)
+#
+#     if stack_size == 1:
+#         return
+#
+#     # DE = start + 1
+#     LD.DE_n16(b, (start + 1) & 0xFFFF)
+#
+#     # BC = stack_size - 1
+#     LD.BC_n16(b, (stack_size - 1) & 0xFFFF)
+#
+#     # LDIR (ED B0): (HL)->(DE), HL++,DE++,BC-- until BC=0
+#     b.emit(0xED, 0xB0)
+#
+#
+# def fill_stack_macro(
+#     b: Block,
+#     fill_value: int = 0xAA,
+#     stack_top: int = 0xEFC0,
+#     stack_size: int = 0x0200,
+# ) -> None:
+#     if stack_size <= 0 or stack_size > 0x0800:
+#         raise ValueError("stack_size abnormal")
+#
+#     start = (stack_top - stack_size) & 0xFFFF
+#
+#     LD.HL_n16(b, start)
+#     LD.A_n8(b, fill_value)
+#     LD.mHL_A(b)
+#
+#     if stack_size == 1:
+#         return
+#
+#     LD.DE_n16(b, (start + 1) & 0xFFFF)
+#     LD.BC_n16(b, (stack_size - 1) & 0xFFFF)
+#     b.emit(0xED, 0xB0)  # LDIR
+
 
 
 def store_stack_pointer_macro(b: Block) -> None:
