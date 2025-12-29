@@ -1,89 +1,98 @@
-import sys
+"""Minimal MSX ROM sample built with :mod:`mmsxxasmhelper`.
+
+- ``core`` のニーモニックラッパーでブロックを組み立てる。
+- ``utils`` のデバッグトラップや無限ループマクロを使う。
+- ``msxutils`` のスタック退避や ROM ヘッダ配置マクロを呼ぶ。
+
+主に API の位置づけを把握するためのサンプルで、
+``dist/msxrom_boot.bin`` に 16 KiB ROM を出力する。
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
-try:
-    from mmsxxasmhelper.core import *
-    from mmsxxasmhelper.utils import *
-    from mmsxxasmhelper.msxutils import *
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    from mmsxxasmhelper.core import *
-    from mmsxxasmhelper.utils import *
-    from mmsxxasmhelper.utils import *
+
+from mmsxxasmhelper.core import Block, DB, Func, INC, LD
+from mmsxxasmhelper.msxutils import (
+    place_msx_rom_header_macro,
+    restore_stack_pointer_macro,
+    store_stack_pointer_macro,
+)
+from mmsxxasmhelper.utils import debug_trap, loop_infinite_macro
 
 
-# 1) マクロ相当の関数サンプル
+BOOT_ENTRY_POINT = 0x4010
+ROM_ORIGIN = 0x4000
+ROM_PAGE_SIZE = 0x4000
+OUTPUT_PATH = Path(__file__).resolve().parents[2] / "dist" / "msxrom_boot.bin"
 
-def clear_a(b: Block) -> None:
-    """Aレジスタを0クリアする簡単マクロ。"""
-    # LD A,0
+
+# 1) マクロ相当の関数サンプル -------------------------------------------------
+
+
+def clear_a_macro(b: Block) -> None:
+    """A レジスタを 0 クリアする簡単マクロ。"""
+
     LD.A_n8(b, 0x00)
 
 
-# 2) 関数本体サンプル
+# 2) 関数本体サンプル ----------------------------------------------------------
+
 
 def inc_a_times(b: Block, times: int = 1) -> None:
-    """Aレジスタを数回インクリメントする関数本体。"""
-    for i in range(times):
+    """A レジスタを指定回数インクリメントする関数本体。"""
+
+    for _ in range(times):
         INC.A(b)
 
 
-# Funcとしてラップ
+# Func としてラップ -------------------------------------------------------------
+
 INC_A_TIMES = Func("inc_a_times", inc_a_times)
 
 
-# 3) 全体コードを組み立てるサンプル
+# 3) 全体コードを組み立てるサンプル -------------------------------------------
 
-def build_example() -> bytes:
-    """v0機能を使った簡単なコード生成例。"""
 
-    # 定数定義
-    const("INIT_VALUE", 1)
-    const_bytes(
-        "MSX_ROM_HEADER",
-        *(pad_bytes(str_bytes("AB") + [0x10, 0x40], 16, 0x00))
-    )
+def build_example(initial_value: int = 1) -> bytes:
+    """最新の ``core`` / ``utils`` / ``msxutils`` API を使った簡単なコード生成例。"""
 
     b = Block()
 
-    # メインエントリ
+    # ROM ヘッダを配置し、メインエントリラベルを設定
+    place_msx_rom_header_macro(b, entry_point=BOOT_ENTRY_POINT)
     b.label("start")
 
-    # ROM HEADER の配置
-    DB(b, *Data8["MSX_ROM_HEADER"])
+    # スタックを一時領域へ退避
+    store_stack_pointer_macro(b)
 
-    # LD A, INIT_VALUE
-    LD.A_n8(b, Const["INIT_VALUE"])
-
-    # デバッグ用 HALT を差し込む(後で消したければ DEBUG=False にする)
+    # レジスタ操作とデバッグトラップ
+    LD.A_n8(b, initial_value)
     debug_trap(b)
 
-    # CALL inc_a_times
     INC_A_TIMES.call(b)
-
-    # デバッグ用 HALT
+    clear_a_macro(b)
     debug_trap(b)
 
-    # 無限ループ用ジャンプ (startに戻る)
-    JP(b, "start")
+    # 末尾処理
+    restore_stack_pointer_macro(b)
+    loop_infinite_macro(b)
 
-    # --- 関数定義 ---
+    # 関数定義 (呼び出しより後ろにまとめて配置される)
     INC_A_TIMES.define(b)
 
-    # --- データ領域 ---
+    # 追加データ (0,1,2,3 の連番を DB で配置)
     b.label("table")
-    DB(b, 1, 2, 3, 4)
-    DW(b, 0x1234, 0xABCD)
+    DB(b, 0, 1, 2, 3)
 
-    # pad_pattern(b, 128, 0x00)  # 128B境界までパディング
-
-    return b.finalize(origin=0x4000)
+    return b.finalize(origin=ROM_ORIGIN)
 
 
 if __name__ == "__main__":
-
     code = build_example()
-    print("len(code) =", len(code))
-    code_with_comma = ', '.join(f'{byte:02X}' for byte in code)
-    print("code =",code_with_comma)
-    rom_16k = code + bytes([0x00] * (16 * 1024 - len(code)))
-    # print("rom_16k =", ', '.join(f'{byte:02X}' for byte in rom_16k))
+
+    # 16 KiB にパディングして dist 以下へ書き出す
+    rom = code + bytes([0x00] * (ROM_PAGE_SIZE - len(code)))
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_PATH.write_bytes(rom)
+    print(f"ROM written: {OUTPUT_PATH} ({len(rom)} bytes)")
