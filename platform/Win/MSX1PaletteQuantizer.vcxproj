@@ -113,7 +113,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>
@@ -131,6 +131,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:shift_jis %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -167,7 +168,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>
@@ -185,6 +186,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:shift_jis %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -222,7 +224,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
@@ -239,6 +241,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:shift_jis %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -276,7 +279,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(AESDK_ROOT)Headers;$(AESDK_ROOT)Headers\adobesdk;$(AESDK_ROOT)Headers\SP;$(AESDK_ROOT)Headers\Win;$(AESDK_ROOT)Resources;$(AESDK_ROOT)Util;$(ProjectDir)..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
@@ -293,6 +296,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:shift_jis %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>

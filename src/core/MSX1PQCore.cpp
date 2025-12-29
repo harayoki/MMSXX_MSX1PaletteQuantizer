@@ -1,7 +1,9 @@
 #include "MSX1PQCore.h"
+#include "MSX1PQOutput.h"
 
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -40,6 +42,155 @@ std::string get_lower_extension(const std::string& path)
         return std::string();
     }
     return to_lower_copy(path.substr(dot));
+}
+
+} // namespace
+
+std::optional<AnchorPosition> parse_anchor(const std::string& value)
+{
+    const std::string lower = to_lower_copy(value);
+    if (lower == "tl") return AnchorPosition::TopLeft;
+    if (lower == "tc") return AnchorPosition::TopCenter;
+    if (lower == "tr") return AnchorPosition::TopRight;
+    if (lower == "cl") return AnchorPosition::CenterLeft;
+    if (lower == "c")  return AnchorPosition::Center;
+    if (lower == "cr") return AnchorPosition::CenterRight;
+    if (lower == "bl") return AnchorPosition::BottomLeft;
+    if (lower == "bc") return AnchorPosition::BottomCenter;
+    if (lower == "br") return AnchorPosition::BottomRight;
+    return std::nullopt;
+}
+
+void apply_horizontal_offset(std::vector<RgbaPixel>& pixels,
+                             unsigned width,
+                             unsigned height,
+                             int offset_x,
+                             const RgbaPixel& bg)
+{
+    if (offset_x == 0) {
+        return;
+    }
+
+    std::vector<RgbaPixel> shifted(pixels.size(), bg);
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            const int dest_x = static_cast<int>(x) + offset_x;
+            if (dest_x < 0 || dest_x >= static_cast<int>(width)) {
+                continue;
+            }
+            shifted[static_cast<std::size_t>(y * width + static_cast<unsigned>(dest_x))] =
+                pixels[static_cast<std::size_t>(y * width + x)];
+        }
+    }
+
+    pixels.swap(shifted);
+}
+
+void fit_to_canvas(std::vector<RgbaPixel>& pixels,
+                   unsigned& width,
+                   unsigned& height,
+                   int canvas_w,
+                   int canvas_h,
+                   AnchorPosition anchor,
+                   const RgbaPixel& bg)
+{
+    const int src_w = static_cast<int>(width);
+    const int src_h = static_cast<int>(height);
+
+    const bool wider = src_w > canvas_w;
+    const bool taller = src_h > canvas_h;
+
+    int copy_w = wider ? canvas_w : src_w;
+    int copy_h = taller ? canvas_h : src_h;
+
+    const auto horizontal_anchor = [&](AnchorPosition pos) {
+        switch (pos) {
+        case AnchorPosition::TopLeft:
+        case AnchorPosition::CenterLeft:
+        case AnchorPosition::BottomLeft:
+            return -1;
+        case AnchorPosition::TopCenter:
+        case AnchorPosition::Center:
+        case AnchorPosition::BottomCenter:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+    const auto vertical_anchor = [&](AnchorPosition pos) {
+        switch (pos) {
+        case AnchorPosition::TopLeft:
+        case AnchorPosition::TopCenter:
+        case AnchorPosition::TopRight:
+            return -1;
+        case AnchorPosition::CenterLeft:
+        case AnchorPosition::Center:
+        case AnchorPosition::CenterRight:
+            return 0;
+        default:
+            return 1;
+        }
+    };
+
+    const int h_anchor = horizontal_anchor(anchor);
+    const int v_anchor = vertical_anchor(anchor);
+
+    int src_x = 0;
+    int src_y = 0;
+    int dst_x = 0;
+    int dst_y = 0;
+
+    if (wider) {
+        if (h_anchor < 0) {
+            src_x = 0;
+        } else if (h_anchor == 0) {
+            src_x = (src_w - canvas_w) / 2;
+        } else {
+            src_x = src_w - canvas_w;
+        }
+    } else {
+        if (h_anchor < 0) {
+            dst_x = 0;
+        } else if (h_anchor == 0) {
+            dst_x = (canvas_w - src_w) / 2;
+        } else {
+            dst_x = canvas_w - src_w;
+        }
+    }
+
+    if (taller) {
+        if (v_anchor < 0) {
+            src_y = 0;
+        } else if (v_anchor == 0) {
+            src_y = (src_h - canvas_h) / 2;
+        } else {
+            src_y = src_h - canvas_h;
+        }
+    } else {
+        if (v_anchor < 0) {
+            dst_y = 0;
+        } else if (v_anchor == 0) {
+            dst_y = (canvas_h - src_h) / 2;
+        } else {
+            dst_y = canvas_h - src_h;
+        }
+    }
+
+    std::vector<RgbaPixel> canvas(static_cast<std::size_t>(canvas_w * canvas_h), bg);
+    for (int y = 0; y < copy_h; ++y) {
+        for (int x = 0; x < copy_w; ++x) {
+            const int src_idx_x = src_x + x;
+            const int src_idx_y = src_y + y;
+            const int dst_idx_x = dst_x + x;
+            const int dst_idx_y = dst_y + y;
+            canvas[static_cast<std::size_t>(dst_idx_y * canvas_w + dst_idx_x)] =
+                pixels[static_cast<std::size_t>(src_idx_y * width + src_idx_x)];
+        }
+    }
+
+    pixels.swap(canvas);
+    width = static_cast<unsigned>(canvas_w);
+    height = static_cast<unsigned>(canvas_h);
 }
 
 bool parse_cube_lut(std::istream& file, std::vector<float>& out3d, int& lut_size)
@@ -114,13 +265,62 @@ bool parse_cube_lut(std::istream& file, std::vector<float>& out3d, int& lut_size
     return true;
 }
 
-// パレットのHSBを一度だけ計算してキャッシュ
-bool  g_palette_hsb_initialized = false;
+// パレットのHSVを一度だけ計算してキャッシュ
+bool  g_palette_hsv_initialized = false;
 float g_palette_h[256];
 float g_palette_s[256];
 float g_palette_b[256];
 
-} // namespace
+int count_enabled_colors(const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    int enabled = 0;
+    for (bool flag : palette_enabled) {
+        if (flag) {
+            ++enabled;
+        }
+    }
+    return enabled;
+}
+
+int find_first_enabled_color(const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    for (std::size_t i = 0; i < palette_enabled.size(); ++i) {
+        if (palette_enabled[i]) {
+            return static_cast<int>(i);
+        }
+    }
+    return 0;
+}
+
+bool palette_entry_allowed(int palette_idx, int num_colors, const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    if (palette_idx < 0 || palette_idx >= num_colors) {
+        return false;
+    }
+
+    if (palette_idx < MSX1PQ::kNumPaletteDither) {
+        const auto& dp = MSX1PQ::kPaletteDither[palette_idx];
+        const int pattern_size = static_cast<int>(dp.width) * static_cast<int>(dp.height);
+        if (pattern_size <= 0 || !dp.pattern) {
+            const int basic_idx = palette_idx % MSX1PQ::kNumBasicColors;
+            return palette_enabled[static_cast<std::size_t>(basic_idx)];
+        }
+
+        for (int i = 0; i < pattern_size; ++i) {
+            const std::uint8_t basic_idx = dp.pattern[i];
+            if (basic_idx >= MSX1PQ::kNumBasicColors) {
+                continue;
+            }
+            if (!palette_enabled[static_cast<std::size_t>(basic_idx)]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const int basic_idx = palette_idx % MSX1PQ::kNumBasicColors;
+    return palette_enabled[static_cast<std::size_t>(basic_idx)];
+}
 
 float clamp01f(float v)
 {
@@ -193,7 +393,7 @@ bool load_pre_lut(const std::string& path,
     return true;
 }
 
-void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+void rgb_to_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
                 float &h, float &s, float &v)
 {
     float r = r8 / 255.0f;
@@ -233,7 +433,7 @@ void rgb_to_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     }
 }
 
-void hsb_to_rgb(float h, float s, float v,
+void hsv_to_rgb(float h, float s, float v,
                 std::uint8_t &r8, std::uint8_t &g8, std::uint8_t &b8)
 {
     h = h - floorf(h);      // 念のため 0〜1 に丸め
@@ -274,6 +474,17 @@ void apply_preprocess(const QuantInfo *qi,
                       std::uint8_t &b8)
 {
     if (!qi) return;
+
+    // Cut off to black before other preprocessing when requested.
+    if (qi->pre_black_cutoff > 0.0f) {
+        const float luma = (0.2126f * static_cast<float>(r8) +
+                            0.7152f * static_cast<float>(g8) +
+                            0.0722f * static_cast<float>(b8)) /
+            255.0f;
+        if (luma < qi->pre_black_cutoff) {
+            r8 = g8 = b8 = 0;
+        }
+    }
 
     if (qi->pre_lut3d && qi->pre_lut3d_size > 1) {
         const int lut_size = qi->pre_lut3d_size;
@@ -429,7 +640,7 @@ void apply_preprocess(const QuantInfo *qi,
     }
 
     float h, s, v;
-    rgb_to_hsb(r8, g8, b8, h, s, v);
+    rgb_to_hsv(r8, g8, b8, h, s, v);
 
     if (qi->pre_hue != 0.0f) {
         h += qi->pre_hue / 360.0f;
@@ -440,17 +651,17 @@ void apply_preprocess(const QuantInfo *qi,
         s *= sat_scale;
     }
 
-    hsb_to_rgb(h, s, v, r8, g8, b8);
+    hsv_to_rgb(h, s, v, r8, g8, b8);
 }
 
-void ensure_palette_hsb_initialized()
+void ensure_palette_hsv_initialized()
 {
-    if (g_palette_hsb_initialized) {
+    if (g_palette_hsv_initialized) {
         return;
     }
     for (int i = 0; i < MSX1PQ::kNumQuantColors; i++) {
         float h, s, v;
-        rgb_to_hsb(MSX1PQ::kQuantColors[i].r,
+        rgb_to_hsv(MSX1PQ::kQuantColors[i].r,
                    MSX1PQ::kQuantColors[i].g,
                    MSX1PQ::kQuantColors[i].b,
                    h, s, v);
@@ -458,43 +669,100 @@ void ensure_palette_hsb_initialized()
         g_palette_s[i] = s;
         g_palette_b[i] = v;
     }
-    g_palette_hsb_initialized = true;
+    g_palette_hsv_initialized = true;
 }
 
 int nearest_palette_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        int num_colors)
+                        float w_r, float w_g, float w_b,
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
+    const float wr = clamp01f(w_r);
+    const float wg = clamp01f(w_g);
+    const float wb = clamp01f(w_b);
+
     int   best_idx = 0;
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
+        if (!palette_entry_allowed(i, num_colors, palette_enabled)) {
+            continue;
+        }
+
         const MSX1PQ::QuantColor &qc = MSX1PQ::kQuantColors[i];
         float dr = static_cast<float>(r8) - static_cast<float>(qc.r);
         float dg = static_cast<float>(g8) - static_cast<float>(qc.g);
         float db = static_cast<float>(b8) - static_cast<float>(qc.b);
-        float d2 = dr*dr + dg*dg + db*db;
+        float d2 = (wr * dr) * (wr * dr) +
+                   (wg * dg) * (wg * dg) +
+                   (wb * db) * (wb * db);
 
         if (d2 < best_d2) {
             best_d2  = d2;
             best_idx = i;
         }
     }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
+    }
     return best_idx;
 }
 
-int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                        float w_h, float w_s, float w_b,
-                        int num_colors)
+int nearest_basic_rgb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                      float w_r, float w_g, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
-    ensure_palette_hsb_initialized();
+    const float wr = clamp01f(w_r);
+    const float wg = clamp01f(w_g);
+    const float wb = clamp01f(w_b);
+
+    int   best_idx = 0;
+    float best_d2  = 1.0e30f;
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        if (!palette_enabled[static_cast<std::size_t>(i)]) {
+            continue;
+        }
+
+        float dr = static_cast<float>(r8) - static_cast<float>(MSX1PQ::kQuantColors[i].r);
+        float dg = static_cast<float>(g8) - static_cast<float>(MSX1PQ::kQuantColors[i].g);
+        float db = static_cast<float>(b8) - static_cast<float>(MSX1PQ::kQuantColors[i].b);
+
+        float d2 = (wr * dr) * (wr * dr) +
+                   (wg * dg) * (wg * dg) +
+                   (wb * db) * (wb * db);
+
+        if (d2 < best_d2) {
+            best_d2  = d2;
+            best_idx = i;
+        }
+    }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
+    }
+    return best_idx;
+}
+
+int nearest_palette_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                        float w_h, float w_s, float w_b,
+                        int num_colors,
+                        const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
+{
+    ensure_palette_hsv_initialized();
 
     float h, s, v;
-    rgb_to_hsb(r8, g8, b8, h, s, v);
+    rgb_to_hsv(r8, g8, b8, h, s, v);
 
     int   best_idx = 0;
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < num_colors; ++i) {
+        if (!palette_entry_allowed(i, num_colors, palette_enabled)) {
+            continue;
+        }
+
         float dh = h - g_palette_h[i];
         float ds = s - g_palette_s[i];
         float dv = v - g_palette_b[i];
@@ -508,16 +776,21 @@ int nearest_palette_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_idx = i;
         }
     }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
+    }
     return best_idx;
 }
 
-int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
-                      float w_h, float w_s, float w_b)
+int nearest_basic_hsv(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
+                      float w_h, float w_s, float w_b,
+                      const std::array<bool, MSX1PQ::kNumBasicColors>& palette_enabled)
 {
-    ensure_palette_hsb_initialized();
+    ensure_palette_hsv_initialized();
 
     float h, s, v;
-    rgb_to_hsb(r8, g8, b8, h, s, v);
+    rgb_to_hsv(r8, g8, b8, h, s, v);
 
     float wh = clamp01f(w_h);
     float ws = clamp01f(w_s);
@@ -527,6 +800,10 @@ int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
     float best_d2  = 1.0e30f;
 
     for (int i = 0; i < MSX1PQ::kNumBasicColors; i++) {
+        if (!palette_enabled[static_cast<std::size_t>(i)]) {
+            continue;
+        }
+
         float dh = std::fabs(h - g_palette_h[i]);
         if (dh > 0.5f) {
             dh = 1.0f - dh;
@@ -543,6 +820,10 @@ int nearest_basic_hsb(std::uint8_t r8, std::uint8_t g8, std::uint8_t b8,
             best_d2  = d2;
             best_idx = i;
         }
+    }
+
+    if (best_d2 >= 1.0e30f) {
+        best_idx = find_first_enabled_color(palette_enabled);
     }
     return best_idx;
 }
@@ -583,10 +864,21 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
                                   std::int32_t x,
                                   std::int32_t y)
 {
+    const int enabled_colors = count_enabled_colors(qi.palette_enabled);
+    if (enabled_colors <= 0) {
+        return MSX1PQ::QuantColor{0, 0, 0};
+    }
+
+    const int fallback_basic_idx = find_first_enabled_color(qi.palette_enabled);
+    if (enabled_colors == 1) {
+        const MSX1PQ::QuantColor* palette = get_basic_palette(qi.color_system);
+        return palette[fallback_basic_idx];
+    }
+
     if (qi.use_palette_color) {
-        const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors)
-            : nearest_palette_rgb(r, g, b, MSX1PQ::kNumQuantColors);
+        const int palette_idx = qi.use_hsv
+            ? nearest_palette_hsv(r, g, b, qi.w_h, qi.w_s, qi.w_b, MSX1PQ::kNumQuantColors, qi.palette_enabled)
+            : nearest_palette_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, MSX1PQ::kNumQuantColors, qi.palette_enabled);
 
         return MSX1PQ::kQuantColors[palette_idx];
     }
@@ -599,15 +891,19 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
             num_colors = MSX1PQ::kFirstDarkDitherIndex;
         }
 
-        const int palette_idx = qi.use_hsb
-            ? nearest_palette_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors)
-            : nearest_palette_rgb(r, g, b, num_colors);
+        const int palette_idx = qi.use_hsv
+            ? nearest_palette_hsv(r, g, b, qi.w_h, qi.w_s, qi.w_b, num_colors, qi.palette_enabled)
+            : nearest_palette_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, num_colors, qi.palette_enabled);
 
         basic_idx = MSX1PQ::palette_index_to_basic_index(palette_idx, x, y);
-    } else if (qi.use_hsb) {
-        basic_idx = nearest_basic_hsb(r, g, b, qi.w_h, qi.w_s, qi.w_b);
+        if (basic_idx < 0 || basic_idx >= MSX1PQ::kNumBasicColors ||
+            !qi.palette_enabled[static_cast<std::size_t>(basic_idx)]) {
+            basic_idx = fallback_basic_idx;
+        }
+    } else if (qi.use_hsv) {
+        basic_idx = nearest_basic_hsv(r, g, b, qi.w_h, qi.w_s, qi.w_b, qi.palette_enabled);
     } else {
-        basic_idx = MSX1PQ::nearest_basic_rgb(r, g, b);
+        basic_idx = nearest_basic_rgb(r, g, b, qi.w_r, qi.w_g, qi.w_b_rgb, qi.palette_enabled);
     }
 
     const MSX1PQ::QuantColor* palette =
@@ -616,6 +912,76 @@ MSX1PQ::QuantColor quantize_pixel(const QuantInfo& qi,
             : MSX1PQ::kQuantColors;
 
     return palette[basic_idx];
+}
+
+void quantize_image(std::vector<RgbaPixel>& pixels,
+                    unsigned width,
+                    unsigned height,
+                    const QuantInfo& qi,
+                    bool use_preprocess)
+{
+    if (use_preprocess &&
+        (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f)) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        apply_black_edge_sharpen(
+            pixels.data(),
+            pitch,
+            static_cast<std::int32_t>(width),
+            static_cast<std::int32_t>(height),
+            qi.pre_sharpen_black,
+            qi.pre_black_cutoff);
+    }
+
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            RgbaPixel& px = pixels[y * width + x];
+            std::uint8_t r = px.red;
+            std::uint8_t g = px.green;
+            std::uint8_t b = px.blue;
+
+            if (use_preprocess) {
+                apply_preprocess(&qi, r, g, b);
+            }
+            const MSX1PQ::QuantColor& qc = quantize_pixel(
+                qi,
+                r,
+                g,
+                b,
+                static_cast<std::int32_t>(x),
+                static_cast<std::int32_t>(y));
+
+            px.red   = qc.r;
+            px.green = qc.g;
+            px.blue  = qc.b;
+        }
+    }
+
+    if (!qi.use_palette_color &&
+        qi.use_8dot2col != MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE) {
+        const std::ptrdiff_t pitch = static_cast<std::ptrdiff_t>(width);
+        const std::int32_t w = static_cast<std::int32_t>(width);
+        const std::int32_t h = static_cast<std::int32_t>(height);
+
+        switch (qi.use_8dot2col) {
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1:
+            MSX1PQCore::apply_8dot2col_fast1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BASIC1:
+            MSX1PQCore::apply_8dot2col_basic1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1:
+            MSX1PQCore::apply_8dot2col_best1(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_ATTR_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        case MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST:
+            MSX1PQCore::apply_8dot2col_attr_best_penalty(pixels.data(), pitch, w, h, qi.color_system);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 int transition_cost_pair(int prevA, int prevB, int a, int b)

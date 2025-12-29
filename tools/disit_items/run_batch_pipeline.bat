@@ -31,7 +31,7 @@ msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "01_f
 if errorlevel 1 goto :abort
 msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "02_msx2_" --color-system msx2 --pre-highlight 1.3 --force
 if errorlevel 1 goto :abort
-msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "03_hsb_" --weight-h 0.4 --weight-s 0.95 --weight-b 0.65 --force
+msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "03_hsv_" --weight-h 0.4 --weight-s 0.95 --weight-b 0.65 --force
 if errorlevel 1 goto :abort
 msx1pq_cli.exe --input "%INPUT_PATH%" --output "%OUTPUT_DIR%" --out-prefix "04_rgb_" --distance rgb --pre-highlight 1.5 --pre-sat 1.2 --force
 if errorlevel 1 goto :abort

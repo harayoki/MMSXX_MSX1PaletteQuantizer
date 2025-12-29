@@ -132,9 +132,7 @@ def build_loader(
 
     code: list[int] = [
 
-        # test ENASLOT webMSX でも OPENMSX でもこれをしないとページ2が出てこない
-        # 0x3E, 0x01,  # LD A,01h
-
+        # ENASLT webMSX でも OPENMSX でもこれをしないとページ2が出てこない
         0xCD, 0x38, 0x01,   # 0138h
         0x0F,               # RRCA
         0x0F,               # RRCA

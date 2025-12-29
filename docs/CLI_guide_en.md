@@ -14,9 +14,9 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 
 The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 
-### Linux (not yet verified)
+### Linux
 
-Install build tools (for example on Ubuntu-based images):
+Install build tools (for example on Ubuntu-based systems):
 
 ```bash
 sudo apt-get update && sudo apt-get install -y build-essential
@@ -48,17 +48,18 @@ The compiled binary will be placed at `bin/msx1pq_cli`.
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
 | `--out-prefix <string>` | Prefix added to every output file name. |
 | `--out-suffix <string>` | Suffix inserted before the output file extension. |
-| `--out-sc5` | Save as SCREEN5 `.sc5` binary instead of PNG. |
 | `--out-sc2` | Save as SCREEN2 `.sc2` binary instead of PNG (requires `--8dot` set to anything other than `none`). |
 | `--color-system <msx1\|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
 | `--no-preprocess` | Skip all preprocessing tweaks (posterize, saturation, gamma, contrast, hue, LUT). |
 | `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
-| `--distance <rgb|hsb>` | Color distance mode for palette selection. Default: `hsb`. |
-| `--weight-h`, `--weight-s`, `--weight-b` | Weights (0–1) for hue, saturation, and brightness when `hsb` distance is selected. |
+| `--distance <rgb|hsv>` | Color distance mode for palette selection. Default: `rgb`. |
+| `--weight-h`, `--weight-s`, `--weight-v` | Weights (0–1) for hue, saturation, and value when `hsv` distance is selected. |
+| `--weight-r`, `--weight-g`, `--weight-b` | Weights (0–1) for red, green, and blue when `rgb` distance is selected. |
+| `--disable-colors <index|range>...` | Disable specific palette indices (1–15). Ranges are allowed (e.g., `3-5`). At least one color must remain enabled. |
 | `--pre-posterize <0-255>` | Posterize before processing (default: `16`; skipped if `<=1`). |
-| `--pre-sat <0-10>` | Boost saturation before quantizing. Default: `1.0`. |
+| `--pre-sat <0-10>` | Boost saturation before quantizing. Default: `0.0`. |
 | `--pre-gamma <0-10>` | Apply a gamma curve before quantizing. Default: `1.0`. |
 | `--pre-contrast <0-10>` | Adjust contrast before quantizing. Default: `1.0`. |
 | `--pre-hue <-180-180>` | Rotate hue before quantizing. Default: `0.0`. |
@@ -70,9 +71,8 @@ The compiled binary will be placed at `bin/msx1pq_cli`.
 | `--help-ja`, `--help-en` | Force Japanese or English help text. |
 
 Notes:
-- SCREEN5 (`--out-sc5`) output is slated for deprecation.
-- `--out-sc2` and `--out-sc5` cannot be used together. When either is specified the output extension changes to `.sc2` or `.sc5` respectively.
 - SCREEN2 export needs the 8-dot/2-color processing enabled (any `--8dot` value other than `none`).
+- You must leave at least one palette color enabled when using `--disable-colors`.
 
 ### Examples
 
