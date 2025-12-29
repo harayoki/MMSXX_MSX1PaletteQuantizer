@@ -77,7 +77,7 @@ VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
 def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
     """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
-
+qqq
     "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
     パディングする。エントリポイントは 0x4010 をデフォルトとし、必要に応じて
     引数で変更できる。
@@ -96,6 +96,29 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
     DB(b, *header)
 
 
+def fill_stack_macro(b: Block, stack_top: int = 0xEFFF, stack_size: int = 0x0200) -> None:
+    """
+    スタック領域を一定の値で塗りつぶしておく（利用範囲を見極めるため）
+    :param b: Block
+    :param stack_top: stack addr
+    :param stack_size:   default 0x0200 = 512b
+    """
+    start = stack_top - stack_size
+
+    LD.HL_n16(b, start)
+    LD.BC_n16(b, stack_size)
+    LD.A_n8(b, 0xAA)
+
+    fill_stack_loop = unique_label()
+    b.label(fill_stack_loop)
+    LD.mHL_A(b)
+    INC.HL(b)
+    DEC.BC(b)
+    LD.A_B(b)
+    OR.C(b)
+    JP_NZ(b, fill_stack_loop)
+
+
 def store_stack_pointer_macro(b: Block) -> None:
     """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。"""
 
@@ -108,6 +131,24 @@ def store_stack_pointer_macro(b: Block) -> None:
     # (PUSH 時のデクリメントで退避した SP の領域を踏まないように 4 バイト空ける)
     LD.HL_n16(b, SP_TEMP_RAM + 4)
     LD.SP_HL(b)
+
+
+# 上の物より無駄が少ないかもしれないバージョン 未検証
+# def store_stack_pointer_macro(b: Block) -> None:
+#     # DI
+#     b.emit(0xF3)
+#
+#     # LD (SP_TEMP_RAM),SP  ; ED 73 ll hh
+#     lo = SP_TEMP_RAM & 0xFF
+#     hi = (SP_TEMP_RAM >> 8) & 0xFF
+#     b.emit(0xED, 0x73, lo, hi)
+#
+#     # LD SP,SP_TEMP_RAM+4
+#     new_sp = SP_TEMP_RAM + 4
+#     b.emit(0x31, new_sp & 0xFF, (new_sp >> 8) & 0xFF)
+#
+#     # EI（必要なら。割り込み禁止のまま走る設計なら外す）
+#     b.emit(0xFB)
 
 
 def restore_stack_pointer_macro(b: Block) -> None:
