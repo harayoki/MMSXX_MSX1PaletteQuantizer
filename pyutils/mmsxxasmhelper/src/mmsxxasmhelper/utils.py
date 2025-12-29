@@ -16,6 +16,7 @@ __all__ = [
     "loop_infinite_macro",
     "set_debug",
     "debug_trap",
+    "debug_print_labels",
     "print_bytes",
     "with_register_preserve",
 ]
@@ -170,6 +171,25 @@ def debug_trap(b: Block) -> None:
     if not DEBUG:
         return
     HALT(b)
+
+
+#
+# finalize 後に決定したラベルアドレスを表示するデバッグ用ヘルパー
+#
+
+def debug_print_labels(b: Block, origin: int = 0, *, stream=None) -> None:
+    """finalize 後に決定したラベルアドレスをダンプする。"""
+
+    if not DEBUG:
+        return
+
+    if stream is None:
+        import sys
+
+        stream = sys.stdout
+
+    for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
+        print(f"{origin + offset:04x}: {name}", file=stream)
 
 
 #
