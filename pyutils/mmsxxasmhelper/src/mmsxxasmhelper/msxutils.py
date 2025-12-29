@@ -4,7 +4,6 @@ MSX 関連マクロ & 関数 他
 
 from __future__ import annotations
 
-from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
 from mmsxxasmhelper.core import *
@@ -14,6 +13,7 @@ from mmsxxasmhelper.utils import *
 __all__ = [
     # "call_subrom_macro",
     "place_msx_rom_header_macro",
+    # "fill_stack_macro",
     "store_stack_pointer_macro",
     "restore_stack_pointer_macro",
     "get_msxver_macro",
@@ -32,40 +32,10 @@ __all__ = [
 P = ParamSpec("P")
 
 
-def with_register_preserve(
-    macro: Callable[Concatenate[Block, P], None]
-) -> Callable[Concatenate[Block, P], None]:
-    """マクロ呼び出しの前後に PUSH/POP を挿入するデコレータ。
-    ``regs_preserve`` キーワード引数で退避するレジスタを指定できる。
-    何も指定しなければ PUSH/POP は行われない。
-
-    @with_register_preserveの記述をマクロ関数に記述すると有効になるが
-    どのレジスタを保護するのあユーザーに細かくゆだねたい場合以外は使わない方針
-    各マクロでPUSH POP対応を行う 理由は呼び出し元でどのレジスタを保護すべきか考えさせたくないため
-
-    """
-
-    @wraps(macro)
-    def wrapper(
-        b: Block,
-        *args: P.args,
-        regs_preserve: Sequence[RegNames16] = (),
-        **kwargs: P.kwargs,
-    ) -> None:
-        regs = tuple(regs_preserve)
-        for reg in regs:
-            PUSH.r(b, reg)
-
-        macro(b, *args, **kwargs)
-
-        for reg in reversed(regs):
-            POP.r(b, reg)
-
-    return wrapper
-
-
-# システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
-SP_TEMP_RAM = 0xF300
+# 自プログラム専用のRAM領域（C000h–EFFFh）内に確保する一時ワーク。
+# ROMブート直後のBIOSスタックはFxxxh帯に来ることが多いため、
+# システムワークと衝突しないようF000h未満に置く。
+SP_TEMP_RAM = 0xEFE0
 
 
 # BIOS コールアドレス
@@ -108,7 +78,7 @@ VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
 
 def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
     """MSX ROM ヘッダ (16 バイト) を配置するマクロ。
-
+qqq
     "AB" に続けてエントリアドレス（リトルエンディアン）を書き、残りは 0 で
     パディングする。エントリポイントは 0x4010 をデフォルトとし、必要に応じて
     引数で変更できる。
@@ -127,6 +97,89 @@ def place_msx_rom_header_macro(b: Block, entry_point: int = 0x4010) -> None:
     DB(b, *header)
 
 
+# def fill_stack_macro(b: Block, fill_value: int = 0xAA, stack_top: int = 0xEFFF, stack_size: int = 0x0200) -> None:
+#     """
+#     スタック領域を一定の値で塗りつぶしておく（利用範囲を見極めるため）
+#     :param b: Block
+#     :param fill_value: 埋める値
+#     :param stack_top: stack addr
+#     :param stack_size:   default 0x0200 = 512b
+#     """
+#     start = stack_top - stack_size
+#
+#     LD.HL_n16(b, start)
+#     LD.BC_n16(b, stack_size)
+#     LD.A_n8(b, fill_value)
+#
+#     fill_stack_loop = unique_label()
+#     b.label(fill_stack_loop)
+#     LD.mHL_A(b)
+#     INC.HL(b)
+#     DEC.BC(b)
+#     LD.A_B(b)
+#     OR.C(b)
+#     JP_NZ(b, fill_stack_loop)
+
+
+# def fill_stack_macro(
+#     b: Block,
+#     fill_value: int = 0xAA,
+#     stack_top: int = 0xEFC0,  # SP_TEMP_RAM(0xEFE0)より少し下
+#     stack_size: int = 0x0200,
+# ) -> None:
+#     """
+#     [stack_top - stack_size .. stack_top - 1] を fill_value で埋める。
+#     Z80の LDIR で高速に複製する版。
+#     """
+#     if stack_size <= 0:
+#         return
+#
+#     start = (stack_top - stack_size) & 0xFFFF
+#
+#     # HL = start
+#     LD.HL_n16(b, start)
+#
+#     # (HL) = fill_value
+#     LD.A_n8(b, fill_value)
+#     LD.mHL_A(b)
+#
+#     if stack_size == 1:
+#         return
+#
+#     # DE = start + 1
+#     LD.DE_n16(b, (start + 1) & 0xFFFF)
+#
+#     # BC = stack_size - 1
+#     LD.BC_n16(b, (stack_size - 1) & 0xFFFF)
+#
+#     # LDIR (ED B0): (HL)->(DE), HL++,DE++,BC-- until BC=0
+#     b.emit(0xED, 0xB0)
+#
+#
+# def fill_stack_macro(
+#     b: Block,
+#     fill_value: int = 0xAA,
+#     stack_top: int = 0xEFC0,
+#     stack_size: int = 0x0200,
+# ) -> None:
+#     if stack_size <= 0 or stack_size > 0x0800:
+#         raise ValueError("stack_size abnormal")
+#
+#     start = (stack_top - stack_size) & 0xFFFF
+#
+#     LD.HL_n16(b, start)
+#     LD.A_n8(b, fill_value)
+#     LD.mHL_A(b)
+#
+#     if stack_size == 1:
+#         return
+#
+#     LD.DE_n16(b, (start + 1) & 0xFFFF)
+#     LD.BC_n16(b, (stack_size - 1) & 0xFFFF)
+#     b.emit(0xED, 0xB0)  # LDIR
+
+
+
 def store_stack_pointer_macro(b: Block) -> None:
     """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。"""
 
@@ -139,6 +192,24 @@ def store_stack_pointer_macro(b: Block) -> None:
     # (PUSH 時のデクリメントで退避した SP の領域を踏まないように 4 バイト空ける)
     LD.HL_n16(b, SP_TEMP_RAM + 4)
     LD.SP_HL(b)
+
+
+# 上の物より無駄が少ないかもしれないバージョン 未検証
+# def store_stack_pointer_macro(b: Block) -> None:
+#     # DI
+#     b.emit(0xF3)
+#
+#     # LD (SP_TEMP_RAM),SP  ; ED 73 ll hh
+#     lo = SP_TEMP_RAM & 0xFF
+#     hi = (SP_TEMP_RAM >> 8) & 0xFF
+#     b.emit(0xED, 0x73, lo, hi)
+#
+#     # LD SP,SP_TEMP_RAM+4
+#     new_sp = SP_TEMP_RAM + 4
+#     b.emit(0x31, new_sp & 0xFF, (new_sp >> 8) & 0xFF)
+#
+#     # EI（必要なら。割り込み禁止のまま走る設計なら外す）
+#     b.emit(0xFB)
 
 
 def restore_stack_pointer_macro(b: Block) -> None:
@@ -217,34 +288,39 @@ def set_msx2_palette_default_macro(b: Block) -> None:
 
     """
 
+    msx2_pal_set_end_label = unique_label("__MSX2_PAL_SET_END__")
+    palette_data_label = unique_label("__PALETTE_DATA__")
+    msx2_pal_loop_label = unique_label("__MSX2_PAL_LOOP__")
+    msx2_pal_data_end_label = unique_label("__MSX2_PAL_DATA_END__")
+
     # --- MSX バージョン確認 ---
     get_msxver_macro(b)
     CP.n8(b, 0x00)
     # ゼロ(MSX1) のときはパレット処理を丸ごと飛ばす
-    JP_Z(b, "__MSX2_PAL_SET_END__")
+    JP_Z(b, msx2_pal_set_end_label)
 
     # R#16 に color index 0 をセット
     OUT_A(b, VDP_CTRL, 0x00)
     OUT_A(b, VDP_CTRL, 0x80 + 16)
 
     # HL = PALETTE_DATA
-    LD.HL_label(b, "__PALETTE_DATA__")
+    LD.HL_label(b, palette_data_label)
 
     # B = 32 (16色×2バイト)
     LD.B_n8(b, 32)
 
-    b.label("__MSX2_PAL_LOOP__")
+    b.label(msx2_pal_loop_label)
     LD.A_mHL(b)
     OUT(b, VDP_PAL)
     INC.HL(b)
-    DJNZ(b, "__MSX2_PAL_LOOP__")
+    DJNZ(b, msx2_pal_loop_label)
 
-    b.label("__MSX2_PAL_SET_END__")
+    b.label(msx2_pal_set_end_label)
     # パレットデータ本体（実行されない領域）
-    JP(b, "__MSX2_PAL_DATA_END__")  # 直後のデータを実行しないようにスキップ
-    b.label("__PALETTE_DATA__")
+    JP(b, msx2_pal_data_end_label)  # 直後のデータを実行しないようにスキップ
+    b.label(palette_data_label)
     DB(b, *_MSX2_PALETTE_BYTES)
-    b.label("__MSX2_PAL_DATA_END__")
+    b.label(msx2_pal_data_end_label)
 
     # print("-----")
     # print(_MSX2_PALETTE_BYTES)
@@ -297,32 +373,31 @@ def set_screen_colors_macro(
     CALL(b, CHGCLR)
 
 
+@with_register_preserve
 def ldirvm_macro(
     b: Block,
     *,
-    source: int | None = None,
-    dest: int | None = None,
-    length: int | None = None,
+    source_HL: int | None = None,
+    dest_DE: int | None = None,
+    length_BC: int | None = None,
+    regs_preserve: Sequence[RegNames16] = ()
 ) -> None:
     """LDIRVM (#005C) を呼び出すマクロ。
-
     HL:元アドレス, DE:VRAM先頭, BC:バイト数 を引数で上書きできる。
     いずれも ``None`` の場合は呼び出し元でレジスタが適切にセットされて
     いる前提で、そのまま BIOS コールだけを行う。
-
     レジスタ変更: HL, DE, BC（引数指定時に上書き）。BIOS 呼び出しによって
     AF/BC/DE/HL が破壊される前提で使用する。
-
     """
 
-    if source is not None:
-        LD.HL_n16(b, source & 0xFFFF)
+    if source_HL is not None:
+        LD.HL_n16(b, source_HL & 0xFFFF)
 
-    if dest is not None:
-        LD.DE_n16(b, dest & 0xFFFF)
+    if dest_DE is not None:
+        LD.DE_n16(b, dest_DE & 0xFFFF)
 
-    if length is not None:
-        LD.BC_n16(b, length & 0xFFFF)
+    if length_BC is not None:
+        LD.BC_n16(b, length_BC & 0xFFFF)
 
     b.emit(0xCD, LDIRVM & 0xFF, (LDIRVM >> 8) & 0xFF)
 

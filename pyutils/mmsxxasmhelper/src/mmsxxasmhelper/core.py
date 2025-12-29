@@ -32,6 +32,9 @@ v0で入っている機能:
   - .define(b): ラベル + body + RET を出力
   - .call(b): CALL 命令を出力(アドレスはfixupで解決)
 
+- ユーティリティ:
+  - unique_label(prefix="__L"): 他と重複しないラベル名を返す
+
 - 命令ラッパ:
   - JP 系: 無条件/条件付き絶対ジャンプ (JP, JP_Z, JP_NZ, JP_NC, JP_C, JP_PO, JP_PE, JP_P, JP_M, JP_mHL)
   - JR 系: 無条件/条件付き相対ジャンプ (JR, JR_Z, JR_NZ, JR_NC, JR_C) および DJNZ
@@ -57,6 +60,7 @@ __all__ = [
     "str_bytes", "const_string",
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
+    "unique_label",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
@@ -64,6 +68,7 @@ __all__ = [
     "Func",
     "DB", "DW",
     "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR",
+    "LDIR",
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_A", "OUT_C",
@@ -72,12 +77,25 @@ __all__ = [
 ]
 
 from dataclasses import dataclass
+from itertools import count
 from typing import Callable, Dict, List, Literal
 
 
 # ---------------------------------------------------------------------------
 # Block: コード構築の基本単位
 # ---------------------------------------------------------------------------
+
+_label_counter = count()
+
+
+def unique_label(prefix: str = "__L") -> str:
+    """衝突しないラベル名を生成するヘルパー。
+
+    マクロ内など同じラベル名を繰り返し使う状況で、
+    呼ぶたびにユニークな名前を得るために利用する。
+    """
+
+    return f"{prefix}{next(_label_counter)}"
 
 FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 
@@ -591,6 +609,11 @@ class LD:
     # ---- A レジスタへのロード（レジスタ版） ----
 
     @staticmethod
+    def A_A(b: Block) -> None:
+        """LD A,A"""
+        LD.rr(b, "A", "A")
+
+    @staticmethod
     def A_B(b: Block) -> None:
         """LD A,B"""
         LD.rr(b, "A", "B")
@@ -621,10 +644,7 @@ class LD:
         """LD A,L"""
         LD.rr(b, "A", "L")
 
-    @staticmethod
-    def A_A(b: Block) -> None:
-        """LD A,A"""
-        LD.rr(b, "A", "A")
+    # ---- B レジスタへのロード（レジスタ版） ----
 
     @staticmethod
     def B_A(b: Block) -> None:
@@ -632,9 +652,36 @@ class LD:
         LD.rr(b, "B", "A")
 
     @staticmethod
+    def B_B(b: Block) -> None:
+        """LD B,B"""
+        LD.rr(b, "B", "B")
+
+    @staticmethod
+    def B_C(b: Block) -> None:
+        """LD B,C"""
+        LD.rr(b, "B", "C")
+
+    @staticmethod
+    def B_D(b: Block) -> None:
+        """LD B,D"""
+        LD.rr(b, "B", "D")
+
+    @staticmethod
+    def B_E(b: Block) -> None:
+        """LD B,E"""
+        LD.rr(b, "B", "E")
+
+    @staticmethod
     def B_H(b: Block) -> None:
         """LD B,H"""
         LD.rr(b, "B", "H")
+
+    @staticmethod
+    def B_L(b: Block) -> None:
+        """LD B,L"""
+        LD.rr(b, "B", "L")
+
+    # ---- C レジスタへのロード（レジスタ版） ----
 
     @staticmethod
     def C_A(b: Block) -> None:
@@ -642,9 +689,36 @@ class LD:
         LD.rr(b, "C", "A")
 
     @staticmethod
+    def C_B(b: Block) -> None:
+        """LD C,B"""
+        LD.rr(b, "C", "B")
+
+    @staticmethod
+    def C_C(b: Block) -> None:
+        """LD C,C"""
+        LD.rr(b, "C", "C")
+
+    @staticmethod
+    def C_D(b: Block) -> None:
+        """LD C,D"""
+        LD.rr(b, "C", "D")
+
+    @staticmethod
+    def C_E(b: Block) -> None:
+        """LD C,E"""
+        LD.rr(b, "C", "E")
+
+    @staticmethod
+    def C_H(b: Block) -> None:
+        """LD C,H"""
+        LD.rr(b, "C", "H")
+
+    @staticmethod
     def C_L(b: Block) -> None:
         """LD C,L"""
         LD.rr(b, "C", "L")
+
+    # ---- D レジスタへのロード（レジスタ版） ----
 
     @staticmethod
     def D_A(b: Block) -> None:
@@ -657,9 +731,31 @@ class LD:
         LD.rr(b, "D", "B")
 
     @staticmethod
+    def D_C(b: Block) -> None:
+        """LD D,C"""
+        LD.rr(b, "D", "C")
+
+    @staticmethod
+    def D_D(b: Block) -> None:
+        """LD D,D"""
+        LD.rr(b, "D", "D")
+
+    @staticmethod
+    def D_E(b: Block) -> None:
+        """LD D,E"""
+        LD.rr(b, "D", "E")
+
+    @staticmethod
     def D_H(b: Block) -> None:
         """LD D,H"""
         LD.rr(b, "D", "H")
+
+    @staticmethod
+    def D_L(b: Block) -> None:
+        """LD D,L"""
+        LD.rr(b, "D", "L")
+
+    # ---- E レジスタへのロード（レジスタ版） ----
 
     @staticmethod
     def E_A(b: Block) -> None:
@@ -667,9 +763,36 @@ class LD:
         LD.rr(b, "E", "A")
 
     @staticmethod
+    def E_B(b: Block) -> None:
+        """LD E,B"""
+        LD.rr(b, "E", "B")
+
+    @staticmethod
+    def E_C(b: Block) -> None:
+        """LD E,C"""
+        LD.rr(b, "E", "C")
+
+    @staticmethod
+    def E_D(b: Block) -> None:
+        """LD E,D"""
+        LD.rr(b, "E", "D")
+
+    @staticmethod
+    def E_E(b: Block) -> None:
+        """LD E,E"""
+        LD.rr(b, "E", "E")
+
+    @staticmethod
+    def E_H(b: Block) -> None:
+        """LD E,H"""
+        LD.rr(b, "E", "H")
+
+    @staticmethod
     def E_L(b: Block) -> None:
         """LD E,L"""
         LD.rr(b, "E", "L")
+
+    # ---- H レジスタへのロード（レジスタ版） ----
 
     @staticmethod
     def H_A(b: Block) -> None:
@@ -682,17 +805,68 @@ class LD:
         LD.rr(b, "H", "B")
 
     @staticmethod
+    def H_C(b: Block) -> None:
+        """LD H,C"""
+        LD.rr(b, "H", "C")
+
+    @staticmethod
+    def H_D(b: Block) -> None:
+        """LD H,B"""
+        LD.rr(b, "H", "D")
+
+    @staticmethod
+    def H_E(b: Block) -> None:
+        """LD H,E"""
+        LD.rr(b, "H", "E")
+
+    @staticmethod
+    def H_H(b: Block) -> None:
+        """LD H,H"""
+        LD.rr(b, "H", "H")
+
+    @staticmethod
+    def H_L(b: Block) -> None:
+        """LD H,L"""
+        LD.rr(b, "H", "L")
+
+    # ---- L レジスタへのロード（レジスタ版） ----
+
+    @staticmethod
     def L_A(b: Block) -> None:
         """LD L,A"""
         LD.rr(b, "L", "A")
+
+    @staticmethod
+    def L_B(b: Block) -> None:
+        """LD L,B"""
+        LD.rr(b, "L", "B")
 
     @staticmethod
     def L_C(b: Block) -> None:
         """LD L,C"""
         LD.rr(b, "L", "C")
 
+    @staticmethod
+    def L_D(b: Block) -> None:
+        """LD L,D"""
+        LD.rr(b, "L", "D")
 
-    # TODO その他 レジスタ間のLDは必要時に増やしていく
+    @staticmethod
+    def L_E(b: Block) -> None:
+        """LD L,E"""
+        LD.rr(b, "L", "E")
+
+    @staticmethod
+    def L_H(b: Block) -> None:
+        """LD L,H"""
+        LD.rr(b, "L", "H")
+
+    @staticmethod
+    def L_L(b: Block) -> None:
+        """LD L,L"""
+        LD.rr(b, "L", "L")
+
+    # レジスタ間のLDは必要時に増やしていく
 
     # ---- 8bit 即値ロード ----
 
@@ -787,6 +961,36 @@ class LD:
     def mHL_A(b: Block) -> None:
         """LD (HL),A"""
         b.emit(0x77)
+
+    @staticmethod
+    def mHL_B(b: Block) -> None:
+        """LD (HL),B"""
+        b.emit(0x70)
+
+    @staticmethod
+    def mHL_C(b: Block) -> None:
+        """LD (HL),C"""
+        b.emit(0x71)
+
+    @staticmethod
+    def mHL_D(b: Block) -> None:
+        """LD (HL),D"""
+        b.emit(0x72)
+
+    @staticmethod
+    def mHL_E(b: Block) -> None:
+        """LD (HL),E"""
+        b.emit(0x73)
+
+    @staticmethod
+    def mHL_H(b: Block) -> None:
+        """LD (HL),H"""
+        b.emit(0x74)
+
+    @staticmethod
+    def mHL_L(b: Block) -> None:
+        """LD (HL),L"""
+        b.emit(0x75)
 
     @staticmethod
     def A_mHL(b: Block) -> None:
@@ -1001,6 +1205,9 @@ class LD:
     def HL_label(b: Block, label: str) -> None:
         pos = b.emit(0x21, 0x00, 0x00)
         b.add_abs16_fixup(pos + 1, label)
+
+def LDIR(b: Block) -> None:
+    b.emit(0xED, 0xB0)
 
 
 # ---------------------------------------------------------------------------
