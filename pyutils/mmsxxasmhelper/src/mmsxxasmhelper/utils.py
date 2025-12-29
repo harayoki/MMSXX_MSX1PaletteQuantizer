@@ -177,19 +177,31 @@ def debug_trap(b: Block) -> None:
 # finalize 後に決定したラベルアドレスを表示するデバッグ用ヘルパー
 #
 
-def debug_print_labels(b: Block, origin: int = 0, *, stream=None) -> None:
-    """finalize 後に決定したラベルアドレスをダンプする。"""
+def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool = False) -> str:
+    """
+    finalize 後に決定したラベルアドレスをダンプする。
+    :param b: Block
+    :param origin:
+    :param stream:
+    :param no_print: print しない（でテキストだけ得る）
+    """
 
     if not DEBUG:
-        return
+        return ""
 
     if stream is None:
         import sys
 
         stream = sys.stdout
 
+    messages = []
     for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
-        print(f"{origin + offset:04x}: {name}", file=stream)
+        message = f"{origin + offset:04x}: {name}"
+        messages.append(message)
+        if not no_print:
+            print(message, file=stream)
+
+    return "\n".join(messages)
 
 
 #
