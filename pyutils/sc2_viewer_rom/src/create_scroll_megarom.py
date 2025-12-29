@@ -79,6 +79,7 @@ from mmsxxasmhelper.core import (
     DB,
     DW,
     NOP,
+    unique_label,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -349,10 +350,10 @@ def calc_line_num_for_reg_a_macro(b: Block) -> None:
     """
     LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)  # 何行？
     CP.n8(b, SCREEN_TILE_ROWS)  # 1画面24行と比較
-    JR_n8(b, 2)  # 何どもマクロを使うのでラベルを使うのをやめる ラベルを被らないようにする仕組みが必要
-    # JR_C(b, "ROW_COUNT_OK")
+    ROW_COUNT_OK = unique_label()
+    JR_C(b, ROW_COUNT_OK)
     LD.A_n8(b, SCREEN_TILE_ROWS)  # MAX 24行
-    # b.label("ROW_COUNT_OK")
+    b.label(ROW_COUNT_OK)
 
 
 def build_boot_bank(
