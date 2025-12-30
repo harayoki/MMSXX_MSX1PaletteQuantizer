@@ -108,6 +108,7 @@ from mmsxxasmhelper.msxutils import (
     INPUT_KEY_BIT,
     build_beep_control_utils,
     build_set_vram_write_func,
+    build_scroll_name_table_func,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -442,6 +443,7 @@ def build_scroll_vram_xfer_func() -> Func:
 
 
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
+SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
 
 def build_update_image_display_func(image_entries_count: int) -> Func:

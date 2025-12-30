@@ -30,6 +30,7 @@ __all__ = [
     "INPUT_KEY_BIT",
     "build_beep_control_utils",
     "build_set_vram_write_func",
+    "build_scroll_name_table_func",
 
     "VDP_CTRL",
     "VDP_DATA",
@@ -661,4 +662,46 @@ def build_set_vram_write_func() -> Func:
         OUT(block, 0x99)  # 上位8bit
 
     return Func("SET_VRAM_WRITE", set_vram_write)
+
+
+def build_scroll_name_table_func(SET_VRAM_WRITE_FUNC: Func) -> Func:
+    def scroll_name_table(block: Block) -> None:
+        # 入力: A = CURRENT_SCROLL_ROW (0-23)
+        # ※ 24行を超えると表示がループ（0に戻る）します
+
+        PUSH.AF(block)
+        # VRAM 0x1800 (名前テーブル) を書き込みモードでセット
+        LD.HL_n16(block, 0x1800)
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.AF(block)
+
+        # キャラクター番号の開始オフセット = A * 32
+        # (1行32文字なので、A行分飛ばす)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)  # *2
+        ADD.HL_HL(block)  # *4
+        ADD.HL_HL(block)  # *8
+        ADD.HL_HL(block)  # *16
+        ADD.HL_HL(block)  # *32 -> HL = 開始キャラクタ番号
+
+        LD.D_n8(block, 24)  # 24行分ループ
+        LD.C_n8(block, 0x98)  # VDPポート
+
+        LINE_LOOP = unique_label()
+        COLUMN_LOOP = unique_label()
+        block.label(LINE_LOOP)
+        LD.B_n8(block, 32)  # 1行32列
+
+        block.label(COLUMN_LOOP)
+        LD.A_L(block)  # HLの下位8bitをキャラクタ番号として使用
+        OUT_C.A(block)
+        INC.HL(block)  # 次のキャラクタへ
+        DJNZ(block, COLUMN_LOOP)
+
+        DEC.D(block)
+        JR_NZ(block, LINE_LOOP)
+        RET(block)
+
+    return Func("SCROLL_NAME_TABLE", scroll_name_table)
 
