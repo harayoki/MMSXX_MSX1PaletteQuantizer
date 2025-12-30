@@ -28,6 +28,7 @@ __all__ = [
 
     "build_update_input_func",
     "INPUT_KEY_BIT",
+    "build_beep_control_utils",
 
     "VDP_CTRL",
     "VDP_DATA",
@@ -569,3 +570,79 @@ def build_update_input_func(
     JR(b, "MAIN_LOOP")
 
 """
+
+
+
+def build_beep_control_utils(
+    beep_count_addr: int = 0xC110,
+    beep_active_addr: int = 0xC111,
+    tone_period: int = 60,  # 0-4095
+    duration_frames: int = 1,  # 1/60秒単位
+):
+    PSG_REG = 0xA0
+    PSG_DAT = 0xA1
+
+    def psg_write(block: Block) -> None:
+        OUT(block, PSG_REG)
+        LD.A_E(block)
+        OUT(block, PSG_DAT)
+        RET(block)
+
+    BEEP_WRITE_FUNC = Func("BEEP_WRITE", psg_write)
+
+    def simple_beep(block: Block) -> None:
+        """
+        BEEP開始。
+        レジスタ7への書き込み時、最上位ビット(Bit7)を必ず1にすることで、
+        物理損傷のリスク(unsafe PSG port directions)を回避します。
+        """
+        # 状態の初期化
+        LD.A_n8(block, duration_frames & 0xFF)
+        LD.mn16_A(block, beep_count_addr)
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, beep_active_addr)
+
+        # 1. チャンネルAの周期設定 (Reg 0, 1)
+        LD.A_n8(block, 0)
+        LD.E_n8(block, tone_period & 0xFF)
+        BEEP_WRITE_FUNC.call(block)
+
+        LD.A_n8(block, 1)
+        LD.E_n8(block, (tone_period >> 8) & 0x0F)
+        BEEP_WRITE_FUNC.call(block)
+
+        # 2. ミキサー設定 (Reg 7)
+        # Bit7=1(入力), Bit6=1(入力), Bit5-3=1(Noise OFF), Bit2-0=音量ON/OFF
+        # ChAのみONにする場合: 10111110b = 0xBE (安全な設定)
+        LD.A_n8(block, 7)
+        LD.E_n8(block, 0xBE)  # 0xFE ではなく 0xBE を使うことでハードを保護
+        BEEP_WRITE_FUNC.call(block)
+
+        # 3. 音量設定 (Reg 8)
+        LD.A_n8(block, 8)
+        LD.E_n8(block, 15)
+        BEEP_WRITE_FUNC.call(block)
+
+        RET(block)
+
+    def update_beep(block: Block) -> None:
+        # (update_beep の実装は変更なし)
+        LD.A_mn16(block, beep_active_addr)
+        OR.A(block)
+        RET_Z(block)
+
+        LD.A_mn16(block, beep_count_addr)
+        DEC.A(block)
+        LD.mn16_A(block, beep_count_addr)
+        RET_NZ(block)
+
+        # 消音
+        XOR.A(block)
+        LD.mn16_A(block, beep_active_addr)
+        LD.A_n8(block, 8)
+        LD.E_n8(block, 0)
+        BEEP_WRITE_FUNC.call(block)
+        RET(block)
+
+    return BEEP_WRITE_FUNC, Func("SIMPLE_BEEP", simple_beep), Func("UPDATE_BEEP", update_beep)
+

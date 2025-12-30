@@ -88,6 +88,7 @@ from mmsxxasmhelper.core import (
     BIT,
     HALT,
     unique_label,
+    define_created_funcs,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -105,6 +106,7 @@ from mmsxxasmhelper.msxutils import (
     ldirvm_macro,
     build_update_input_func,
     INPUT_KEY_BIT,
+    build_beep_control_utils,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -150,7 +152,8 @@ CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1  # カラ�
 
 INPUT_HOLD = 0xC100  # 現在押されている全入力
 INPUT_TRG = 0xC101  # 今回新しく押された入力
-
+BEEP_CNT: int = 0xC102
+BEEP_ACTIVE: int = 0xC103
 
 @dataclass
 class ImageEntry:
@@ -510,8 +513,9 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
 
 
-
 UPDATE_INPUT_FUNC = build_update_input_func(INPUT_HOLD, INPUT_TRG)
+
+BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(BEEP_CNT, BEEP_ACTIVE)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -614,6 +618,7 @@ def build_boot_bank(
     # --- [メインループ] ---
     b.label("MAIN_LOOP")
     HALT(b)  # V-Sync 待ち
+    UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
 
     # SPACE (論理 L_BTN_A) が「今押されたか」をまずチェック
@@ -648,14 +653,19 @@ def build_boot_bank(
 
     b.label("__GO_UPDATE__")
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+    SIMPLE_BEEP_FUNC.call(b)
     JR(b, "MAIN_LOOP")
 
     # --- 関数定義 ---
-    RESET_NAME_TABLE_FUNC.define(b)
-    SET_VRAM_WRITE_FUNC.define(b)
-    SCROLL_VRAM_XFER_FUNC.define(b)
-    UPDATE_IMAGE_DISPLAY_FUNC.define(b)
-    UPDATE_INPUT_FUNC.define(b)
+    define_created_funcs(b)
+    # RESET_NAME_TABLE_FUNC.define(b)
+    # SET_VRAM_WRITE_FUNC.define(b)
+    # SCROLL_VRAM_XFER_FUNC.define(b)
+    # UPDATE_IMAGE_DISPLAY_FUNC.define(b)
+    # UPDATE_INPUT_FUNC.define(b)
+    # BEEP_WRITE_FUNC.define(b)
+    # SIMPLE_BEEP_FUNC.define(b)
+    # UPDATE_BEEP_FUNC.define(b)
 
     b.label("IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
