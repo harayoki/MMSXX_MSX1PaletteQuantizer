@@ -932,11 +932,25 @@ def create_debug_image_data_list(debug_image_index: int) -> List[ImageData]:
     return [ImageData(pattern=bytes(pattern), color=bytes(color), tile_rows=SCREEN_TILE_ROWS)]
 
 
+def ensure_output_writable(path: Path) -> None:
+    if path.exists():
+        if path.is_dir():
+            raise SystemExit(f"Output path is a directory: {path}")
+        try:
+            with path.open("r+b"):
+                pass
+        except Exception as exc:  # pragma: no cover - CLI error path
+            raise SystemExit(f"ERROR! failed to open ROM file for writing: {path}: {exc}") from exc
+
+
 def main() -> None:
     args = parse_args()
 
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
+
+    if args.output is not None:
+        ensure_output_writable(args.output)
 
     log_lines: list[str] = []
     input_format_counter: Counter[str] = Counter()
