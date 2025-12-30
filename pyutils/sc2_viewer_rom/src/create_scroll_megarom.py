@@ -1175,6 +1175,7 @@ def main() -> None:
                 if not args.no_cache and is_cached_image_valid(
                     quantized_path, image.size, newest_input_mtime
                 ):
+                    log_and_store(f"REUSE image: {quantized_path}", log_lines)
                     image_data = load_quantized_image(
                         idx, quantized_path, "reused", log_lines
                     )
