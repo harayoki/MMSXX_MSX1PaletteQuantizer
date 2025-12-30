@@ -1618,6 +1618,12 @@ class OR:
 
         b.emit(0xF6, value & 0xFF)
 
+    @staticmethod
+    def IXL(b: Block):
+        """A <- A OR IXL"""
+        b.emit(0xDD, 0xB5)
+
+
 
 class XOR:
     """XOR 系命令。"""
