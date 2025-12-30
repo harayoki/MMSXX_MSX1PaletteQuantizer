@@ -163,6 +163,9 @@
 | | `AND L` | `A5` | 1 | A <- A AND L |
 | | `AND (HL)` | `A6` | 1 | A <- A AND (HL) |
 | | `AND A` | `A7` | 1 | A <- A AND A |
+| | `AND IXH` | `DD A4` | 2 | A <- A AND IXH |
+| | `AND IXL` | `DD A5` | 2 | A <- A AND IXL |
+| | `AND (IX+d)` | `DD A6 d` | 3 | A <- A AND (IX+d) |
 | | `XOR B` | `A8` | 1 | A <- A XOR B |
 | | `XOR C` | `A9` | 1 | A <- A XOR C |
 | | `XOR D` | `AA` | 1 | A <- A XOR D |
@@ -179,6 +182,9 @@
 | | `OR L` | `B5` | 1 | A <- A OR L |
 | | `OR (HL)` | `B6` | 1 | A <- A OR (HL) |
 | | `OR A` | `B7` | 1 | A <- A OR A |
+| | `OR IXH` | `DD B4` | 2 | A <- A OR IXH |
+| | `OR IXL` | `DD B5` | 2 | A <- A OR IXL |
+| | `OR (IX+d)` | `DD B6 d` | 3 | A <- A OR (IX+d) |
 | | `CP B` | `B8` | 1 | A と B を比較（結果はフラグのみ） |
 | | `CP C` | `B9` | 1 | A と C を比較（結果はフラグのみ） |
 | | `CP D` | `BA` | 1 | A と D を比較（結果はフラグのみ） |
