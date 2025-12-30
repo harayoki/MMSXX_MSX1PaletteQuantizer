@@ -29,6 +29,7 @@ __all__ = [
     "build_update_input_func",
     "INPUT_KEY_BIT",
     "build_beep_control_utils",
+    "build_screen0_title_handler",
     "build_set_vram_write_func",
     "build_scroll_name_table_func",
 
@@ -45,6 +46,9 @@ LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
+CHSNS = 0x009C  # キーボード入力バッファ確認（ゼロなら空）
+CHGET = 0x009F  # キーボードバッファから1文字取得
+CHPUT = 0x00A2  # 一文字出力
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
 # EXPTBL = 0xFCC1  # 拡張スロット情報
@@ -647,6 +651,325 @@ def build_beep_control_utils(
         RET(block)
 
     return BEEP_WRITE_FUNC, Func("SIMPLE_BEEP", simple_beep), Func("UPDATE_BEEP", update_beep)
+
+
+def build_screen0_title_handler(
+    *,
+    static_text_label: str | None = None,
+    wait_text_label: str | None = None,
+    auto_line_template_label: str | None = None,
+    seconds_table_label: str | None = None,
+    auto_digits_offset: int | None = None,
+    line_length: int | None = None,
+    layout_lines: Sequence[str] | None = None,
+    wait_line: str | None = None,
+    auto_line_template: str | None = None,
+    auto_seconds_max: int = 99,
+    auto_digits_token: str = "{ss}",
+    work_base: int = 0xC080,
+    foreground_color: int = 0x0F,
+    background_color: int = 0x04,
+    border_color: int | None = None,
+    func_name_prefix: str = "SCREEN0_TITLE",
+) -> tuple[Func, Func, dict[str, int], Callable[[Block], None] | None]:
+    """
+    SCREEN0 でタイトル/インストラクション画面を表示し、キーまたは時間でスキップする処理を生成する。
+
+    戻り値: ``(SHOW_FUNC, UPDATE_FUNC, ワークアドレス辞書, data_macro)``
+
+    - SHOW_FUNC: ``A`` に自動開始までの秒数(0 なら待ちのみ)を入れて呼ぶ。表示とワーク初期化を行う。
+    - UPDATE_FUNC: 毎フレーム呼ぶ。キー入力またはカウントダウン終了で完了フラグが 1 になる。
+    - ワークアドレス辞書: ``done_flag_addr`` / ``auto_enabled_addr`` / ``tick_total_addr`` /
+      ``last_jiffy_addr`` / ``line_buffer_addr`` を含む。
+    - data_macro: 画面文字列・カウントダウンテーブルを配置するマクロ。文字列指定を使わない場合は ``None``。
+
+    文字列で画面レイアウトを指定する場合は ``layout_lines`` / ``wait_line`` /
+    ``auto_line_template`` を与える。 ``auto_line_template`` 内の ``auto_digits_token``
+    (デフォルト ``"{ss}"``) を 2 桁の残り秒数で置き換えるように自動生成される。
+    ``line_length`` と ``auto_digits_offset`` はテンプレートから自動計算される。
+    ラベルを直接指定する従来の使い方も可能で、その場合は ``line_length`` と
+    ``auto_digits_offset`` を明示すること。
+    """
+
+    # 文字列ベースの指定がある場合は自動でデータ定義を生成する
+    text_mode = any(
+        value is not None for value in (layout_lines, wait_line, auto_line_template)
+    )
+
+    if text_mode:
+        if None in (layout_lines, wait_line, auto_line_template):
+            raise ValueError("layout_lines/wait_line/auto_line_template are all required")
+        if auto_digits_token not in auto_line_template:
+            raise ValueError("auto_line_template must contain auto_digits_token")
+        if auto_seconds_max < 0 or auto_seconds_max > 99:
+            raise ValueError("auto_seconds_max must be between 0 and 99")
+
+        static_text_label = static_text_label or f"{func_name_prefix}_STATIC_TEXT"
+        wait_text_label = wait_text_label or f"{func_name_prefix}_WAIT_TEXT"
+        auto_line_template_label = (
+            auto_line_template_label or f"{func_name_prefix}_AUTO_TEMPLATE"
+        )
+        seconds_table_label = seconds_table_label or f"{func_name_prefix}_SEC_TABLE"
+
+        def _encode_screen0_lines(lines: Sequence[str]) -> list[int]:
+            joined = "\r".join(lines)
+            bytes_ = [ord(ch) for ch in joined]
+            bytes_.append(0x0D)  # 行末
+            bytes_.append(0x00)
+            return bytes_
+
+        def _encode_screen0_line(line: str) -> list[int]:
+            bytes_ = [ord(ch) for ch in line]
+            bytes_.append(0x0D)
+            bytes_.append(0x00)
+            return bytes_
+
+        def _build_seconds_table(max_seconds: int) -> list[int]:
+            return [ord(d) for n in range(max_seconds + 1) for d in f"{n:02}"]
+
+        static_text_bytes = _encode_screen0_lines(layout_lines)
+        wait_text_bytes = _encode_screen0_line(wait_line)
+
+        prefix, _, suffix = auto_line_template.partition(auto_digits_token)
+        auto_digits_offset = len(prefix)
+        template_bytes = _encode_screen0_line(prefix + "00" + suffix)
+        line_length = len(template_bytes)
+        if auto_digits_offset + 2 > line_length:
+            raise ValueError("auto_digits_token points outside of template")
+
+        seconds_table_bytes = _build_seconds_table(auto_seconds_max)
+
+        def _emit_data(block: Block) -> None:
+            block.label(static_text_label)
+            DB(block, *static_text_bytes)
+
+            block.label(wait_text_label)
+            DB(block, *wait_text_bytes)
+
+            block.label(auto_line_template_label)
+            DB(block, *template_bytes)
+
+            block.label(seconds_table_label)
+            DB(block, *seconds_table_bytes)
+
+        data_macro: Callable[[Block], None] | None = _emit_data
+    else:
+        data_macro = None
+
+    if line_length is None or auto_digits_offset is None:
+        raise ValueError("line_length and auto_digits_offset must be provided")
+    if line_length <= 0:
+        raise ValueError("line_length must be positive")
+    if auto_digits_offset < 0 or auto_digits_offset + 2 > line_length:
+        raise ValueError("auto_digits_offset out of range")
+    if None in (
+        static_text_label,
+        wait_text_label,
+        auto_line_template_label,
+        seconds_table_label,
+    ):
+        raise ValueError("text labels must be provided")
+
+    done_flag_addr = work_base
+    auto_enabled_addr = work_base + 1
+    tick_total_addr = work_base + 2
+    last_jiffy_addr = work_base + 4
+    line_buffer_addr = work_base + 6
+    countdown_table_length = line_length
+    countdown_digits_offset = auto_digits_offset
+    jiffy_per_second = 60
+    border = background_color if border_color is None else border_color
+
+    def print_string(block: Block) -> None:
+        block.label(f"{func_name_prefix}_PRINT_LOOP")
+        LD.rr(block, "A", "mHL")
+        OR.A(block)
+        JR_Z(block, f"{func_name_prefix}_PRINT_END")
+        CALL(block, CHPUT)
+        INC.HL(block)
+        JR(block, f"{func_name_prefix}_PRINT_LOOP")
+        block.label(f"{func_name_prefix}_PRINT_END")
+
+    PRINT_STRING = Func(f"{func_name_prefix}_PRINT_STRING", print_string)
+
+    def update_countdown(block: Block) -> None:
+        LD.HL_mn16(block, tick_total_addr)
+        LD.BC_n16(block, jiffy_per_second)
+        LD.D_n8(block, 0)
+
+        block.label(f"{func_name_prefix}_SEC_LOOP")
+        XOR.A(block)
+        block.emit(0xED, 0x42)  # SBC HL,BC
+        JR_C(block, f"{func_name_prefix}_SEC_DONE")
+        INC.D(block)
+        JR(block, f"{func_name_prefix}_SEC_LOOP")
+
+        block.label(f"{func_name_prefix}_SEC_DONE")
+        ADD.HL_BC(block)
+        LD.A_D(block)
+
+        LD.HL_label(block, seconds_table_label)
+        LD.E_A(block)
+        LD.D_n8(block, 0)
+        ADD.HL_DE(block)
+        ADD.HL_DE(block)
+        LD.DE_n16(block, line_buffer_addr + countdown_digits_offset)
+        LD.A_mHL(block)
+        LD.mDE_A(block)
+        INC.DE(block)
+        INC.HL(block)
+        LD.A_mHL(block)
+        LD.mDE_A(block)
+
+    UPDATE_COUNTDOWN = Func(f"{func_name_prefix}_UPDATE_COUNTDOWN", update_countdown)
+
+    def print_countdown_line(block: Block) -> None:
+        LD.A_n8(block, 0x0D)
+        CALL(block, CHPUT)
+        LD.HL_n16(block, line_buffer_addr)
+        PRINT_STRING.call(block)
+
+    PRINT_COUNTDOWN_LINE = Func(f"{func_name_prefix}_PRINT_LINE", print_countdown_line)
+
+    def show_title(block: Block) -> None:
+        # 入力: A = 自動開始までの秒数 (0 ならキー待ちのみ)
+        LD.A_n8(block, 0)
+        LD.mn16_A(block, done_flag_addr)
+
+        LD.A_n8(block, 0)
+        CALL(block, CHGMOD)
+        LD.A_n8(block, foreground_color & 0x0F)
+        LD.mn16_A(block, FORCLR)
+        LD.A_n8(block, background_color & 0x0F)
+        LD.mn16_A(block, BAKCLR)
+        LD.A_n8(block, border & 0x0F)
+        LD.mn16_A(block, BDRCLR)
+        CALL(block, CHGCLR)
+
+        LD.HL_label(block, static_text_label)
+        PRINT_STRING.call(block)
+
+        LD.HL_mn16(block, JIFFY_ADDR)
+        LD.mn16_HL(block, last_jiffy_addr)
+
+        LD.B_A(block)
+        OR.A(block)
+        JR_Z(block, f"{func_name_prefix}_WAIT_ONLY")
+
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, auto_enabled_addr)
+
+        LD.HL_n16(block, 0)
+        LD.C_n8(block, jiffy_per_second & 0xFF)
+
+        block.label(f"{func_name_prefix}_MUL_LOOP")
+        LD.A_B(block)
+        OR.A(block)
+        JR_Z(block, f"{func_name_prefix}_MUL_DONE")
+        ADD.HL_BC(block)
+        DEC.B(block)
+        JR(block, f"{func_name_prefix}_MUL_LOOP")
+
+        block.label(f"{func_name_prefix}_MUL_DONE")
+        LD.mn16_HL(block, tick_total_addr)
+
+        LD.HL_label(block, auto_line_template_label)
+        LD.DE_n16(block, line_buffer_addr)
+        LD.BC_n16(block, countdown_table_length)
+        block.emit(0xED, 0xB0)  # LDIR
+
+        UPDATE_COUNTDOWN.call(block)
+        PRINT_COUNTDOWN_LINE.call(block)
+        RET(block)
+
+        block.label(f"{func_name_prefix}_WAIT_ONLY")
+        LD.A_n8(block, 0)
+        LD.mn16_A(block, auto_enabled_addr)
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, tick_total_addr)
+        LD.HL_label(block, wait_text_label)
+        PRINT_STRING.call(block)
+        RET(block)
+
+    SHOW_TITLE = Func(f"{func_name_prefix}_SHOW", show_title)
+
+    def update_title(block: Block) -> None:
+        LD.A_mn16(block, done_flag_addr)
+        OR.A(block)
+        RET_NZ(block)
+
+        CALL(block, CHSNS)
+        CP.n8(block, 0)
+        JR_Z(block, f"{func_name_prefix}_NO_KEY")
+        CALL(block, CHGET)
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, done_flag_addr)
+        RET(block)
+
+        block.label(f"{func_name_prefix}_NO_KEY")
+        LD.A_mn16(block, auto_enabled_addr)
+        OR.A(block)
+        RET_Z(block)
+
+        LD.HL_mn16(block, last_jiffy_addr)
+        LD.D_H(block)
+        LD.E_L(block)
+
+        LD.HL_mn16(block, JIFFY_ADDR)
+        LD.B_H(block)
+        LD.C_L(block)
+
+        LD.A_L(block)
+        CP.E(block)
+        JR_NZ(block, f"{func_name_prefix}_TICK_CHANGED")
+        LD.A_H(block)
+        CP.D(block)
+        JR_Z(block, f"{func_name_prefix}_UPDATE_EXIT")
+
+        block.label(f"{func_name_prefix}_TICK_CHANGED")
+        XOR.A(block)
+        block.emit(0xED, 0x52)  # SBC HL,DE
+        LD.D_H(block)
+        LD.E_L(block)
+
+        LD.H_B(block)
+        LD.L_C(block)
+        LD.mn16_HL(block, last_jiffy_addr)
+
+        LD.HL_mn16(block, tick_total_addr)
+        XOR.A(block)
+        block.emit(0xED, 0x52)  # SBC HL,DE
+        JR_C(block, f"{func_name_prefix}_MARK_DONE")
+        LD.A_H(block)
+        OR.L(block)
+        JR_Z(block, f"{func_name_prefix}_MARK_DONE")
+        LD.mn16_HL(block, tick_total_addr)
+        UPDATE_COUNTDOWN.call(block)
+        PRINT_COUNTDOWN_LINE.call(block)
+        RET(block)
+
+        block.label(f"{func_name_prefix}_MARK_DONE")
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, done_flag_addr)
+        RET(block)
+
+        block.label(f"{func_name_prefix}_UPDATE_EXIT")
+        RET(block)
+
+    UPDATE_TITLE = Func(f"{func_name_prefix}_UPDATE", update_title)
+
+    return (
+        SHOW_TITLE,
+        UPDATE_TITLE,
+        {
+            "done_flag_addr": done_flag_addr,
+            "auto_enabled_addr": auto_enabled_addr,
+            "tick_total_addr": tick_total_addr,
+            "last_jiffy_addr": last_jiffy_addr,
+            "line_buffer_addr": line_buffer_addr,
+        },
+        data_macro,
+    )
 
 
 def build_set_vram_write_func() -> Func:
