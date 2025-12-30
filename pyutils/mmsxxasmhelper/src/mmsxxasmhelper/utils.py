@@ -232,18 +232,85 @@ class MemAddrAllocator:
         self._lookup: dict[str, int] = {}
         self._descriptions: dict[str, str] = {}
 
-    def add(self, name: str, size: int, description:str = "") -> int:
+        self._initial_bytes = bytearray()
+
+    def _ensure_capacity(self, address: int, size: int) -> int:
+        offset = address - self._base_address
+        required = offset + size
+        if len(self._initial_bytes) < required:
+            self._initial_bytes.extend([0x00] * (required - len(self._initial_bytes)))
+        return offset
+
+    def _normalize_initial_value(self, value: object) -> list[int]:
+        if isinstance(value, (bytes, bytearray)):
+            raw = list(value)
+        elif isinstance(value, int):
+            raw = [value & 0xFF, (value >> 8) & 0xFF]
+        elif isinstance(value, Sequence):
+            if not value:
+                raw = []
+            elif all(isinstance(v, str) for v in value):
+                raw = [ord(v) for v in value]  # type: ignore[arg-type]
+            elif all(isinstance(v, int) for v in value):
+                raw = [int(v) & 0xFF for v in value]
+            else:  # pragma: no cover - defensive branch
+                msg = "initial value sequence must contain int or str elements"
+                raise TypeError(msg)
+        else:  # pragma: no cover - defensive branch
+            msg = "unsupported initial value type"
+            raise TypeError(msg)
+
+        return raw
+
+    def add(
+        self,
+        name: str,
+        size: int | None = None,
+        initial_value: object | None = None,
+        description: str = "",
+    ) -> int:
         """名前とサイズを登録し、割り当て先アドレスを返す。"""
 
         if name in self._lookup:
             msg = f"{name!r} is already allocated"
             raise ValueError(msg)
 
+        raw: list[int] | None = None
+        value_length: int | None = None
+        if initial_value is not None:
+            raw = self._normalize_initial_value(initial_value)
+            value_length = len(raw)
+
+        if size is None and value_length is None:
+            msg = "size or initial_value is required"
+            raise ValueError(msg)
+
+        if size is None:
+            size = value_length
+        elif value_length is not None and size != value_length:
+            msg = f"size ({size}) does not match initial value length ({value_length})"
+            raise ValueError(msg)
+
+        if isinstance(initial_value, int) and size != 2:
+            msg = "16bit initial value requires size=2"
+            raise ValueError(msg)
+
+        assert size is not None
+
+        if raw is None:
+            raw = []
+            value_length = 0
+
         address = self._current_address
         self._allocated.append((name, address))
         self._lookup[name] = address
         self._current_address += size
         self._descriptions[name] = description
+
+        offset = self._ensure_capacity(address, size)
+        if raw is not None:
+            self._initial_bytes[offset : offset + len(raw)] = raw
+
         return address
 
     def get(self, name: str) -> int:
@@ -265,3 +332,24 @@ class MemAddrAllocator:
             desc = f"# {desc}" if desc else ""
             s += f"{address:05X}h: {name} {desc}\n"
         return s
+
+    @property
+    def initial_bytes(self) -> bytes:
+        """初期値が設定されたバイト列（未設定は 0 埋め）を返す。"""
+
+        return bytes(self._initial_bytes)
+
+    @property
+    def total_size(self) -> int:
+        """割り当て済み領域の全サイズを返す。"""
+
+        return self._current_address - self._base_address
+
+    def write_initial_values(self, target: bytearray) -> None:
+        """保持している初期値を ``target`` に書き込む。"""
+
+        if len(target) < self.total_size:
+            msg = "target buffer is too small to receive initial values"
+            raise ValueError(msg)
+
+        target[: self.total_size] = self._initial_bytes[: self.total_size]
