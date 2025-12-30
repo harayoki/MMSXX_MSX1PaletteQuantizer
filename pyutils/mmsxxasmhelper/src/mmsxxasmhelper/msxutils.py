@@ -29,6 +29,7 @@ __all__ = [
     "build_update_input_func",
     "INPUT_KEY_BIT",
     "build_beep_control_utils",
+    "build_set_vram_write_func",
 
     "VDP_CTRL",
     "VDP_DATA",
@@ -645,4 +646,19 @@ def build_beep_control_utils(
         RET(block)
 
     return BEEP_WRITE_FUNC, Func("SIMPLE_BEEP", simple_beep), Func("UPDATE_BEEP", update_beep)
+
+
+def build_set_vram_write_func() -> Func:
+    def set_vram_write(block: Block) -> None:
+        # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
+        # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
+
+        LD.A_L(block)
+        OUT(block, 0x99)  # 下位8bit
+
+        LD.A_H(block)
+        OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
+        OUT(block, 0x99)  # 上位8bit
+
+    return Func("SET_VRAM_WRITE", set_vram_write)
 

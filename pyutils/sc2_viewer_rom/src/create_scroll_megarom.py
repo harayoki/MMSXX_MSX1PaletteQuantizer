@@ -107,6 +107,7 @@ from mmsxxasmhelper.msxutils import (
     build_update_input_func,
     INPUT_KEY_BIT,
     build_beep_control_utils,
+    build_set_vram_write_func,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -365,19 +366,6 @@ def build_reset_name_table_func() -> Func:
 RESET_NAME_TABLE_FUNC = build_reset_name_table_func()
 
 
-def build_set_vram_write_func() -> Func:
-    def set_vram_write(block: Block) -> None:
-        # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
-        # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
-
-        LD.A_L(block)
-        OUT(block, 0x99)  # 下位8bit
-
-        LD.A_H(block)
-        OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
-        OUT(block, 0x99)  # 上位8bit
-
-    return Func("SET_VRAM_WRITE", set_vram_write)
 
 
 def build_scroll_vram_xfer_func() -> Func:
@@ -658,14 +646,6 @@ def build_boot_bank(
 
     # --- 関数定義 ---
     define_created_funcs(b)
-    # RESET_NAME_TABLE_FUNC.define(b)
-    # SET_VRAM_WRITE_FUNC.define(b)
-    # SCROLL_VRAM_XFER_FUNC.define(b)
-    # UPDATE_IMAGE_DISPLAY_FUNC.define(b)
-    # UPDATE_INPUT_FUNC.define(b)
-    # BEEP_WRITE_FUNC.define(b)
-    # SIMPLE_BEEP_FUNC.define(b)
-    # UPDATE_BEEP_FUNC.define(b)
 
     b.label("IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
