@@ -31,7 +31,6 @@ __all__ = [
     "build_beep_control_utils",
     "build_set_vram_write_func",
     "build_scroll_name_table_func",
-
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
@@ -704,4 +703,5 @@ def build_scroll_name_table_func(SET_VRAM_WRITE_FUNC: Func) -> Func:
         RET(block)
 
     return Func("SCROLL_NAME_TABLE", scroll_name_table)
+
 

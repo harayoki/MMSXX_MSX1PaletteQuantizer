@@ -197,7 +197,7 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 
     messages = []
     for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
-        message = f"{origin + offset:05X}h: {name}"
+        message = f"{origin + offset:04X}: {name}"
         messages.append(message)
         if not no_print:
             print(message, file=stream)

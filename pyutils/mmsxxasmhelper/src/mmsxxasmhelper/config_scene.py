@@ -1,0 +1,457 @@
+"""SCREEN 0 汎用コンフィグ画面の生成ユーティリティ。
+
+`build_screen0_config_menu` の呼び出し例::
+
+    from mmsxxasmhelper.core import Block
+    from mmsxxasmhelper.msxutils import build_update_input_func
+    from mmsxxasmhelper.config_scene import (
+        Screen0ConfigEntry,
+        build_screen0_config_menu,
+    )
+
+    block = Block()
+    update_input = build_update_input_func()
+    init_func, loop_func, table_func = build_screen0_config_menu(
+        [
+            Screen0ConfigEntry("MODE", ["MSX1", "MSX2"], 0xC200),
+            Screen0ConfigEntry("SPEED", ["SLOW", "FAST"], 0xC201),
+        ],
+        update_input_func=update_input,
+    )
+
+    # 必要な順序でコードを配置する
+    init_func.emit(block)
+    loop_func.emit(block)
+    table_func.emit(block)
+
+ゲーム側では `init_func` で VRAM へ UI を構築し、
+メインループから `loop_func` を呼び続けるだけで
+カーソル移動と左右選択、ESC 抜けが機能する。
+オプション値は各項目の ``store_addr`` に 0 起点のインデックスが保持される。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Sequence
+
+from mmsxxasmhelper.core import *
+from mmsxxasmhelper.utils import *
+
+from .msxutils import build_set_vram_write_func, INPUT_KEY_BIT, set_screen_colors_macro, set_screen_mode_macro
+
+__all__ = ["Screen0ConfigEntry", "build_screen0_config_menu"]
+
+
+@dataclass(frozen=True)
+class Screen0ConfigEntry:
+    """SCREEN 0 用のコンフィグ項目定義。"""
+
+    name: str
+    options: Sequence[str]
+    store_addr: int
+
+
+def build_screen0_config_menu(
+    entries: Sequence[Screen0ConfigEntry] | dict[str, dict[str, object]],
+    *,
+    update_input_func: Func,
+    input_hold_addr: int = 0xC100,
+    input_trg_addr: int = 0xC101,
+    work_base_addr: int = 0xC110,
+    screen0_name_base: int = 0x1800,
+    sprite_pattern_addr: int = 0x3800,
+    sprite_attribute_addr: int = 0x1B00,
+    top_row: int = 4,
+    label_col: int = 2,
+    option_col: int = 12,
+    option_field_padding: int = 1,
+    triangle_color: int = 15,
+) -> tuple[Func, Func, Func]:
+    """辞書定義から SCREEN 0 のコンフィグ画面を生成する。"""
+
+    def _normalize_entries(
+        raw_entries: Sequence[Screen0ConfigEntry] | dict[str, dict[str, object]]
+    ) -> list[Screen0ConfigEntry]:
+        if isinstance(raw_entries, dict):
+            normalized: list[Screen0ConfigEntry] = []
+            for key, value in raw_entries.items():
+                options = value.get("options") if isinstance(value, dict) else None
+                addr = value.get("addr") if isinstance(value, dict) else None
+                if options is None or addr is None:
+                    raise ValueError(
+                        "dict 定義は {'<name>': {'options': [...], 'addr': 0xC200}} の形式にしてください"
+                    )
+                normalized.append(
+                    Screen0ConfigEntry(
+                        name=str(key),
+                        options=[str(opt) for opt in options],
+                        store_addr=int(addr),
+                    )
+                )
+            return normalized
+        return list(raw_entries)
+
+    config_entries = _normalize_entries(entries)
+    if not config_entries:
+        raise ValueError("entries が空です")
+
+    entry_count = len(config_entries)
+    option_field_width = max(len(opt) for entry in config_entries for opt in entry.options)
+    option_field_width += option_field_padding * 2
+
+    CURRENT_ENTRY_ADDR = work_base_addr
+    DRAW_OPT_JT_LABEL = unique_label("__DRAW_OPT_JT__")
+    ENTRY_VALUE_ADDR_LABEL = unique_label("__ENTRY_VALUE_ADDR__")
+    ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
+    OPT_PTR_TABLE_LABEL = unique_label("__OPT_PTR_TABLE__")
+    OPTION_POINTER_LABELS = [unique_label("__OPT_PTR__") for _ in config_entries]
+
+    TRIANGLE_PATTERN_LEFT = [
+        0b00011000,
+        0b00011000,
+        0b00011000,
+        0b00011000,
+        0b00011000,
+        0b00011000,
+        0b00011000,
+        0b00011000,
+    ]
+    TRIANGLE_PATTERN_RIGHT = [
+        0b00011000,
+        0b00110000,
+        0b01100000,
+        0b11000000,
+        0b01100000,
+        0b00110000,
+        0b00011000,
+        0b00001100,
+    ]
+
+    SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
+
+    def _emit_write_text(block: Block, addr: int, data: Sequence[int]) -> None:
+        LD.HL_n16(block, addr)
+        LD.C_n8(block, 0x98)
+        SET_VRAM_WRITE_FUNC.call(block)
+        for ch in data:
+            LD.A_n8(block, ch & 0x7F)
+            OUT_C.A(block)
+
+    def _emit_draw_option(block: Block, entry: Screen0ConfigEntry, entry_index: int) -> None:
+        LD.A_n8(block, ord(" "))
+        LD.HL_n16(block, sprite_attribute_addr)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.C_n8(block, 0x98)
+        for _ in range(8):
+            OUT_C.A(block)
+            OUT_C.A(block)
+
+        LD.A_n8(block, entry_index)
+        LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+
+        option_addr = screen0_name_base + (top_row + entry_index) * 40 + option_col
+        LD.HL_n16(block, entry.store_addr)
+        LD.A_mHL(block)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, OPT_PTR_TABLE_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        PUSH.DE(block)
+        POP.HL(block)
+        LD.DE_n16(block, option_addr)
+        LD.B_n8(block, option_field_width)
+
+        print_loop = unique_label("__OPT_PRINT_LOOP__")
+        fill_loop = unique_label("__OPT_FILL_LOOP__")
+
+        block.label(print_loop)
+        LD.A_mHL(block)
+        INC.HL(block)
+        OR.A(block)
+        JR_Z(block, fill_loop)
+        OUT_C.A(block)
+        DEC.B(block)
+        JR_NZ(block, print_loop)
+        RET(block)
+
+        block.label(fill_loop)
+        LD.A_n8(block, ord(" "))
+        OUT_C.A(block)
+        DEC.B(block)
+        JR_NZ(block, fill_loop)
+        RET(block)
+
+    def _emit_option_pointer_table(
+        block: Block, entry: Screen0ConfigEntry, label_name: str
+    ) -> None:
+        block.label(label_name)
+        for opt in entry.options:
+            opt_label = unique_label("__OPT_STR__")
+            pos = block.emit(0, 0)
+            block.add_abs16_fixup(pos, opt_label)
+            block.label(opt_label)
+            DB(block, *(ord(ch) & 0xFF for ch in opt), 0x00)
+
+    draw_option_funcs: list[Func] = []
+    for idx, entry in enumerate(config_entries):
+        draw_option_funcs.append(
+            Func(f"DRAW_OPTION_{idx}", lambda b, e=entry, i=idx: _emit_draw_option(b, e, i))
+        )
+
+    def draw_option_dispatch(block: Block) -> None:
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, DRAW_OPT_JT_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        PUSH.DE(block)
+        POP.HL(block)
+        JP_mHL(block)
+
+    DRAW_OPTION_DISPATCH = Func("DRAW_OPTION_FOR_CURRENT", draw_option_dispatch)
+
+    def update_triangle_sprites(block: Block) -> None:
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.E_A(block)
+        LD.D_n8(block, 0)
+
+        LD.HL_label(block, ENTRY_OPTION_COUNT_LABEL)
+        ADD.HL_DE(block)
+        LD.B_mHL(block)
+
+        LD.A_E(block)
+        ADD.A_A(block)
+        LD.E_A(block)
+        LD.HL_label(block, ENTRY_VALUE_ADDR_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        PUSH.DE(block)
+        POP.HL(block)
+
+        LD.A_mHL(block)
+        LD.C_A(block)
+
+        LD.HL_n16(block, sprite_attribute_addr)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.C_n8(block, 0x98)
+
+        PUSH.DE(block)
+        POP.HL(block)
+        ADD.HL_HL(block)
+        ADD.HL_HL(block)
+        ADD.HL_HL(block)
+        LD.DE_n16(block, (top_row * 8) + 6)
+        ADD.HL_DE(block)
+        LD.A_L(block)
+        LD.D_A(block)
+
+        LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
+        LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
+        RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
+        RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
+
+        block.label(LEFT_VISIBLE)
+        OR.A(block)
+        JR_Z(block, LEFT_HIDDEN)
+        LD.A_D(block)
+        OUT_C.A(block)
+        LD.A_n8(block, (option_col - 1) * 8)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+        LD.A_n8(block, triangle_color & 0x0F)
+        OUT_C.A(block)
+        JR(block, RIGHT_VISIBLE)
+
+        block.label(LEFT_HIDDEN)
+        LD.A_n8(block, 0xD0)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+
+        block.label(RIGHT_VISIBLE)
+        LD.A_B(block)
+        DEC.A(block)
+        CP.C(block)
+        JR_Z(block, RIGHT_HIDDEN)
+        JP_M(block, RIGHT_HIDDEN)
+        LD.A_D(block)
+        OUT_C.A(block)
+        LD.A_n8(block, (option_col + option_field_width) * 8)
+        OUT_C.A(block)
+        LD.A_n8(block, 1)
+        OUT_C.A(block)
+        LD.A_n8(block, triangle_color & 0x0F)
+        OUT_C.A(block)
+        RET(block)
+
+        block.label(RIGHT_HIDDEN)
+        LD.A_n8(block, 0xD0)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+        LD.A_n8(block, 0)
+        OUT_C.A(block)
+        RET(block)
+
+    UPDATE_TRIANGLE_FUNC = Func("UPDATE_TRIANGLE_SPRITES", update_triangle_sprites)
+
+    def adjust_option(block: Block, delta: int) -> None:
+        adjust_end = unique_label("__ADJUST_END__")
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.E_A(block)
+        LD.D_n8(block, 0)
+
+        LD.A_E(block)
+        ADD.A_A(block)
+        LD.E_A(block)
+        LD.HL_label(block, ENTRY_VALUE_ADDR_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+
+        LD.A_E(block)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)
+        ADD.HL_DE(block)
+        LD.B_mHL(block)
+
+        LD.A_mDE(block)
+        if delta > 0:
+            CP.B(block)
+            JR_NC(block, adjust_end)
+            INC.A(block)
+        else:
+            OR.A(block)
+            JR_Z(block, adjust_end)
+            DEC.A(block)
+        LD.mDE_A(block)
+        DRAW_OPTION_DISPATCH.call(block)
+        UPDATE_TRIANGLE_FUNC.call(block)
+        block.label(adjust_end)
+        RET(block)
+
+    ADJUST_OPTION_PLUS = Func("ADJUST_OPTION_PLUS", lambda b: adjust_option(b, +1))
+    ADJUST_OPTION_MINUS = Func("ADJUST_OPTION_MINUS", lambda b: adjust_option(b, -1))
+
+    def init_config_screen(block: Block) -> None:
+        set_screen_mode_macro(block, 0)
+        set_screen_colors_macro(block, 15, 4, 4, current_screen_mode=0)
+
+        LD.HL_n16(block, sprite_pattern_addr)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.C_n8(block, 0x98)
+        for b in TRIANGLE_PATTERN_LEFT + TRIANGLE_PATTERN_RIGHT:
+            LD.A_n8(block, b)
+            OUT_C.A(block)
+
+        LD.HL_n16(block, sprite_attribute_addr)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.C_n8(block, 0x98)
+        for _ in range(8):
+            LD.A_n8(block, 0xD0)
+            OUT_C.A(block)
+            LD.A_n8(block, 0)
+            OUT_C.A(block)
+
+        for idx, entry in enumerate(config_entries):
+            label_bytes = [ord(ch) & 0x7F for ch in entry.name]
+            label_bytes.append(ord(":"))
+            label_addr = screen0_name_base + (top_row + idx) * 40 + label_col
+            _emit_write_text(block, label_addr, label_bytes)
+            draw_option_funcs[idx].call(block)
+
+        LD.A_n8(block, 0)
+        LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+        UPDATE_TRIANGLE_FUNC.call(block)
+        RET(block)
+
+    def run_config_loop(block: Block) -> None:
+        loop_label = unique_label("__CONFIG_LOOP__")
+        block.label(loop_label)
+        HALT(block)
+        update_input_func.call(block)
+
+        LD.A_mn16(block, input_trg_addr)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_ESC)
+        RET_NZ(block)
+
+        LD.A_mn16(block, input_trg_addr)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_UP)
+        skip_up = unique_label("__SKIP_UP__")
+        JR_Z(block, skip_up)
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        OR.A(block)
+        JR_Z(block, skip_up)
+        DEC.A(block)
+        LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+        UPDATE_TRIANGLE_FUNC.call(block)
+        block.label(skip_up)
+
+        LD.A_mn16(block, input_trg_addr)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_DOWN)
+        skip_down = unique_label("__SKIP_DOWN__")
+        JR_Z(block, skip_down)
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        INC.A(block)
+        CP.n8(block, entry_count)
+        JR_NC(block, skip_down)
+        LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+        UPDATE_TRIANGLE_FUNC.call(block)
+        block.label(skip_down)
+
+        LD.A_mn16(block, input_trg_addr)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_LEFT)
+        skip_left = unique_label("__SKIP_LEFT__")
+        JR_Z(block, skip_left)
+        ADJUST_OPTION_MINUS.call(block)
+        block.label(skip_left)
+
+        LD.A_mn16(block, input_trg_addr)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_RIGHT)
+        skip_right = unique_label("__SKIP_RIGHT__")
+        JR_Z(block, skip_right)
+        ADJUST_OPTION_PLUS.call(block)
+        block.label(skip_right)
+
+        JP(block, loop_label)
+
+    def emit_tables(block: Block) -> None:
+        block.label(DRAW_OPT_JT_LABEL)
+        for func in draw_option_funcs:
+            pos = block.emit(0, 0)
+            block.add_abs16_fixup(pos, func.name)
+        block.label(ENTRY_VALUE_ADDR_LABEL)
+        for entry in config_entries:
+            DW(block, entry.store_addr & 0xFFFF)
+        block.label(ENTRY_OPTION_COUNT_LABEL)
+        for entry in config_entries:
+            DB(block, len(entry.options) & 0xFF)
+        block.label(OPT_PTR_TABLE_LABEL)
+        for idx, entry in enumerate(config_entries):
+            _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
+
+    INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen)
+    RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop)
+    TABLE_FUNC = Func("CONFIG_SCREEN0_TABLES", emit_tables, no_auto_ret=True)
+
+    return INIT_FUNC, RUN_LOOP_FUNC, TABLE_FUNC
