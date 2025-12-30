@@ -458,3 +458,109 @@ def ldirvm_macro(
 #     # call_subrom_macro(block, SETPLET)
 
 
+# --- 入力関連システム変数・BIOS ---
+SNSMAT = 0x0141  # キーマトリックス読み取り
+GTSTCK = 0x00D5  # ジョイスティック状態取得
+GTTRIG = 0x00D8  # ジョイスティックボタン取得
+
+# --- 仮想ボタン定義 (論理ビット) ---
+L_UP = 0  # Bit 0
+L_DOWN = 1  # Bit 1
+L_LEFT = 2  # Bit 2
+L_RIGHT = 3  # Bit 3
+L_BTN_A = 4  # Bit 4 (SPACE / タップ)
+L_BTN_B = 5  # Bit 5 (SHIFT / ジョイスティック2)
+L_ESC = 6  # Bit 6
+L_EXTRA = 7  # Bit 7
+
+# --- ワークエリア (作成中のプログラムに合わせて調整) ---
+# 今回は作成中のコードの WORK_RAM_BASE を利用する想定
+INPUT_HOLD = 0xC100  # 現在押されている全入力
+INPUT_TRG = 0xC101  # 今回新しく押された入力
+
+
+def build_update_input_func() -> Func:
+    """
+    論理入力を更新する共通関数。
+    キーボード、(将来的に)ジョイスティック、スマホI/O等を統合して
+    INPUT_HOLD / INPUT_TRG を作成する。
+    """
+
+    def update_input(block: Block) -> None:
+        # --- 1. 物理入力のサンプリング ---
+        # 最終的に A レジスタに論理ビット(1=押下)を組み立てる
+        PUSH.IX(block)
+        LD.IX_n16(block, 0)  # IXL を作業用ボタンフラグにする (0でリセット)
+
+        # Keyboard: SPACE (Matrix 8, Bit 0)
+        LD.A_n8(block, 8)
+        CALL(block, SNSMAT)
+        # Bit 0 が 0 なら押下。反転させて論理Bit4へ
+        CPL(block)
+        BIT.n8_A(block, 0)
+        JR_Z(block, "__SKIP_KBD_SPACE__")
+        LD.A_n8(block, 1 << L_BTN_A)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("__SKIP_KBD_SPACE__")
+
+        # Keyboard: SHIFT (Matrix 6, Bit 0)
+        LD.A_n8(block, 6)
+        CALL(block, SNSMAT)
+        CPL(block)
+        BIT.n8_A(block, 0)
+        JR_Z(block, "__SKIP_KBD_SHIFT__")
+        LD.A_n8(block, 1 << L_BTN_B)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("__SKIP_KBD_SHIFT__")
+
+        # --- 2. HOLD と TRG の更新計算 ---
+        # A = 今回の最新HOLD (IXL)
+        LD.A_IXL(block)
+        LD.HL_n16(block, INPUT_HOLD)
+        LD.C_mHL(block)  # C = 前回の HOLD
+        LD.mHL_A(block)  # 今回の A を新しい INPUT_HOLD として保存
+
+        # TRG = NEW_HOLD AND (NOT OLD_HOLD)
+        # C = OLD_HOLD なので反転して A と AND
+        LD.B_A(block)  # B = 今回の HOLD
+        LD.A_C(block)  # A = 前回の HOLD
+        CPL(block)  # A = NOT 前回の HOLD
+        AND.B(block)  # A = NEW & (~OLD)
+        LD.mn16_A(block, INPUT_TRG)
+
+        POP.IX(block)
+
+    return Func("update_input", update_input)
+
+
+"""
+使い方
+
+# ...初期化...
+    b.label("MAIN_LOOP")
+    HALT(block) # V-Sync待ち（これを入れないとキー判定が速すぎる）
+    UPDATE_INPUT_CALL.call(b)
+
+    # SPACE(BTN_A)が今押されたかチェック
+    LD.A_mn16(b, INPUT_TRG)
+    BIT.n8_A(b, L_BTN_A)
+    JR_Z(b, "MAIN_LOOP")
+
+    # スペースが押された時、SHIFT(BTN_B)が保持されているか？
+    LD.A_mn16(b, INPUT_HOLD)
+    BIT.n8_A(b, L_BTN_B)
+    JR_NZ(b, "PREV_IMAGE")
+
+    # --- NEXT ---
+    # (画像番号を加算して描画ルーチンへ)
+    # ...
+    JR(b, "MAIN_LOOP")
+
+    # --- PREV ---
+    # (画像番号を減算して描画ルーチンへ)
+    # ...
+    JR(b, "MAIN_LOOP")
+
+"""
