@@ -243,30 +243,16 @@ class MemAddrAllocator:
 
     def _normalize_initial_value(self, value: object) -> list[int]:
         if isinstance(value, (bytes, bytearray)):
-            raw = list(value)
-        elif isinstance(value, int):
-            raw = [value & 0xFF, (value >> 8) & 0xFF]
-        elif isinstance(value, Sequence):
-            if not value:
-                raw = []
-            elif all(isinstance(v, str) for v in value):
-                raw = [ord(v) for v in value]  # type: ignore[arg-type]
-            elif all(isinstance(v, int) for v in value):
-                raw = [int(v) & 0xFF for v in value]
-            else:  # pragma: no cover - defensive branch
-                msg = "initial value sequence must contain int or str elements"
-                raise TypeError(msg)
-        else:  # pragma: no cover - defensive branch
-            msg = "unsupported initial value type"
-            raise TypeError(msg)
+            return list(value)
 
-        return raw
+        msg = "initial value must be bytes or bytearray"
+        raise TypeError(msg)
 
     def add(
         self,
         name: str,
         size: int | None = None,
-        initial_value: object | None = None,
+        initial_value: bytes | bytearray | None = None,
         description: str = "",
     ) -> int:
         """名前とサイズを登録し、割り当て先アドレスを返す。"""
@@ -289,10 +275,6 @@ class MemAddrAllocator:
             size = value_length
         elif value_length is not None and size != value_length:
             msg = f"size ({size}) does not match initial value length ({value_length})"
-            raise ValueError(msg)
-
-        if isinstance(initial_value, int) and size != 2:
-            msg = "16bit initial value requires size=2"
             raise ValueError(msg)
 
         assert size is not None
