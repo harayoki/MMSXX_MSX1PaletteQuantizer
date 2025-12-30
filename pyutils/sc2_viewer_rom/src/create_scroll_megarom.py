@@ -613,37 +613,40 @@ def build_boot_bank(
 
     # --- [メインループ] ---
     b.label("MAIN_LOOP")
-    # V-Sync 待ち (チャタリング防止と速度調整)
-    HALT(b)
-
-    # 仮想入力の更新
+    HALT(b)  # V-Sync 待ち
     UPDATE_INPUT_FUNC.call(b)
 
-    # SPACE (論理 BTN_A) が今押されたか？
+    # SPACE (論理 L_BTN_A) が「今押されたか」をまずチェック
     LD.A_mn16(b, INPUT_TRG)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
     JR_Z(b, "MAIN_LOOP")
 
-    # 押された。次に SHIFT (論理 BTN_B) が「保持」されているか？
+    # スペースが押された！ 次に SHIFT (論理 L_BTN_B) が「現在保持されているか」をチェック
     LD.A_mn16(b, INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
-    JR_NZ(b, "PREV_IMAGE")
+    JR_NZ(b, "PREV_IMAGE")  # SHIFTありなら戻る
 
-    # --- [次へ移動] ---
+    # --- [NEXT_IMAGE: 次へ（ループ対応）] ---
     b.label("NEXT_IMAGE")
     LD.A_mn16(b, CURRENT_IMAGE_ADDR)
     INC.A(b)
-    CP.n8(b, len(image_entries))  # 画像枚数と比較
-    JR_Z(b, "MAIN_LOOP")  # 終端なら無視
-    UPDATE_IMAGE_DISPLAY_FUNC.call(b)
-    JR(b, "MAIN_LOOP")
+    CP.n8(b, len(image_entries))
+    JR_C(b, "__GO_UPDATE__")  # 枚数未満ならそのまま更新へ
+    XOR.A(b)  # 枚数に達したら 0 (最初) に戻す
+    JR(b, "__GO_UPDATE__")
 
-    # --- [前へ移動] ---
+    # --- [PREV_IMAGE: 前へ（ループ対応）] ---
     b.label("PREV_IMAGE")
     LD.A_mn16(b, CURRENT_IMAGE_ADDR)
-    OR.A(b)
-    JR_Z(b, "MAIN_LOOP")  # 最初なら無視
+    OR.A(b)  # 現在 0 かチェック
+    JR_NZ(b, "__SUB_AND_UPDATE__")
+    LD.A_n8(b, len(image_entries) - 1)  # 0 なら最後の画像番号へ
+    JR(b, "__GO_UPDATE__")
+
+    b.label("__SUB_AND_UPDATE__")
     DEC.A(b)
+
+    b.label("__GO_UPDATE__")
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
     JR(b, "MAIN_LOOP")
 
