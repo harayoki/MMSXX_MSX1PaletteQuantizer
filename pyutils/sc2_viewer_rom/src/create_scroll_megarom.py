@@ -79,6 +79,8 @@ from mmsxxasmhelper.core import (
     DB,
     DW,
     NOP,
+    OUT,
+    OUT_A,
     OUTI,
     unique_label,
 )
@@ -123,17 +125,14 @@ COLOR_BASE = 0x2000
 
 # MSX RAM での作業領域
 WORK_RAM_BASE = 0xC000
-PATTERN_RAM_BASE = WORK_RAM_BASE
+# PATTERN_RAM_BASE = WORK_RAM_BASE
 PATTERN_RAM_SIZE = 0x1800
-COLOR_RAM_BASE = WORK_RAM_BASE
+# COLOR_RAM_BASE = WORK_RAM_BASE
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
-
-CHSNS = 0x009C
-CHGET = 0x009F
 
 # 状況を保存するメモリアドレス
 CURRENT_IMAGE_ADDR = WORK_RAM_BASE + PATTERN_RAM_SIZE  # 現在表示している画像のヘッダ開始位置（パターン領域の直後）
@@ -348,6 +347,21 @@ def build_init_name_table_func() -> Func:
 INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
+def build_set_vram_write_func() -> Func:
+    def set_vram_write(block: Block) -> None:
+        # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
+        # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
+
+        LD.A_L(block)
+        OUT(block, 0x99)  # 下位8bit
+
+        LD.A_H(block)
+        OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
+        OUT(block, 0x99)  # 上位8bit
+
+    return Func("SET_VRAM_WRITE", set_vram_write)
+
+
 def build_scroll_vram_xfer_func() -> Func:
     def scroll_vram_xfer(block: Block) -> None:
         # --- 入力規定 ---
@@ -397,25 +411,33 @@ def build_scroll_vram_xfer_func() -> Func:
     """
     呼び出し方のイメージ
     
-    ; パターン転送の場合
-    LD  HL, (計算したPGのROMアドレス)
-    LD  A, (CURRENT_IMAGE_START_BANK_ADDR)
-    LD  E, A
-    LD  B, 24   ; 24行
+    ; --- パターン転送の場合 (VRAM 0x0000) ---
+    LD   HL, 0x0000         ; 書き込み先VRAMアドレス
+    CALL SET_VRAM_WRITE     ; VDPへのアドレスセットルーチン
+    ; --- ここでHLをROMアドレスに、Eをバンクに、Dを行数にセット ---
+    LD   HL, (計算したPGのROMアドレス)
+    LD   A, (CURRENT_IMAGE_START_BANK_ADDR)
+    LD   E, A
+    LD   D, 24              ; 行数（前述の通りDレジスタを使用）
     CALL scroll_vram_xfer
     
-    ; カラー転送の場合
-    LD  HL, (計算したCTのROMアドレス)
-    LD  A, (CURRENT_IMAGE_COLOR_BANK_ADDR)
-    LD  E, A
-    LD  B, 24
+    ; --- カラー転送の場合 (VRAM 0x2000) ---
+    LD   HL, 0x2000         ; 書き込み先VRAMアドレス
+    CALL SET_VRAM_WRITE
+    ; --- ROMアドレス、バンク、行数をセット ---
+    LD   HL, (計算したCTのROMアドレス)
+    LD   A, (CURRENT_IMAGE_COLOR_BANK_ADDR)
+    LD   E, A
+    LD   D, 24
     CALL scroll_vram_xfer
     """
 
     return Func("scroll_vram_xfer", scroll_vram_xfer)
 
 
+SET_VRAM_WRITE_CALL = build_set_vram_write_func()
 SCROLL_VRAM_XFER_CALL = build_scroll_vram_xfer_func()
+
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -509,12 +531,12 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
 
-    # パターン／カラーバッファをゼロクリアして黒で埋める。
-    XOR.A(b)  # A=0
-    LD.HL_n16(b, PATTERN_RAM_BASE)  # 転送元 C000h
-    LD.mHL_A(b)  # C000h = 0
-    # コピー先とコピー元がかぶった連続メモリ転送で同じ値を配置 # 転送先 C001h # 転送バイト 0x1800
-    ldir_macro(b, dest_DE=PATTERN_RAM_BASE+1, length_BC=PATTERN_RAM_SIZE-1)
+    # # パターン／カラーバッファをゼロクリアして黒で埋める。
+    # XOR.A(b)  # A=0
+    # LD.HL_n16(b, PATTERN_RAM_BASE)  # 転送元 C000h
+    # LD.mHL_A(b)  # C000h = 0
+    # # コピー先とコピー元がかぶった連続メモリ転送で同じ値を配置 # 転送先 C001h # 転送バイト 0x1800
+    # ldir_macro(b, dest_DE=PATTERN_RAM_BASE+1, length_BC=PATTERN_RAM_SIZE-1)
 
     # 現状パターンとカラーのバッファは同じ位置なのでクリア処理はいらない
     # LD.HL_n16(b, COLOR_RAM_BASE)
@@ -523,32 +545,29 @@ def build_boot_bank(
     # LD.mHL_A(b)
     # b.emit(0xED, 0xB0)  # LDIR
 
-    # 表示行数の確定 MAX24行 aレジスタに代入
-    calc_line_num_for_reg_a_macro(b)
-    # パターン（画面24タイル分）RAM転送
-    LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数
-    ldir_macro(b, source_HL=DATA_BANK_ADDR, dest_DE=PATTERN_RAM_BASE)  # DATA_BANK_ADDR:0x8000
-    # パターン（画面24タイル分）VRAM転送
-    ldirvm_macro(b, source_HL=PATTERN_RAM_BASE, dest_DE=PATTERN_BASE, length_BC=PATTERN_RAM_SIZE)
-
-    # カラーデータのあるバンクに切り替え
-    LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
-    LD.mn16_A(b, ASCII16_PAGE2_REG)
-
-    # 表示行数の確定 MAX24行 aレジスタに代入
-    calc_line_num_for_reg_a_macro(b)
-    # カラーテーブル（画面24タイル分）RAM転送
-    LD.B_A(b), LD.C_n8(b, 0x00)  # BC = 行数 (24行)
-    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)  # source_HL
-    LD.DE_n16(b, COLOR_RAM_BASE)  # DE = C000H  # dest_DE
-    ldir_macro(b)
+    # # パターン（画面24タイル分）RAM転送
+    LD.HL_n16(b, PATTERN_BASE)
+    SET_VRAM_WRITE_CALL.call(b)
+    LD.HL_n16(b, DATA_BANK_ADDR)
+    LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
+    LD.E_A(b)
+    LD.D_n8(b, 24)
+    SCROLL_VRAM_XFER_CALL.call(b)
 
     # カラーテーブル（画面24タイル分）VRAM転送
-    ldirvm_macro(b, source_HL=COLOR_RAM_BASE, dest_DE=COLOR_BASE, length_BC=COLOR_RAM_SIZE)
+    LD.HL_n16(b, COLOR_BASE)
+    SET_VRAM_WRITE_CALL.call(b)
+    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+    LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
+    LD.E_A(b)
+    LD.D_n8(b, 24)
+    SCROLL_VRAM_XFER_CALL.call(b)
+
 
     loop_infinite_macro(b)
 
     INIT_NAME_TABLE_CALL.define(b)
+    SET_VRAM_WRITE_CALL.define(b)
     SCROLL_VRAM_XFER_CALL.define(b)
 
     b.label("IMAGE_HEADER_TABLE")
@@ -638,8 +657,7 @@ def build(
         )
         next_bank += len(banks)
 
-        header_bytes.extend(
-            [
+        header_byte = [
                 start_bank,
                 image.tile_rows & 0xFF,
                 (image.tile_rows >> 8) & 0xFF,
@@ -651,7 +669,8 @@ def build(
                 color_address & 0xFF,
                 (color_address >> 8) & 0xFF,
             ]
-        )
+        print(f"header #{i} {header_byte}")
+        header_bytes.extend(header_byte)
 
     if next_bank > 0x100:
         raise ValueError("Total bank count exceeds 255, which is unsupported")
@@ -663,6 +682,8 @@ def build(
     )
     if len(header_bytes) != expected_header_length:
         raise AssertionError("header_bytes length mismatch")
+
+    print_bytes(header_bytes, title="header bytes")
 
     banks = [build_boot_bank(image_entries, header_bytes, fill_byte)]
     banks.extend(data_banks)
