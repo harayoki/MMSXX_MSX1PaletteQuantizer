@@ -65,7 +65,7 @@ __all__ = [
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
-    "Func",
+    "Func", "define_created_funcs",
     "DB", "DW",
     "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR", "BIT",
     "CPL", "NEG",
@@ -89,6 +89,7 @@ from typing import Callable, Dict, List, Literal
 # ---------------------------------------------------------------------------
 
 _label_counter = count()
+_created_funcs: List["Func"] = []
 
 
 def unique_label(prefix: str = "__L") -> str:
@@ -550,6 +551,7 @@ class Func:
         self.name = name
         self.body = body
         self.no_auto_ret = no_auto_ret
+        _created_funcs.append(self)
 
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
@@ -565,6 +567,27 @@ class Func:
         """CALL命令を発行。"""
 
         CALL_label(b, self.name)
+
+
+def define_created_funcs(b: Block, *except_funcs: str | Func) -> None:
+    """Func で作られた関数をまとめて define するヘルパー。
+
+    Func の生成時に内部で登録される一覧から、作成順に ``define`` を行う。
+    ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
+    渡すことができる。
+    """
+
+    excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
+    excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
+    defined_names: set[str] = set()
+
+    for func in _created_funcs:
+        if func in excluded_by_ref or func.name in excluded_by_name:
+            continue
+        if func.name in defined_names:
+            continue
+        func.define(b)
+        defined_names.add(func.name)
 
 
 # ---------------------------------------------------------------------------
