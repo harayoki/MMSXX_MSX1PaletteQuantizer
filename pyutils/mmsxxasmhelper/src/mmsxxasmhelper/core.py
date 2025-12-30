@@ -68,6 +68,7 @@ __all__ = [
     "Func",
     "DB", "DW",
     "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR",
+    "CPL", "NEG",
     "LDIR",
     "RLCA",
     "INC", "DEC",
@@ -1708,6 +1709,16 @@ def SCF(b: Block) -> None:
 
 def CCF(b: Block) -> None:
     b.emit(0x3F)
+
+
+def CPL(b: Block) -> None:
+    """Aレジスタをビット反転"""
+    b.emit(0x2F)
+
+
+def NEG(b: Block) -> None:
+    """A <- 0 - A （2の補数）"""
+    b.emit(0xED, 0x44)
 
 
 # ---------------------------------------------------------------------------
