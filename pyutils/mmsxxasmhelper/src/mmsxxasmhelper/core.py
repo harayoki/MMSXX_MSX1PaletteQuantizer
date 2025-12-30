@@ -67,7 +67,7 @@ __all__ = [
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
     "Func", "define_created_funcs",
     "DB", "DW",
-    "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR", "BIT",
+    "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
     "CPL", "NEG",
     "LDIR",
@@ -1407,6 +1407,34 @@ class ADD:
         b.emit(0xFD, 0x39)
 
 
+class ADC:
+    """ADC 系命令。"""
+
+    @staticmethod
+    def HL_BC(b: Block) -> None:
+        """ADC HL,BC"""
+
+        b.emit(0xED, 0x4A)
+
+    @staticmethod
+    def HL_DE(b: Block) -> None:
+        """ADC HL,DE"""
+
+        b.emit(0xED, 0x5A)
+
+    @staticmethod
+    def HL_HL(b: Block) -> None:
+        """ADC HL,HL"""
+
+        b.emit(0xED, 0x6A)
+
+    @staticmethod
+    def HL_SP(b: Block) -> None:
+        """ADC HL,SP"""
+
+        b.emit(0xED, 0x7A)
+
+
 class SUB:
 
     @staticmethod
@@ -1445,6 +1473,34 @@ class SUB:
     def n8(b: Block, n: int):
         """a = a- n"""
         b.emit(0xD6, n & 0xFF)
+
+
+class SBC:
+    """SBC 系命令。"""
+
+    @staticmethod
+    def HL_BC(b: Block) -> None:
+        """SBC HL,BC"""
+
+        b.emit(0xED, 0x42)
+
+    @staticmethod
+    def HL_DE(b: Block) -> None:
+        """SBC HL,DE"""
+
+        b.emit(0xED, 0x52)
+
+    @staticmethod
+    def HL_HL(b: Block) -> None:
+        """SBC HL,HL"""
+
+        b.emit(0xED, 0x62)
+
+    @staticmethod
+    def HL_SP(b: Block) -> None:
+        """SBC HL,SP"""
+
+        b.emit(0xED, 0x72)
 
 
 class CP:
