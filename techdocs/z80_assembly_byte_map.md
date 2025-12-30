@@ -28,6 +28,8 @@
 | | `LD E,n` | `1E n` | 2 | E <- n |
 | | `LD H,n` | `26 n` | 2 | H <- n |
 | | `LD L,n` | `2E n` | 2 | L <- n |
+| | `LD IXH,n` | `DD 26 n` | 3 | IXH <- n |
+| | `LD IXL,n` | `DD 2E n` | 3 | IXL <- n |
 | | `LD (HL),n` | `36 n` | 2 | (HL) <- n |
 | | `LD A,n` | `3E n` | 2 | A <- n |
 | **8ビットロード (BC/DE間接)** | `LD (BC),A` | `02` | 1 | (BC) <- A |
@@ -42,6 +44,8 @@
 | | `LD B, L` | `45` | 1 | B <- L |
 | | `LD B, (HL)` | `46` | 1 | B <- (HL) |
 | | `LD B, A` | `47` | 1 | B <- A |
+| | `LD B, IXH` | `DD 44` | 2 | B <- IXH |
+| | `LD B, IXL` | `DD 45` | 2 | B <- IXL |
 | | `LD C, B` | `48` | 1 | C <- B |
 | | `LD C, C` | `49` | 1 | C <- C |
 | | `LD C, D` | `4A` | 1 | C <- D |
@@ -50,6 +54,8 @@
 | | `LD C, L` | `4D` | 1 | C <- L |
 | | `LD C, (HL)` | `4E` | 1 | C <- (HL) |
 | | `LD C, A` | `4F` | 1 | C <- A |
+| | `LD C, IXH` | `DD 4C` | 2 | C <- IXH |
+| | `LD C, IXL` | `DD 4D` | 2 | C <- IXL |
 | | `LD D, B` | `50` | 1 | D <- B |
 | | `LD D, C` | `51` | 1 | D <- C |
 | | `LD D, D` | `52` | 1 | D <- D |
@@ -58,6 +64,8 @@
 | | `LD D, L` | `55` | 1 | D <- L |
 | | `LD D, (HL)` | `56` | 1 | D <- (HL) |
 | | `LD D, A` | `57` | 1 | D <- A |
+| | `LD D, IXH` | `DD 54` | 2 | D <- IXH |
+| | `LD D, IXL` | `DD 55` | 2 | D <- IXL |
 | | `LD E, B` | `58` | 1 | E <- B |
 | | `LD E, C` | `59` | 1 | E <- C |
 | | `LD E, D` | `5A` | 1 | E <- D |
@@ -66,6 +74,8 @@
 | | `LD E, L` | `5D` | 1 | E <- L |
 | | `LD E, (HL)` | `5E` | 1 | E <- (HL) |
 | | `LD E, A` | `5F` | 1 | E <- A |
+| | `LD E, IXH` | `DD 5C` | 2 | E <- IXH |
+| | `LD E, IXL` | `DD 5D` | 2 | E <- IXL |
 | | `LD H, B` | `60` | 1 | H <- B |
 | | `LD H, C` | `61` | 1 | H <- C |
 | | `LD H, D` | `62` | 1 | H <- D |
@@ -74,6 +84,13 @@
 | | `LD H, L` | `65` | 1 | H <- L |
 | | `LD H, (HL)` | `66` | 1 | H <- (HL) |
 | | `LD H, A` | `67` | 1 | H <- A |
+| | `LD IXH, B` | `DD 60` | 2 | IXH <- B |
+| | `LD IXH, C` | `DD 61` | 2 | IXH <- C |
+| | `LD IXH, D` | `DD 62` | 2 | IXH <- D |
+| | `LD IXH, E` | `DD 63` | 2 | IXH <- E |
+| | `LD IXH, IXH` | `DD 64` | 2 | IXH <- IXH |
+| | `LD IXH, IXL` | `DD 65` | 2 | IXH <- IXL |
+| | `LD IXH, A` | `DD 67` | 2 | IXH <- A |
 | | `LD L, B` | `68` | 1 | L <- B |
 | | `LD L, C` | `69` | 1 | L <- C |
 | | `LD L, D` | `6A` | 1 | L <- D |
@@ -82,6 +99,13 @@
 | | `LD L, L` | `6D` | 1 | L <- L |
 | | `LD L, (HL)` | `6E` | 1 | L <- (HL) |
 | | `LD L, A` | `6F` | 1 | L <- A |
+| | `LD IXL, B` | `DD 68` | 2 | IXL <- B |
+| | `LD IXL, C` | `DD 69` | 2 | IXL <- C |
+| | `LD IXL, D` | `DD 6A` | 2 | IXL <- D |
+| | `LD IXL, E` | `DD 6B` | 2 | IXL <- E |
+| | `LD IXL, IXH` | `DD 6C` | 2 | IXL <- IXH |
+| | `LD IXL, IXL` | `DD 6D` | 2 | IXL <- IXL |
+| | `LD IXL, A` | `DD 6F` | 2 | IXL <- A |
 | | `LD (HL), B` | `70` | 1 | (HL) <- B |
 | | `LD (HL), C` | `71` | 1 | (HL) <- C |
 | | `LD (HL), D` | `72` | 1 | (HL) <- D |
@@ -97,6 +121,8 @@
 | | `LD A, L` | `7D` | 1 | A <- L |
 | | `LD A, (HL)` | `7E` | 1 | A <- (HL) |
 | | `LD A, A` | `7F` | 1 | A <- A |
+| | `LD A, IXH` | `DD 7C` | 2 | A <- IXH |
+| | `LD A, IXL` | `DD 7D` | 2 | A <- IXL |
 | **8ビット算術 (レジスタ間/メモリ間接)** | `ADD A, B` | `80` | 1 | A <- A + B |
 | | `ADD A, C` | `81` | 1 | A <- A + C |
 | | `ADD A, D` | `82` | 1 | A <- A + D |
