@@ -100,6 +100,7 @@ from mmsxxasmhelper.msxutils import (
     init_stack_pointer_macro,
     ldirvm_macro,
     build_update_input_func,
+    INPUT_KEY_BIT,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,

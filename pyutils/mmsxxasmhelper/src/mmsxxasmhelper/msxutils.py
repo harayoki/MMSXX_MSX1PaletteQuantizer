@@ -27,6 +27,8 @@ __all__ = [
     # "set_palette_macro",
 
     "build_update_input_func",
+    "INPUT_KEY_BIT",
+
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
@@ -459,20 +461,16 @@ def ldirvm_macro(
 #     # call_subrom_macro(block, SETPLET)
 
 
-# --- 入力関連システム変数・BIOS ---
-SNSMAT = 0x0141  # キーマトリックス読み取り
-GTSTCK = 0x00D5  # ジョイスティック状態取得
-GTTRIG = 0x00D8  # ジョイスティックボタン取得
-
 # --- 仮想ボタン定義 (論理ビット) ---
-L_UP = 0  # Bit 0
-L_DOWN = 1  # Bit 1
-L_LEFT = 2  # Bit 2
-L_RIGHT = 3  # Bit 3
-L_BTN_A = 4  # Bit 4 (SPACE / タップ)
-L_BTN_B = 5  # Bit 5 (SHIFT / ジョイスティック2)
-L_ESC = 6  # Bit 6
-L_EXTRA = 7  # Bit 7
+class INPUT_KEY_BIT:
+    L_UP: int = 0  # Bit 0
+    L_DOWN: int = 1  # Bit 1
+    L_LEFT: int = 2  # Bit 2
+    L_RIGHT: int = 3  # Bit 3
+    L_BTN_A: int = 4  # Bit 4 (SPACE / タップ)
+    L_BTN_B: int = 5  # Bit 5 (SHIFT / ジョイスティック2)
+    L_ESC: int = 6  # Bit 6
+    L_EXTRA: int = 7  # Bit 7
 
 
 def build_update_input_func(
@@ -484,6 +482,11 @@ def build_update_input_func(
     キーボード、(将来的に)ジョイスティック、スマホI/O等を統合して
     INPUT_HOLD / INPUT_TRG を作成する。ワークエリアのアドレスは引数で指定する。
     """
+
+    # --- 入力関連システム変数・BIOS ---
+    SNSMAT = 0x0141  # キーマトリックス読み取り
+    GTSTCK = 0x00D5  # ジョイスティック状態取得
+    GTTRIG = 0x00D8  # ジョイスティックボタン取得
 
     def update_input(block: Block) -> None:
         skip_kbd_space = unique_label("__SKIP_KBD_SPACE__")
@@ -501,7 +504,7 @@ def build_update_input_func(
         CPL(block)
         BIT.n8_A(block, 0)
         JR_Z(block, skip_kbd_space)
-        LD.A_n8(block, 1 << L_BTN_A)
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_A)
         OR.IXL(block)
         LD.IXL_A(block)
         block.label(skip_kbd_space)
@@ -512,7 +515,7 @@ def build_update_input_func(
         CPL(block)
         BIT.n8_A(block, 0)
         JR_Z(block, skip_kbd_shift)
-        LD.A_n8(block, 1 << L_BTN_B)
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_B)
         OR.IXL(block)
         LD.IXL_A(block)
         block.label(skip_kbd_shift)
