@@ -83,3 +83,23 @@ def test_add_fills_zeros_when_no_initial_value() -> None:
 
     assert allocator.initial_bytes[: allocator.total_size] == bytes([0x00] * 4)
 
+
+def test_lookup_contains_metadata_and_debug_output() -> None:
+    allocator = MemAddrAllocator(0x7000)
+
+    allocator.add("BUFFER", 2, initial_value=b"\x01\x02", description="buf")
+    allocator.add("FLAG", 1, description="flag")
+
+    lookup = allocator._lookup  # pylint: disable=protected-access
+
+    assert lookup["BUFFER"]["address"] == 0x7000
+    assert lookup["BUFFER"]["size"] == 2
+    assert lookup["BUFFER"]["description"] == "buf"
+    assert lookup["BUFFER"]["initial_value"] == b"\x01\x02"
+
+    assert lookup["FLAG"]["initial_value"] == b"\x00"
+
+    debug_str = allocator.as_str()
+    assert "[00] 07000h: BUFFER (size=2, initial=[01 02]) # buf" in debug_str
+    assert "[01] 07002h: FLAG (size=1, initial=[00]) # flag" in debug_str
+
