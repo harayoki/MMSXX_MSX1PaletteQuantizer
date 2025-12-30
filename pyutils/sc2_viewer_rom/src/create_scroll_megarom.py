@@ -151,21 +151,21 @@ mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
 madd = mem_addr_allocator.add
 class ADDR:
     CURRENT_IMAGE_ADDR = (
-        madd("CURRENT_IMAGE_ADDR", 1, "画像番号"))
+        madd("CURRENT_IMAGE_ADDR", 1, description="画像番号"))
     CURRENT_IMAGE_START_BANK_ADDR = (
-        madd("CURRENT_IMAGE_START_BANK_ADDR", 1, "画像データを格納しているバンク番号"))
+        madd("CURRENT_IMAGE_START_BANK_ADDR", 1, description="画像データを格納しているバンク番号"))
     CURRENT_IMAGE_ROW_COUNT_ADDR = (
-        madd("CURRENT_IMAGE_ROW_COUNT_ADDR", 2, "画像の行数（タイル行数）を保存"))
+        madd("CURRENT_IMAGE_ROW_COUNT_ADDR", 2, description="画像の行数（タイル行数）を保存"))
     CURRENT_IMAGE_COLOR_BANK_ADDR = (
-        madd("CURRENT_IMAGE_COLOR_BANK_ADDR", 1,"カラーパターンが置かれているバンク番号"))
+        madd("CURRENT_IMAGE_COLOR_BANK_ADDR", 1,description="カラーパターンが置かれているバンク番号"))
     CURRENT_IMAGE_COLOR_ADDRESS_ADDR = (
-        madd("CURRENT_IMAGE_COLOR_ADDRESS_ADDR", 2, "カラーパターンの先頭アドレス"))
+        madd("CURRENT_IMAGE_COLOR_ADDRESS_ADDR", 2, description="カラーパターンの先頭アドレス"))
     CURRENT_SCROLL_ROW = (
-        madd("CURRENT_SCROLL_ROW", 2, "スクロール位置"))
-    INPUT_HOLD = madd("INPUT_HOLD", 1, "現在押されている全入力")
-    INPUT_TRG = madd("INPUT_TRG", 1, "今回新しく押された入力")
-    BEEP_CNT = madd("BEEP_CNT", 1, "BEEPカウンタ")
-    BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , "BEEP状態")
+        madd("CURRENT_SCROLL_ROW", 2, description="スクロール位置"))
+    INPUT_HOLD = madd("INPUT_HOLD", 1, description="現在押されている全入力")
+    INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
+    BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
+    BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
 
 # CURRENT_IMAGE_ADDR = WORK_RAM_BASE + 0
 # CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
