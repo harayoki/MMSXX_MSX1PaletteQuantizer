@@ -83,6 +83,8 @@ from mmsxxasmhelper.core import (
     OUT_A,
     OUT_C,
     OUTI,
+    RET,
+    RET_NC,
     unique_label,
 )
 from mmsxxasmhelper.msxutils import (
@@ -449,6 +451,64 @@ def build_scroll_vram_xfer_func() -> Func:
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
 
+def build_update_image_display_func(image_entries_count: int) -> Func:
+    def update_image_display(block: Block) -> None:
+        # 入力: A = 切り替えたい画像番号
+
+        # --- 安全装置: 範囲外なら RET ---
+        CP.n8(block, image_entries_count)
+        RET_NC(block)  # A >= image_entries_count なら終了
+
+        # 1. 画像番号の保存
+        LD.mn16_A(block, CURRENT_IMAGE_ADDR)
+
+        # 2. ヘッダテーブルから情報を読み出す
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        PUSH.HL(block)
+        POP.DE(block)
+        ADD.HL_HL(block)  # HL = index * 2
+        ADD.HL_DE(block)  # HL = index * 3
+        ADD.HL_HL(block)  # HL = index * 6
+        LD.DE_label(block, "IMAGE_HEADER_TABLE")
+        ADD.HL_DE(block)
+
+        # 3. ワークRAM（CURRENT_IMAGE_START_BANK_ADDR以降）を 6 バイト更新
+        LD.DE_n16(block, CURRENT_IMAGE_START_BANK_ADDR)
+        for _ in range(6):
+            LD.A_mHL(block)
+            LD.mDE_A(block)
+            INC.HL(block)
+            INC.DE(block)
+
+        # 4. VRAM 描画
+        # 名前テーブル初期化（MSX1 VRAM 1800h-1AFFh）
+        RESET_NAME_TABLE_FUNC.call(block)
+
+        # パターンジェネレータ転送（VRAM 0000h-）
+        LD.HL_n16(block, PATTERN_BASE)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.HL_n16(block, DATA_BANK_ADDR)  # 常に 8000h から
+        LD.A_mn16(block, CURRENT_IMAGE_START_BANK_ADDR)
+        LD.E_A(block)
+        LD.D_n8(block, 24)  # 1画面分
+        SCROLL_VRAM_XFER_FUNC.call(block)
+
+        # カラーテーブル転送（VRAM 2000h-）
+        LD.HL_n16(block, COLOR_BASE)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.HL_mn16(block, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+        LD.A_mn16(block, CURRENT_IMAGE_COLOR_BANK_ADDR)
+        LD.E_A(block)
+        LD.D_n8(block, 24)
+        SCROLL_VRAM_XFER_FUNC.call(block)
+
+        RET(block)  # サブルーチンなので明示的にRET
+
+    return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
+
+
+
 UPDATE_INPUT_FUNC = build_update_input_func(INPUT_HOLD, INPUT_TRG)
 
 
@@ -472,6 +532,8 @@ def build_boot_bank(
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
+
+    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries))
 
     set_debug(True)
 
@@ -543,23 +605,27 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
 
-    # パターン（画面24タイル分）RAM転送
-    LD.HL_n16(b, PATTERN_BASE)
-    SET_VRAM_WRITE_FUNC.call(b)
-    LD.HL_n16(b, DATA_BANK_ADDR)
-    LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
-    LD.E_A(b)
-    LD.D_n8(b, 24)
-    SCROLL_VRAM_XFER_FUNC.call(b)
+    # # パターン（画面24タイル分）RAM転送
+    # LD.HL_n16(b, PATTERN_BASE)
+    # SET_VRAM_WRITE_FUNC.call(b)
+    # LD.HL_n16(b, DATA_BANK_ADDR)
+    # LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
+    # LD.E_A(b)
+    # LD.D_n8(b, 24)
+    # SCROLL_VRAM_XFER_FUNC.call(b)
+    #
+    # # カラーテーブル（画面24タイル分）VRAM転送
+    # LD.HL_n16(b, COLOR_BASE)
+    # SET_VRAM_WRITE_FUNC.call(b)
+    # LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+    # LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
+    # LD.E_A(b)
+    # LD.D_n8(b, 24)
+    # SCROLL_VRAM_XFER_FUNC.call(b)
 
-    # カラーテーブル（画面24タイル分）VRAM転送
-    LD.HL_n16(b, COLOR_BASE)
-    SET_VRAM_WRITE_FUNC.call(b)
-    LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-    LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
-    LD.E_A(b)
-    LD.D_n8(b, 24)
-    SCROLL_VRAM_XFER_FUNC.call(b)
+    # --- [初期表示] ---
+    XOR.A(b)
+    UPDATE_IMAGE_DISPLAY_FUNC.call(b)
 
     b.label("MAIN_LOOP")
     # TODO ここにキー読み取りとページ遷移コード
@@ -570,6 +636,7 @@ def build_boot_bank(
     RESET_NAME_TABLE_FUNC.define(b)
     SET_VRAM_WRITE_FUNC.define(b)
     SCROLL_VRAM_XFER_FUNC.define(b)
+    UPDATE_IMAGE_DISPLAY_FUNC.define(b)
     UPDATE_INPUT_FUNC.define(b)
 
     b.label("IMAGE_HEADER_TABLE")

@@ -546,17 +546,20 @@ Body = Callable[[Block], None]
 class Func:
     """CALL可能な関数を表す薄いラッパ。"""
 
-    def __init__(self, name: str, body: Body) -> None:
+    def __init__(self, name: str, body: Body, no_auto_ret: bool = False) -> None:
         self.name = name
         self.body = body
+        self.no_auto_ret = no_auto_ret
 
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
 
         b.label(self.name)
         self.body(b)
-        # RET
-        b.emit(0xC9)
+
+        if not self.no_auto_ret:
+            # RET
+            b.emit(0xC9)
 
     def call(self, b: Block) -> None:
         """CALL命令を発行。"""
