@@ -85,6 +85,8 @@ from mmsxxasmhelper.core import (
     OUTI,
     RET,
     RET_NC,
+    BIT,
+    HALT,
     unique_label,
 )
 from mmsxxasmhelper.msxutils import (
@@ -605,34 +607,47 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
 
-    # # パターン（画面24タイル分）RAM転送
-    # LD.HL_n16(b, PATTERN_BASE)
-    # SET_VRAM_WRITE_FUNC.call(b)
-    # LD.HL_n16(b, DATA_BANK_ADDR)
-    # LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
-    # LD.E_A(b)
-    # LD.D_n8(b, 24)
-    # SCROLL_VRAM_XFER_FUNC.call(b)
-    #
-    # # カラーテーブル（画面24タイル分）VRAM転送
-    # LD.HL_n16(b, COLOR_BASE)
-    # SET_VRAM_WRITE_FUNC.call(b)
-    # LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-    # LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
-    # LD.E_A(b)
-    # LD.D_n8(b, 24)
-    # SCROLL_VRAM_XFER_FUNC.call(b)
-
     # --- [初期表示] ---
     XOR.A(b)
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
 
+    # --- [メインループ] ---
     b.label("MAIN_LOOP")
-    # TODO ここにキー読み取りとページ遷移コード
-    # spaceで次の画面へ、SHIFT＋SPACEで前の画面へ
-    # 画面切り替え時は RESET_NAME_TABLE_FUNC して からパターンとカラー転送する
-    loop_infinite_macro(b)
+    # V-Sync 待ち (チャタリング防止と速度調整)
+    HALT(b)
 
+    # 仮想入力の更新
+    UPDATE_INPUT_FUNC.call(b)
+
+    # SPACE (論理 BTN_A) が今押されたか？
+    LD.A_mn16(b, INPUT_TRG)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
+    JR_Z(b, "MAIN_LOOP")
+
+    # 押された。次に SHIFT (論理 BTN_B) が「保持」されているか？
+    LD.A_mn16(b, INPUT_HOLD)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)git
+    JR_NZ(b, "PREV_IMAGE")
+
+    # --- [次へ移動] ---
+    b.label("NEXT_IMAGE")
+    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    INC.A(b)
+    CP.n8(b, len(image_entries))  # 画像枚数と比較
+    JR_Z(b, "MAIN_LOOP")  # 終端なら無視
+    UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+    JR(b, "MAIN_LOOP")
+
+    # --- [前へ移動] ---
+    b.label("PREV_IMAGE")
+    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    OR.A(b)
+    JR_Z(b, "MAIN_LOOP")  # 最初なら無視
+    DEC.A(b)
+    UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+    JR(b, "MAIN_LOOP")
+
+    # --- 関数定義 ---
     RESET_NAME_TABLE_FUNC.define(b)
     SET_VRAM_WRITE_FUNC.define(b)
     SCROLL_VRAM_XFER_FUNC.define(b)
