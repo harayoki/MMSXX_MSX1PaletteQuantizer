@@ -99,6 +99,7 @@ from mmsxxasmhelper.msxutils import (
     store_stack_pointer_macro,
     init_stack_pointer_macro,
     ldirvm_macro,
+    build_update_input_func,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -141,6 +142,10 @@ CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格�
 CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
 CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2  # カラーパターンが置かれているバンク番号を保存するアドレス
 CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1  # カラーパターンの先頭アドレスを保存するアドレス
+
+INPUT_HOLD = 0xC100  # 現在押されている全入力
+INPUT_TRG = 0xC101  # 今回新しく押された入力
+
 
 @dataclass
 class ImageEntry:
@@ -349,7 +354,7 @@ def build_init_name_table_func() -> Func:
     return Func("init_name_table_call", init_name_table_call)
 
 
-INIT_NAME_TABLE_CALL = build_init_name_table_func()
+INIT_NAME_TABLE_FUNC = build_init_name_table_func()
 
 
 def build_set_vram_write_func() -> Func:
@@ -440,9 +445,10 @@ def build_scroll_vram_xfer_func() -> Func:
     return Func("scroll_vram_xfer", scroll_vram_xfer)
 
 
-SET_VRAM_WRITE_CALL = build_set_vram_write_func()
-SCROLL_VRAM_XFER_CALL = build_scroll_vram_xfer_func()
+SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
+SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
 
+UPDATE_INPUT_FUNC = build_update_input_func(INPUT_HOLD, INPUT_TRG)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -496,7 +502,7 @@ def build_boot_bank(
     LD.mn16_A(b, BDRCLR)
     CALL(b, CHGCLR)
 
-    INIT_NAME_TABLE_CALL.call(b)
+    INIT_NAME_TABLE_FUNC.call(b)
 
     # 現在のページを記憶
     LD.A_n8(b, 0)
@@ -552,28 +558,28 @@ def build_boot_bank(
 
     # # パターン（画面24タイル分）RAM転送
     LD.HL_n16(b, PATTERN_BASE)
-    SET_VRAM_WRITE_CALL.call(b)
+    SET_VRAM_WRITE_FUNC.call(b)
     LD.HL_n16(b, DATA_BANK_ADDR)
     LD.A_mn16(b, CURRENT_IMAGE_START_BANK_ADDR)
     LD.E_A(b)
     LD.D_n8(b, 24)
-    SCROLL_VRAM_XFER_CALL.call(b)
+    SCROLL_VRAM_XFER_FUNC.call(b)
 
     # カラーテーブル（画面24タイル分）VRAM転送
     LD.HL_n16(b, COLOR_BASE)
-    SET_VRAM_WRITE_CALL.call(b)
+    SET_VRAM_WRITE_FUNC.call(b)
     LD.HL_mn16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
     LD.A_mn16(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
     LD.E_A(b)
     LD.D_n8(b, 24)
-    SCROLL_VRAM_XFER_CALL.call(b)
-
+    SCROLL_VRAM_XFER_FUNC.call(b)
 
     loop_infinite_macro(b)
 
-    INIT_NAME_TABLE_CALL.define(b)
-    SET_VRAM_WRITE_CALL.define(b)
-    SCROLL_VRAM_XFER_CALL.define(b)
+    INIT_NAME_TABLE_FUNC.define(b)
+    SET_VRAM_WRITE_FUNC.define(b)
+    SCROLL_VRAM_XFER_FUNC.define(b)
+    UPDATE_INPUT_FUNC.define(b)
 
     b.label("IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
