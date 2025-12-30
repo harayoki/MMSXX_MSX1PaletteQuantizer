@@ -6,7 +6,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, OUT, XOR
+from mmsxxasmhelper.core import ADD, AND, Block, CALL, CP, DB, DEC, DW, Func, INC, JR, JR_C, JR_NC, JR_NZ, JR_Z, LD, OR, OUT, XOR, RET
 from mmsxxasmhelper.msxutils import (
     CHGMOD,
     LDIRVM,
