@@ -473,11 +473,6 @@ L_BTN_B = 5  # Bit 5 (SHIFT / ジョイスティック2)
 L_ESC = 6  # Bit 6
 L_EXTRA = 7  # Bit 7
 
-# --- ワークエリア (作成中のプログラムに合わせて調整) ---
-# 今回は作成中のコードの WORK_RAM_BASE を利用する想定
-INPUT_HOLD = 0xC100  # 現在押されている全入力
-INPUT_TRG = 0xC101  # 今回新しく押された入力
-
 
 def build_update_input_func() -> Func:
     """
@@ -485,6 +480,10 @@ def build_update_input_func() -> Func:
     キーボード、(将来的に)ジョイスティック、スマホI/O等を統合して
     INPUT_HOLD / INPUT_TRG を作成する。
     """
+
+    # --- ワークエリア (作成中のプログラムに合わせて調整) ---
+    INPUT_HOLD = 0xC100  # 現在押されている全入力
+    INPUT_TRG = 0xC101  # 今回新しく押された入力
 
     def update_input(block: Block) -> None:
         # --- 1. 物理入力のサンプリング ---
