@@ -22,6 +22,7 @@ __all__ = [
     "init_screen2_macro",
     "set_screen_mode_macro",
     "set_text_cursor_macro",
+    "write_text_with_cursor_macro",
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
@@ -47,6 +48,7 @@ CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
 POSIT = 0x00C6  # カーソル移動
+CHPUT = 0x00A2  # 1文字出力（SCREEN0/1/2 text??、その他未対応）
 INITXT = 0x006C  # SCREEN 0 初期化
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
@@ -375,6 +377,26 @@ def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
     LD.H_n8(b, x & 0xFF)
     LD.L_n8(b, y & 0xFF)
     CALL(b, POSIT)
+
+
+def write_text_with_cursor_macro(b: Block, text: str, x: int, y: int) -> None:
+    """テキストを任意の座標から書き出すマクロ。
+
+    ``text`` を ``"\n"`` で分割し、各行ごとに ``set_text_cursor_macro`` で
+    カーソルを移動してから CHPUT (#00A2) で 1 文字ずつ出力する。
+
+    SCREEN2 などのグラフィックモードでは CHPUT が期待通りに動かないため
+    （未対応）、SCREEN0/SCREEN1 などのテキスト系スクリーン向けの
+    マクロとして利用する。
+
+    このマクロの動作は未検証。
+    """
+
+    for row_offset, line in enumerate(text.split("\n")):
+        set_text_cursor_macro(b, x, y + row_offset)
+        for ch in line:
+            LD.A_n8(b, ord(ch) & 0xFF)
+            CALL(b, CHPUT)
 
 
 def init_screen2_macro(b: Block) -> None:
