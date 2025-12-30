@@ -14,7 +14,7 @@ PROJECT_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(PROJECT_SRC) not in sys.path:
     sys.path.insert(0, str(PROJECT_SRC))
 
-from mmsxxasmhelper.core import CALL, DB, LD, OR, RET, Block, Func
+from mmsxxasmhelper.core import CALL, DB, LD, OR, RET, Block, Func, JR_Z, INC, JR, ADD, define_created_funcs
 from mmsxxasmhelper.msxutils import (
     BAKCLR,
     BDRCLR,
@@ -39,14 +39,14 @@ def build_config_scene_rom() -> bytes:
     place_msx_rom_header_macro(b, entry_point=0x4010)
 
     # 汎用入力更新関数とコンフィグ画面の生成
-    update_input = build_update_input_func()
-    init_func, loop_func, table_func = build_screen0_config_menu(
+    UPDATE_INPUT_FUNC = build_update_input_func()
+    INIT_FUNC, LOOP_FUNC, TABLE_FUNC = build_screen0_config_menu(
         [
             Screen0ConfigEntry("MODE", ["MSX1", "MSX2"], 0xC200),
             Screen0ConfigEntry("SOUND", ["ON", "OFF"], 0xC201),
             Screen0ConfigEntry("DIFFICULTY", ["EASY", "NORMAL", "HARD"], 0xC202),
         ],
-        update_input_func=update_input,
+        update_input_func=UPDATE_INPUT_FUNC,
         work_base_addr=0xC220,
         screen0_name_base=0x1800,
         sprite_pattern_addr=0x3800,
@@ -67,7 +67,7 @@ def build_config_scene_rom() -> bytes:
         block.label(end_label)
         RET(block)
 
-    PRINT_STRING = Func("PRINT_STRING", print_string)
+    PRINT_STRING_FUNC = Func("PRINT_STRING", print_string)
 
     # コンフィグ選択値を 1 桁の数字で表示
     def print_value(block: Block, *, title: str, addr: int) -> None:
@@ -87,19 +87,9 @@ def build_config_scene_rom() -> bytes:
         LD.A_n8(block, ord("\n"))
         CALL(block, CHPUT)
 
-    PRINT_VALUE_MODE = Func("PRINT_VALUE_MODE", lambda blk: print_value(blk, title="MO", addr=0xC200))
-    PRINT_VALUE_SOUND = Func("PRINT_VALUE_SOUND", lambda blk: print_value(blk, title="SO", addr=0xC201))
-    PRINT_VALUE_DIFF = Func("PRINT_VALUE_DIFF", lambda blk: print_value(blk, title="DI", addr=0xC202))
-
-    # 各関数・テーブルを配置
-    update_input.define(b)
-    init_func.define(b)
-    loop_func.define(b)
-    table_func.define(b)
-    PRINT_STRING.define(b)
-    PRINT_VALUE_MODE.define(b)
-    PRINT_VALUE_SOUND.define(b)
-    PRINT_VALUE_DIFF.define(b)
+    PRINT_VALUE_MODE_FUNC = Func("PRINT_VALUE_MODE", lambda blk: print_value(blk, title="MO", addr=0xC200))
+    PRINT_VALUE_SOUND_FUNC = Func("PRINT_VALUE_SOUND", lambda blk: print_value(blk, title="SO", addr=0xC201))
+    PRINT_VALUE_DIFF_FUNC = Func("PRINT_VALUE_DIFF", lambda blk: print_value(blk, title="DI", addr=0xC202))
 
     # メインルーチン
     b.label("main")
@@ -121,19 +111,22 @@ def build_config_scene_rom() -> bytes:
         LD.mn16_A(b, addr)
 
     # CONFIG 画面を実行
-    init_func.call(b)
-    loop_func.call(b)
+    INIT_FUNC.call(b)
+    LOOP_FUNC.call(b)
 
     # ESC で抜けた後に選択値を表示
     CALL(b, INITXT)
     LD.HL_label(b, "CONFIG_DONE")
-    PRINT_STRING.call(b)
+    PRINT_STRING_FUNC.call(b)
 
-    PRINT_VALUE_MODE.call(b)
-    PRINT_VALUE_SOUND.call(b)
-    PRINT_VALUE_DIFF.call(b)
+    PRINT_VALUE_MODE_FUNC.call(b)
+    PRINT_VALUE_SOUND_FUNC.call(b)
+    PRINT_VALUE_DIFF_FUNC.call(b)
 
     loop_infinite_macro(b)
+
+    # 各関数・テーブルを配置
+    define_created_funcs(b)
 
     # ---- データ領域 ----
     b.label("CONFIG_DONE")
@@ -154,3 +147,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# TODO 修正中 まだ動いていない
