@@ -167,6 +167,8 @@ class ADDR:
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
 
+# mem_addr_allocator.debug_print()
+
 # CURRENT_IMAGE_ADDR = WORK_RAM_BASE + 0
 # CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
 # CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
@@ -546,6 +548,7 @@ def calc_line_num_for_reg_a_macro(b: Block) -> None:
 def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
+    start_at:str,
     fill_byte: int,
     log_lines: List[str] | None = None,
 ) -> bytes:
@@ -721,6 +724,7 @@ def log_and_store(message: str, log_lines: list[str] | None) -> None:
 
 def build(
     images: Sequence[ImageData],
+    start_at: str = "bottom",
     fill_byte: int = 0xFF,
     log_lines: list[str] | None = None,
 ) -> bytes:
@@ -799,7 +803,7 @@ def build(
 
     print_bytes(header_bytes, title="header bytes")
 
-    banks = [build_boot_bank(image_entries, header_bytes, fill_byte)]
+    banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
     banks.extend(data_banks)
     return b"".join(banks)
 
@@ -862,6 +866,12 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="ROM情報テキストを出力するかどうか (default: ON)",
+    )
+    parser.add_argument(
+        "--start-at",
+        choices=["top", "bottom"],
+        default="bottom",
+        help="初期表示位置 (default: bottom)",
     )
     return parser.parse_args()
 
@@ -1014,7 +1024,7 @@ def main() -> None:
     if not image_data_list:
         raise SystemExit("No images were prepared")
 
-    rom = build(image_data_list, fill_byte=args.fill_byte, log_lines=log_lines)
+    rom = build(image_data_list, start_at=args.start_at, fill_byte=args.fill_byte, log_lines=log_lines)
 
     out = args.output
     if out is None:
