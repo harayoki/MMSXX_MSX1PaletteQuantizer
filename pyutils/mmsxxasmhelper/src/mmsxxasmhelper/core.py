@@ -67,7 +67,7 @@ __all__ = [
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
     "Func",
     "DB", "DW",
-    "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR",
+    "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR", "BIT",
     "CPL", "NEG",
     "LDIR",
     "RLCA",
@@ -1693,6 +1693,56 @@ class XOR:
         """XOR n8"""
 
         b.emit(0xEE, value & 0xFF)
+
+
+class BIT:
+    """BIT n,r 系命令。"""
+
+    _REG8_INDEX = {
+        "B": 0,
+        "C": 1,
+        "D": 2,
+        "E": 3,
+        "H": 4,
+        "L": 5,
+        "mHL": 6,
+        "A": 7,
+    }
+
+    @staticmethod
+    def r(b: Block, bit: int, reg: str) -> None:
+        """BIT bit,reg
+
+        reg は "A","B","C","D","E","H","L","mHL" のいずれか。
+        bit は 0〜7 を指定する。
+        """
+
+        if not 0 <= bit <= 7:
+            raise ValueError("bit must be in 0..7")
+        try:
+            r_index = BIT._REG8_INDEX[reg]
+        except KeyError as exc:
+            raise ValueError(f"invalid BIT reg operand: {reg}") from exc
+        opcode = 0x40 | (bit << 3) | r_index
+        b.emit(0xCB, opcode)
+
+    @staticmethod
+    def mIXd(b: Block, bit: int, disp: int) -> None:
+        """BIT bit,(IX+d)"""
+
+        if not 0 <= bit <= 7:
+            raise ValueError("bit must be in 0..7")
+        opcode = 0x40 | (bit << 3) | 6
+        b.emit(0xDD, 0xCB, disp & 0xFF, opcode)
+
+    @staticmethod
+    def mIYd(b: Block, bit: int, disp: int) -> None:
+        """BIT bit,(IY+d)"""
+
+        if not 0 <= bit <= 7:
+            raise ValueError("bit must be in 0..7")
+        opcode = 0x40 | (bit << 3) | 6
+        b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
 
 # ---------------------------------------------------------------------------
 # ビット操作
