@@ -81,6 +81,7 @@ from mmsxxasmhelper.core import (
     NOP,
     OUT,
     OUT_A,
+    OUT_C,
     OUTI,
     unique_label,
 )
@@ -316,30 +317,34 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
 
 def build_init_name_table_func() -> Func:
     def init_name_table_call(block: Block) -> None:
-        # 最初に 0~255 のパターンをRAMに用意
-        LD.HL_n16(block, WORK_RAM_BASE)
-        LD.A_n8(block, 0)
-        block.label("CREATE_NAME_TABLE_LOOP")
-        LD.mHL_A(block)
-        INC.HL(block)
-        INC.A(block)
-        JR_NZ(block, "CREATE_NAME_TABLE_LOOP")
+        # VRAMアドレスセット (NAME_BASE = 0x1800)
+        # 0x1800 を書き込みモードでセット
+        LD.A_n8(block, 0x00)     # 下位8bit
+        OUT(block, 0x99)
+        LD.A_n8(block, 0x18 | 0x40) # 上位8bit + Write Mode(0x40)
+        OUT(block, 0x99)
 
-        # ネームテーブルの初期化x3
-        LD.HL_n16(block, WORK_RAM_BASE)
-        LD.DE_n16(block, NAME_BASE)
-        LD.BC_n16(block, 0x0200)
-        CALL(block, LDIRVM)
+        # 0~255 の出力を3回繰り返す
+        LD.D_n8(block, 3)        # 3ブロック分
+        LD.C_n8(block, 0x98)     # VDPデータポート
 
-        LD.HL_n16(block, WORK_RAM_BASE)
-        LD.DE_n16(block, NAME_BASE + 0x100)
-        LD.BC_n16(block, 0x0200)
-        CALL(block, LDIRVM)
+        OUTER_LOOP = unique_label()
+        INNER_LOOP = unique_label()
 
-        LD.HL_n16(block, WORK_RAM_BASE)
-        LD.DE_n16(block, NAME_BASE + 0x200)
-        LD.BC_n16(block, 0x0200)
-        CALL(block, LDIRVM)
+        block.label(OUTER_LOOP)
+        LD.A_n8(block, 0)        # 0から開始
+
+        block.label(INNER_LOOP)
+        OUT_C.A(block)          # VDPへ A を出力 (OUT (C), A)
+        # ※名前テーブルはデータが疎(1byte/1char)なので
+        # ウェイト(JR $+2)がなくてもMSX1のVDPなら追いつくことが多いですが、
+        # 念のため入れるならここに NOP や INC A を置きます。
+        NOP(block)
+        INC.A(block)             # 次のキャラクタ番号
+        JR_NZ(block, INNER_LOOP) # 255を超えて0になるまでループ
+
+        DEC.D(block)             # 残りブロック数を減らす
+        JR_NZ(block, OUTER_LOOP)
 
     return Func("init_name_table_call", init_name_table_call)
 
