@@ -492,64 +492,7 @@ SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
 
 
-# def build_update_image_display_func(image_entries_count: int) -> Func:
-#     def update_image_display(block: Block) -> None:
-#         # 入力: A = 切り替えたい画像番号
-#
-#         # --- 安全装置: 範囲外なら RET ---
-#         CP.n8(block, image_entries_count)
-#         RET_NC(block)  # A >= image_entries_count なら終了
-#
-#         # 1. 画像番号の保存
-#         LD.mn16_A(block, ADDR.CURRENT_IMAGE_ADDR)
-#
-#         # 2. ヘッダテーブルから情報を読み出す
-#         LD.L_A(block)
-#         LD.H_n8(block, 0)
-#         PUSH.HL(block)
-#         POP.DE(block)
-#         ADD.HL_HL(block)  # HL = index * 2
-#         ADD.HL_DE(block)  # HL = index * 3
-#         ADD.HL_HL(block)  # HL = index * 6
-#         LD.DE_label(block, "IMAGE_HEADER_TABLE")
-#         ADD.HL_DE(block)
-#
-#         # 3. ワークRAM（CURRENT_IMAGE_START_BANK_ADDR以降）を 6 バイト更新
-#         LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-#         for _ in range(6):
-#             LD.A_mHL(block)
-#             LD.mDE_A(block)
-#             INC.HL(block)
-#             INC.DE(block)
-#
-#         # 4. VRAM 描画
-#         # 名前テーブル初期化（MSX1 VRAM 1800h-1AFFh）
-#         RESET_NAME_TABLE_FUNC.call(block)
-#
-#         # パターンジェネレータ転送（VRAM 0000h-）
-#         LD.HL_n16(block, PATTERN_BASE)
-#         SET_VRAM_WRITE_FUNC.call(block)
-#         LD.HL_n16(block, DATA_BANK_ADDR)  # 常に 8000h から
-#         LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-#         LD.E_A(block)
-#         LD.D_n8(block, 24)  # 1画面分
-#         SCROLL_VRAM_XFER_FUNC.call(block)
-#
-#         # カラーテーブル転送（VRAM 2000h-）
-#         LD.HL_n16(block, COLOR_BASE)
-#         SET_VRAM_WRITE_FUNC.call(block)
-#         LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-#         LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
-#         LD.E_A(block)
-#         LD.D_n8(block, 24)
-#         SCROLL_VRAM_XFER_FUNC.call(block)
-#
-#         RET(block)  # サブルーチンなので明示的にRET
-#
-#     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
-
-
-def build_update_image_display_func2(image_entries_count: int) -> Func:
+def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
     def update_image_display(block: Block) -> None:
         # 入力: A = 表示したい画像番号
         # 安全装置: 範囲外なら RET
@@ -571,6 +514,7 @@ def build_update_image_display_func2(image_entries_count: int) -> Func:
         ADD.HL_DE(block)
 
         # CURRENT_IMAGE_START_BANK_ADDR から 6バイト分コピー
+        # これにより ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR 等が更新される
         LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
         for _ in range(6):
             LD.A_mHL(block)
@@ -578,74 +522,73 @@ def build_update_image_display_func2(image_entries_count: int) -> Func:
             INC.HL(block)
             INC.DE(block)
 
+        # --- [追加: スクロール位置のリセット] ---
+        # 画像切り替え時に、指定の設定に合わせて位置を初期化する
+        INIT_POS_OK = unique_label("_INIT_POS_OK")
+        if start_at == "bottom":
+            # 画像の総行数を A に取得 (現状 256行未満想定の 8bit 計算)
+            LD.A_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+            SUB.n8(block, 24)
+            JR_NC(block, INIT_POS_OK)
+            XOR.A(block)  # 24行未満なら 0 にリセット
+            block.label(INIT_POS_OK)
+            LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW)  # Low byte
+            XOR.A(block)
+            LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW + 1)  # High byte を 0 でリセット
+        else:
+            XOR.A(block)
+            LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW)
+            LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW + 1)
+
         # --- [VRAM転送の動的アドレス計算ルーチン] ---
-        # 共通ロジック: バンクとアドレスをスクロール行数分進める
-        # 入力: HL=ベースアドレス, A=ベースバンク
-        # 出力: HL=計算後アドレス, E=計算後バンク
-
         def calc_scroll_ptr(b: Block, is_color: bool):
-            # 1行256バイトなので、CURRENT_SCROLL_ROW (16bit) の下位8bitが
-            # そのまま 0x8000-0x80FF 等のオフセット（アドレスの下位8bitは常に0と仮定）
-            # 上位8bit (256行単位) はバンクの移動を意味する
-
+            # (中略: 既存の calc_scroll_ptr の実装はそのまま)
             if is_color:
                 LD.HL_mn16(b, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
                 LD.A_mn16(b, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
             else:
-                LD.HL_n16(b, DATA_BANK_ADDR)  # PGは常に 0x8000
+                LD.HL_n16(b, DATA_BANK_ADDR)
                 LD.A_mn16(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
 
-            # スクロール行数 (16bit) を取得
-            # HL += (SCROLL_ROW_LOW * 256)
-            # A += (SCROLL_ROW_HIGH * (256 * 256 / 16384)) ... は複雑なので、
-            # シンプルに「1行ごとに 1byte/256byte」として計算
-
             PUSH.AF(b)
-            LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)  # Low byte (行数 0-255)
-            # 1行は 256バイトなので、Low byte が 1増えると HL は 0x0100 増える
-            # つまり、Hレジスタに加算すればよい
+            LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
             ADD.A_H(b)
             LD.H_A(b)
-            POP.AF(b)  # A = Base Bank
+            POP.AF(b)
 
-            # CURRENT_SCROLL_ROW の High byte (256行の倍数) を処理
             PUSH.AF(b)
             LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW + 1)
-            # 256行 = 65536バイト = 4バンク分。
-            # A += A * 4
             ADD.A_A(b)
             ADD.A_A(b)
-            LD.E_A(b)  # バンク加算分
+            LD.E_A(b)
             POP.AF(b)
             ADD.A_E(b)
-            LD.E_A(b)  # 最終バンク
+            LD.E_A(b)
 
-            # HL が 0xC000 を超えていたらバンクを繰り上げる (ASCII16 ページ内正規化)
-            NORMALIZE_BANK = unique_label("_NORMALIZE_BANK")
-            NORMALIZE_BANK_DONE = unique_label("_NORMALIZE_BANK_DONE")
-            b.label(NORMALIZE_BANK)
+            NORM_LOOP = unique_label("_NORM")
+            NORM_DONE = unique_label("_NORM_DONE")
+            b.label(NORM_LOOP)
             LD.A_H(b)
             CP.n8(b, 0xC0)
-            JR_C(b, NORMALIZE_BANK_DONE)
-            SUB.n8(b, 0x40)  # HL -= 0x4000
+            JR_C(b, NORM_DONE)
+            SUB.n8(b, 0x40)
             LD.H_A(b)
-            INC.E(b)  # Bank++
-            JR(b, NORMALIZE_BANK)
-            b.label(NORMALIZE_BANK_DONE)
+            INC.E(b)
+            JR(b, NORM_LOOP)
+            b.label(NORM_DONE)
 
         # 4. VRAM 描画
         RESET_NAME_TABLE_FUNC.call(block)
 
         # パターンジェネレータ転送
         calc_scroll_ptr(block, is_color=False)
-        # calc_scroll_ptr の結果: HL=ROMアドレス, E=バンク
         PUSH.HL(block)
         PUSH.DE(block)
         LD.HL_n16(block, PATTERN_BASE)
         SET_VRAM_WRITE_FUNC.call(block)
         POP.DE(block)
         POP.HL(block)
-        LD.D_n8(block, 24)  # 常に1画面分
+        LD.D_n8(block, 24)
         SCROLL_VRAM_XFER_FUNC.call(block)
 
         # カラーテーブル転送
@@ -662,6 +605,7 @@ def build_update_image_display_func2(image_entries_count: int) -> Func:
         RET(block)
 
     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
+
 
 
 UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
@@ -691,7 +635,7 @@ def build_boot_bank(
     if not image_entries:
         raise ValueError("image_entries must not be empty")
 
-    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func2(len(image_entries))
+    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries), start_at)
 
     set_debug(True)
 
@@ -756,26 +700,6 @@ def build_boot_bank(
     LD.mHL_E(b)
     INC.HL(b)
     LD.mHL_D(b)
-
-    # --- [初期スクロール位置の計算] ---
-    if start_at == "bottom":
-        # 画像の総行数を A に取得
-        LD.A_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
-        # 1画面分の 24行を引く
-        SUB.n8(b, 24)
-
-        # もし総行数が 24行未満なら、キャリーフラグが立って負になる
-        JR_NC(b, "INIT_POS_OK")
-        XOR.A(b)  # 24行未満なら 0 にリセット
-
-        b.label("INIT_POS_OK")
-        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW)  # 下位8bitに保存
-        LD.A_n8(b, 0)
-        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW + 1)  # 上位8bitを 0 で初期化
-    else:
-        XOR.A(b)
-        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW)
-        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW + 1)
 
     # --- [初期表示] ---
     XOR.A(b)
