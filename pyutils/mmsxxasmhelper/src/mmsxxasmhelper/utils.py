@@ -288,11 +288,12 @@ class MemAddrAllocator:
         if size is None:
             size = value_length
         elif value_length is not None and size != value_length:
-            msg = f"size ({size}) does not match initial value length ({value_length})"
+            msg = (f"size ({size}) does not match initial value length ({value_length}),"
+                   f" name: {name} value:{initial_value} raw:{raw})")
             raise ValueError(msg)
 
         if isinstance(initial_value, int) and size != 2:
-            msg = "16bit initial value requires size=2"
+            msg = "16bit initial value requires size=2, name: {name} value:{initial_value} raw:{raw}"
             raise ValueError(msg)
 
         assert size is not None
