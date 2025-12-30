@@ -118,6 +118,7 @@ from mmsxxasmhelper.utils import (
     set_debug,
     print_bytes,
     debug_print_labels,
+    MemAddrAllocator,
 )
 
 from PIL import Image
@@ -146,17 +147,38 @@ IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
 
 # 状況を保存するメモリアドレス
-CURRENT_IMAGE_ADDR = WORK_RAM_BASE + 0
-CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
-CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
-CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2  # カラーパターンが置かれているバンク番号を保存するアドレス
-CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1  # カラーパターンの先頭アドレスを保存するアドレス
-CURRENT_SCROLL_ROW = CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 2  # スクロール位置を
+mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
+madd = mem_addr_allocator.add
+class ADDR:
+    CURRENT_IMAGE_ADDR = (
+        madd("CURRENT_IMAGE_ADDR", 1, "画像番号"))
+    CURRENT_IMAGE_START_BANK_ADDR = (
+        madd("CURRENT_IMAGE_START_BANK_ADDR", 1, "画像データを格納しているバンク番号"))
+    CURRENT_IMAGE_ROW_COUNT_ADDR = (
+        madd("CURRENT_IMAGE_ROW_COUNT_ADDR", 2, "画像の行数（タイル行数）を保存"))
+    CURRENT_IMAGE_COLOR_BANK_ADDR = (
+        madd("CURRENT_IMAGE_COLOR_BANK_ADDR", 1,"カラーパターンが置かれているバンク番号"))
+    CURRENT_IMAGE_COLOR_ADDRESS_ADDR = (
+        madd("CURRENT_IMAGE_COLOR_ADDRESS_ADDR", 2, "カラーパターンの先頭アドレス"))
+    CURRENT_SCROLL_ROW = (
+        madd("CURRENT_SCROLL_ROW", 2, "スクロール位置"))
+    INPUT_HOLD = madd("INPUT_HOLD", 1, "現在押されている全入力")
+    INPUT_TRG = madd("INPUT_TRG", 1, "今回新しく押された入力")
+    BEEP_CNT = madd("BEEP_CNT", 1, "BEEPカウンタ")
+    BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , "BEEP状態")
 
-INPUT_HOLD = 0xC100  # 現在押されている全入力
-INPUT_TRG = 0xC101  # 今回新しく押された入力
-BEEP_CNT: int = 0xC102
-BEEP_ACTIVE: int = 0xC103
+# CURRENT_IMAGE_ADDR = WORK_RAM_BASE + 0
+# CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
+# CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
+# CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2  # カラーパターンが置かれているバンク番号を保存するアドレス
+# CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1  # カラーパターンの先頭アドレスを保存するアドレス
+# CURRENT_SCROLL_ROW = CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 2  # スクロール位置を
+#
+# INPUT_HOLD = 0xC100  # 現在押されている全入力
+# INPUT_TRG = 0xC101  # 今回新しく押された入力
+# BEEP_CNT: int = 0xC102
+# BEEP_ACTIVE: int = 0xC103
+
 
 @dataclass
 class ImageEntry:
@@ -456,7 +478,7 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
         RET_NC(block)  # A >= image_entries_count なら終了
 
         # 1. 画像番号の保存
-        LD.mn16_A(block, CURRENT_IMAGE_ADDR)
+        LD.mn16_A(block, ADDR.CURRENT_IMAGE_ADDR)
 
         # 2. ヘッダテーブルから情報を読み出す
         LD.L_A(block)
@@ -470,7 +492,7 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
         ADD.HL_DE(block)
 
         # 3. ワークRAM（CURRENT_IMAGE_START_BANK_ADDR以降）を 6 バイト更新
-        LD.DE_n16(block, CURRENT_IMAGE_START_BANK_ADDR)
+        LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
         for _ in range(6):
             LD.A_mHL(block)
             LD.mDE_A(block)
@@ -485,7 +507,7 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
         LD.HL_n16(block, PATTERN_BASE)
         SET_VRAM_WRITE_FUNC.call(block)
         LD.HL_n16(block, DATA_BANK_ADDR)  # 常に 8000h から
-        LD.A_mn16(block, CURRENT_IMAGE_START_BANK_ADDR)
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
         LD.E_A(block)
         LD.D_n8(block, 24)  # 1画面分
         SCROLL_VRAM_XFER_FUNC.call(block)
@@ -493,8 +515,8 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
         # カラーテーブル転送（VRAM 2000h-）
         LD.HL_n16(block, COLOR_BASE)
         SET_VRAM_WRITE_FUNC.call(block)
-        LD.HL_mn16(block, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-        LD.A_mn16(block, CURRENT_IMAGE_COLOR_BANK_ADDR)
+        LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
         LD.E_A(block)
         LD.D_n8(block, 24)
         SCROLL_VRAM_XFER_FUNC.call(block)
@@ -504,16 +526,16 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
 
 
-UPDATE_INPUT_FUNC = build_update_input_func(INPUT_HOLD, INPUT_TRG)
+UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
 
-BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(BEEP_CNT, BEEP_ACTIVE)
+BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
     """
     作業すべき行数をaレジスタに設定
     """
-    LD.A_mn16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)  # 何行？
+    LD.A_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)  # 何行？
     CP.n8(b, SCREEN_TILE_ROWS)  # 1画面24行と比較
     ROW_COUNT_OK = unique_label()
     JR_C(b, ROW_COUNT_OK)
@@ -536,12 +558,6 @@ def build_boot_bank(
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
-
-    log_and_store(f"CURRENT_IMAGE_ADDR: {CURRENT_IMAGE_ADDR: 05X}h", log_lines)
-    log_and_store(f"CURRENT_IMAGE_START_BANK_ADDR: {CURRENT_IMAGE_START_BANK_ADDR: 05X}h", log_lines)
-    log_and_store(f"CURRENT_IMAGE_ROW_COUNT_ADDR: {CURRENT_IMAGE_ROW_COUNT_ADDR: 05X}h", log_lines)
-    log_and_store(f"CURRENT_IMAGE_COLOR_BANK_ADDR: {CURRENT_IMAGE_COLOR_BANK_ADDR: 05X}h", log_lines)
-    log_and_store(f"CURRENT_IMAGE_COLOR_ADDRESS_ADDR: {CURRENT_IMAGE_COLOR_ADDRESS_ADDR: 05X}h", log_lines)
 
     b = Block()
 
@@ -566,12 +582,12 @@ def build_boot_bank(
 
     # 現在のページを記憶
     LD.A_n8(b, 0)
-    LD.mn16_A(b, CURRENT_IMAGE_ADDR)
+    LD.mn16_A(b, ADDR.CURRENT_IMAGE_ADDR)
 
     # 最初の画像のデータを得る
     LD.HL_label(b, "IMAGE_HEADER_TABLE")  # 各埋め込み画像のバンク番号やアドレスが書き込まれているアドレス
     LD.A_mHL(b)
-    LD.mn16_A(b, CURRENT_IMAGE_START_BANK_ADDR)  # 保存
+    LD.mn16_A(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)  # 保存
     LD.mn16_A(b, ASCII16_PAGE2_REG)  # バンク切り替え
 
     # DE = パターンジェネレータアドレス
@@ -581,7 +597,7 @@ def build_boot_bank(
     LD.D_mHL(b)
     # CURRENT_IMAGE_ROW_COUNT_ADDR = DE
     PUSH.HL(b)
-    LD.HL_n16(b, CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.HL_n16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
     LD.mHL_E(b)
     INC.HL(b)
     LD.mHL_D(b)
@@ -590,14 +606,14 @@ def build_boot_bank(
     # CURRENT_IMAGE_COLOR_BANK_ADDR = COLOR TABLE BANK
     INC.HL(b)
     LD.A_mHL(b)
-    LD.mn16_A(b, CURRENT_IMAGE_COLOR_BANK_ADDR)
+    LD.mn16_A(b, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
 
     # CURRENT_IMAGE_COLOR_ADDRESS_ADDR = COLOR TABLE ADDRESS
     INC.HL(b)
     LD.E_mHL(b)
     INC.HL(b)
     LD.D_mHL(b)
-    LD.HL_n16(b, CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+    LD.HL_n16(b, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
     LD.mHL_E(b)
     INC.HL(b)
     LD.mHL_D(b)
@@ -613,18 +629,18 @@ def build_boot_bank(
     UPDATE_INPUT_FUNC.call(b)
 
     # SPACE (論理 L_BTN_A) が「今押されたか」をまずチェック
-    LD.A_mn16(b, INPUT_TRG)
+    LD.A_mn16(b, ADDR.INPUT_TRG)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
     JR_Z(b, "MAIN_LOOP")
 
     # スペースが押された！ 次に SHIFT (論理 L_BTN_B) が「現在保持されているか」をチェック
-    LD.A_mn16(b, INPUT_HOLD)
+    LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
     JR_NZ(b, "PREV_IMAGE")  # SHIFTありなら戻る
 
     # --- [NEXT_IMAGE: 次へ（ループ対応）] ---
     b.label("NEXT_IMAGE")
-    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    LD.A_mn16(b, ADDR.CURRENT_IMAGE_ADDR)
     INC.A(b)
     CP.n8(b, len(image_entries))
     JR_C(b, "__GO_UPDATE__")  # 枚数未満ならそのまま更新へ
@@ -633,7 +649,7 @@ def build_boot_bank(
 
     # --- [PREV_IMAGE: 前へ（ループ対応）] ---
     b.label("PREV_IMAGE")
-    LD.A_mn16(b, CURRENT_IMAGE_ADDR)
+    LD.A_mn16(b, ADDR.CURRENT_IMAGE_ADDR)
     OR.A(b)  # 現在 0 かチェック
     JR_NZ(b, "__SUB_AND_UPDATE__")
     LD.A_n8(b, len(image_entries) - 1)  # 0 なら最後の画像番号へ
@@ -671,6 +687,7 @@ def build_boot_bank(
     )
 
     data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
+    log_and_store("---- labels ----", log_lines)
     log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
 
     return data
@@ -999,7 +1016,9 @@ def main() -> None:
         out.write_bytes(rom)
     except Exception as exc:  # pragma: no cover - CLI error path
         raise SystemExit(f"ERROR! failed to write ROM file: {exc}") from exc
-    print()
+
+    log_and_store("---- mem ----", log_lines)
+    log_and_store(mem_addr_allocator.as_str(), log_lines)
     log_and_store(f"Wrote {len(rom)} bytes to {out}", log_lines)
 
     if args.rom_info:

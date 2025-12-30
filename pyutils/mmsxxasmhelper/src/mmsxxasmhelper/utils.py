@@ -18,7 +18,7 @@ __all__ = [
     "debug_trap",
     "debug_print_labels",
     "print_bytes",
-    "MemoryAddressAllocator",
+    "MemAddrAllocator",
     "with_register_preserve",
 ]
 
@@ -197,7 +197,7 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 
     messages = []
     for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
-        message = f"{origin + offset:04X}h: {name}"
+        message = f"{origin + offset:05X}h: {name}"
         messages.append(message)
         if not no_print:
             print(message, file=stream)
@@ -222,7 +222,7 @@ def print_bytes(data: bytes, step: int = 16, address: int | None = 0, title: str
         print(chunk)
 
 
-class MemoryAddressAllocator:
+class MemAddrAllocator:
     """メモリアドレスを順次管理するユーティリティ。"""
 
     def __init__(self, base_address: int) -> None:
@@ -230,8 +230,9 @@ class MemoryAddressAllocator:
         self._current_address = base_address
         self._allocated: list[tuple[str, int]] = []
         self._lookup: dict[str, int] = {}
+        self._descriptions: dict[str, str] = {}
 
-    def add(self, name: str, size: int) -> int:
+    def add(self, name: str, size: int, description:str = "") -> int:
         """名前とサイズを登録し、割り当て先アドレスを返す。"""
 
         if name in self._lookup:
@@ -242,6 +243,7 @@ class MemoryAddressAllocator:
         self._allocated.append((name, address))
         self._lookup[name] = address
         self._current_address += size
+        self._descriptions[name] = description
         return address
 
     def get(self, name: str) -> int:
@@ -254,6 +256,12 @@ class MemoryAddressAllocator:
 
     def debug_print(self) -> None:
         """登録済みの名前とアドレスを出力する。"""
+        print(self.as_str())
 
+    def as_str(self) -> str:
+        s = ""
         for name, address in self._allocated:
-            print(f"{name}: {address:#06x}")
+            desc = self._descriptions.get(name, "")
+            desc = f"# {desc}" if desc else ""
+            s += f"{address:05X}h: {name} {desc}\n"
+        return s
