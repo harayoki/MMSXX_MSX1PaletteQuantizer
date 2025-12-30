@@ -31,6 +31,7 @@ __all__ = [
     "build_beep_control_utils",
     "build_set_vram_write_func",
     "build_scroll_name_table_func",
+    "INITXT",
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
@@ -44,6 +45,7 @@ LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
+INITXT = 0x006C  # SCREEN 0 初期化
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
 # EXPTBL = 0xFCC1  # 拡張スロット情報
