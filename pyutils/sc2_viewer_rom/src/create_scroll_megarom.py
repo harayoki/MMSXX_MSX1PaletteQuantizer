@@ -653,7 +653,24 @@ def build_boot_bank(
     b.label("IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
 
-    data = bytes(pad_bytes(list(b.finalize(origin=ROM_BASE)), PAGE_SIZE, fill_byte))
+    assembled = b.finalize(origin=ROM_BASE)
+    used_bytes = len(assembled)
+    if used_bytes > PAGE_SIZE:
+        raise ValueError(
+            f"Boot bank size exceeds one page: {used_bytes} bytes > {PAGE_SIZE}"
+        )
+
+    free_bytes = PAGE_SIZE - used_bytes
+    used_percent = used_bytes / PAGE_SIZE * 100
+    free_percent = free_bytes / PAGE_SIZE * 100
+    log_and_store(
+        "Boot bank (program area) usage: "
+        f"{used_bytes}/{PAGE_SIZE} bytes ({used_percent:.2f}%) used, "
+        f"{free_bytes} bytes ({free_percent:.2f}%) free",
+        log_lines,
+    )
+
+    data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
     log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
 
     return data
