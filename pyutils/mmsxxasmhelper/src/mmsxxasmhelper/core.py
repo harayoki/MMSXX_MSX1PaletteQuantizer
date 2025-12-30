@@ -1209,6 +1209,20 @@ class LD:
         pos = b.emit(0x21, 0x00, 0x00)
         b.add_abs16_fixup(pos + 1, label)
 
+    # ---------------------------------------------------------
+    # IXL / IXH 系 必要時に足す
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def IXL_A(b: Block) -> None:
+        b.emit(0xDD, 0x6F)
+
+
+    @staticmethod
+    def A_IXL(b: Block) -> None:
+        b.emit(0xDD, 0x7D)
+
+
 def LDIR(b: Block) -> None:
     b.emit(0xED, 0xB0)
 
