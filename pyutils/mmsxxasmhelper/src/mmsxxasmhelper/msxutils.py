@@ -21,6 +21,7 @@ __all__ = [
     "set_msx2_palette_default_macro",
     "init_screen2_macro",
     "set_screen_mode_macro",
+    "set_text_cursor_macro",
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
@@ -44,6 +45,7 @@ LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
+POSIT = 0x00C6  # カーソル移動
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
 # EXPTBL = 0xFCC1  # 拡張スロット情報
@@ -359,6 +361,18 @@ def set_screen_mode_macro(b: Block, mode: int) -> None:
     """
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
+
+
+def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
+    """POSIT (#00C6) を呼び出してテキストカーソルを移動するマクロ。
+
+    H: X 座標、L: Y 座標を設定してから POSIT を呼び出す。
+    レジスタ変更: AF（BIOS 呼び出しにより破壊される）。
+    """
+
+    LD.H_n8(b, x & 0xFF)
+    LD.L_n8(b, y & 0xFF)
+    CALL(b, POSIT)
 
 
 def init_screen2_macro(b: Block) -> None:
