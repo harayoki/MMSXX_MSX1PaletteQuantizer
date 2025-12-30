@@ -1088,11 +1088,18 @@ class LD:
         b.emit(0x3A, lo, hi)
 
     @staticmethod
-    def mn16_A(b: Block, addr: int) -> None:
-        """LD (nn),A"""
+    def BC_mn16(b: Block, addr: int) -> None:
+        """LD BC,(nn)"""
         lo = addr & 0xFF
         hi = (addr >> 8) & 0xFF
-        b.emit(0x32, lo, hi)
+        b.emit(0xED, 0x4B, lo, hi)
+
+    @staticmethod
+    def DE_mn16(b: Block, addr: int) -> None:
+        """LD DE,(nn)"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x5B, lo, hi)
 
     @staticmethod
     def HL_mn16(b: Block, addr: int) -> None:
@@ -1102,11 +1109,46 @@ class LD:
         b.emit(0x2A, lo, hi)
 
     @staticmethod
+    def SP_mn16(b: Block, addr: int) -> None:
+        """LD SP,(nn)"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x7B, lo, hi)
+
+    @staticmethod
+    def mn16_A(b: Block, addr: int) -> None:
+        """LD (nn),A"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0x32, lo, hi)
+
+    @staticmethod
+    def mn16_BC(b: Block, addr: int) -> None:
+        """LD (nn),BC"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x43, lo, hi)
+
+    @staticmethod
+    def mn16_DE(b: Block, addr: int) -> None:
+        """LD (nn),DE"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x53, lo, hi)
+
+    @staticmethod
     def mn16_HL(b: Block, addr: int) -> None:
         """LD (nn),HL"""
         lo = addr & 0xFF
         hi = (addr >> 8) & 0xFF
         b.emit(0x22, lo, hi)
+
+    @staticmethod
+    def mn16_SP(b: Block, addr: int) -> None:
+        """LD (nn),SP"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x73, lo, hi)
 
     @staticmethod
     def IX_mn16(b: Block, addr: int) -> None:
