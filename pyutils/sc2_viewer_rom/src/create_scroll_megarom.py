@@ -1207,6 +1207,8 @@ def main() -> None:
             name = f"debug_scroll{args.debug_image_index}[ASCII16]"
         out = Path.cwd() / f"{name}.rom"
 
+    ensure_output_writable(out)
+
     try:
         out.write_bytes(rom)
     except Exception as exc:  # pragma: no cover - CLI error path
