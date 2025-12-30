@@ -1727,6 +1727,10 @@ class BIT:
         b.emit(0xCB, opcode)
 
     @staticmethod
+    def n8_A(b: Block, bit: int) -> None:
+        BIT.r(b, bit, "A")
+
+    @staticmethod
     def mIXd(b: Block, bit: int, disp: int) -> None:
         """BIT bit,(IX+d)"""
 
