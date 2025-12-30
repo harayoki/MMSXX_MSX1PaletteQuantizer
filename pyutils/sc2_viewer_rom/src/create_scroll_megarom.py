@@ -517,6 +517,121 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
 
 
+def build_update_image_display_func2(image_entries_count: int) -> Func:
+    def update_image_display(block: Block) -> None:
+        # 入力: A = 表示したい画像番号
+        # 安全装置: 範囲外なら RET
+        CP.n8(block, image_entries_count)
+        RET_NC(block)
+
+        # 1. 画像番号の保存
+        LD.mn16_A(block, ADDR.CURRENT_IMAGE_ADDR)
+
+        # 2. ヘッダテーブル(6bytes/entry)から情報をワークRAMにロード
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        PUSH.HL(block)
+        POP.DE(block)
+        ADD.HL_HL(block)  # *2
+        ADD.HL_DE(block)  # *3
+        ADD.HL_HL(block)  # *6
+        LD.DE_label(block, "IMAGE_HEADER_TABLE")
+        ADD.HL_DE(block)
+
+        # CURRENT_IMAGE_START_BANK_ADDR から 6バイト分コピー
+        LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+        for _ in range(6):
+            LD.A_mHL(block)
+            LD.mDE_A(block)
+            INC.HL(block)
+            INC.DE(block)
+
+        # --- [VRAM転送の動的アドレス計算ルーチン] ---
+        # 共通ロジック: バンクとアドレスをスクロール行数分進める
+        # 入力: HL=ベースアドレス, A=ベースバンク
+        # 出力: HL=計算後アドレス, E=計算後バンク
+
+        def calc_scroll_ptr(b: Block, is_color: bool):
+            # 1行256バイトなので、CURRENT_SCROLL_ROW (16bit) の下位8bitが
+            # そのまま 0x8000-0x80FF 等のオフセット（アドレスの下位8bitは常に0と仮定）
+            # 上位8bit (256行単位) はバンクの移動を意味する
+
+            if is_color:
+                LD.HL_mn16(b, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+                LD.A_mn16(b, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
+            else:
+                LD.HL_n16(b, DATA_BANK_ADDR)  # PGは常に 0x8000
+                LD.A_mn16(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+
+            # スクロール行数 (16bit) を取得
+            # HL += (SCROLL_ROW_LOW * 256)
+            # A += (SCROLL_ROW_HIGH * (256 * 256 / 16384)) ... は複雑なので、
+            # シンプルに「1行ごとに 1byte/256byte」として計算
+
+            PUSH.AF(b)
+            LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)  # Low byte (行数 0-255)
+            # 1行は 256バイトなので、Low byte が 1増えると HL は 0x0100 増える
+            # つまり、Hレジスタに加算すればよい
+            ADD.A_H(b)
+            LD.H_A(b)
+            POP.AF(b)  # A = Base Bank
+
+            # CURRENT_SCROLL_ROW の High byte (256行の倍数) を処理
+            PUSH.AF(b)
+            LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW + 1)
+            # 256行 = 65536バイト = 4バンク分。
+            # A += A * 4
+            ADD.A_A(b)
+            ADD.A_A(b)
+            LD.E_A(b)  # バンク加算分
+            POP.AF(b)
+            ADD.A_E(b)
+            LD.E_A(b)  # 最終バンク
+
+            # HL が 0xC000 を超えていたらバンクを繰り上げる (ASCII16 ページ内正規化)
+            NORMALIZE_BANK = unique_label("_NORMALIZE_BANK")
+            NORMALIZE_BANK_DONE = unique_label("_NORMALIZE_BANK_DONE")
+            b.label(NORMALIZE_BANK)
+            LD.A_H(b)
+            CP.n8(b, 0xC0)
+            JR_C(b, NORMALIZE_BANK_DONE)
+            SUB.n8(b, 0x40)  # HL -= 0x4000
+            LD.H_A(b)
+            INC.E(b)  # Bank++
+            JR(b, NORMALIZE_BANK)
+            b.label(NORMALIZE_BANK_DONE)
+
+        # 4. VRAM 描画
+        RESET_NAME_TABLE_FUNC.call(block)
+
+        # パターンジェネレータ転送
+        calc_scroll_ptr(block, is_color=False)
+        # calc_scroll_ptr の結果: HL=ROMアドレス, E=バンク
+        PUSH.HL(block)
+        PUSH.DE(block)
+        LD.HL_n16(block, PATTERN_BASE)
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.DE(block)
+        POP.HL(block)
+        LD.D_n8(block, 24)  # 常に1画面分
+        SCROLL_VRAM_XFER_FUNC.call(block)
+
+        # カラーテーブル転送
+        calc_scroll_ptr(block, is_color=True)
+        PUSH.HL(block)
+        PUSH.DE(block)
+        LD.HL_n16(block, COLOR_BASE)
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.DE(block)
+        POP.HL(block)
+        LD.D_n8(block, 24)
+        SCROLL_VRAM_XFER_FUNC.call(block)
+
+        RET(block)
+
+    return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
+
+
 UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
 
 BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE)
