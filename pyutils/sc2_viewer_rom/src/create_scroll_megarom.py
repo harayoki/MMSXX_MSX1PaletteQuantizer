@@ -626,7 +626,7 @@ def build_boot_bank(
 
     # 押された。次に SHIFT (論理 BTN_B) が「保持」されているか？
     LD.A_mn16(b, INPUT_HOLD)
-    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)git
+    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
     JR_NZ(b, "PREV_IMAGE")
 
     # --- [次へ移動] ---
