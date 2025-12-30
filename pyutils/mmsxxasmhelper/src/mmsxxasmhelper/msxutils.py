@@ -26,6 +26,7 @@ __all__ = [
     "ldirvm_macro",
     # "set_palette_macro",
 
+    "build_update_input_func",
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
@@ -474,18 +475,20 @@ L_ESC = 6  # Bit 6
 L_EXTRA = 7  # Bit 7
 
 
-def build_update_input_func() -> Func:
+def build_update_input_func(
+    input_hold: int = 0xC100,
+    input_trg: int = 0xC101,
+) -> Func:
     """
     論理入力を更新する共通関数。
     キーボード、(将来的に)ジョイスティック、スマホI/O等を統合して
-    INPUT_HOLD / INPUT_TRG を作成する。
+    INPUT_HOLD / INPUT_TRG を作成する。ワークエリアのアドレスは引数で指定する。
     """
 
-    # --- ワークエリア (作成中のプログラムに合わせて調整) ---
-    INPUT_HOLD = 0xC100  # 現在押されている全入力
-    INPUT_TRG = 0xC101  # 今回新しく押された入力
-
     def update_input(block: Block) -> None:
+        skip_kbd_space = unique_label("__SKIP_KBD_SPACE__")
+        skip_kbd_shift = unique_label("__SKIP_KBD_SHIFT__")
+
         # --- 1. 物理入力のサンプリング ---
         # 最終的に A レジスタに論理ビット(1=押下)を組み立てる
         PUSH.IX(block)
@@ -497,27 +500,27 @@ def build_update_input_func() -> Func:
         # Bit 0 が 0 なら押下。反転させて論理Bit4へ
         CPL(block)
         BIT.n8_A(block, 0)
-        JR_Z(block, "__SKIP_KBD_SPACE__")
+        JR_Z(block, skip_kbd_space)
         LD.A_n8(block, 1 << L_BTN_A)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label("__SKIP_KBD_SPACE__")
+        block.label(skip_kbd_space)
 
         # Keyboard: SHIFT (Matrix 6, Bit 0)
         LD.A_n8(block, 6)
         CALL(block, SNSMAT)
         CPL(block)
         BIT.n8_A(block, 0)
-        JR_Z(block, "__SKIP_KBD_SHIFT__")
+        JR_Z(block, skip_kbd_shift)
         LD.A_n8(block, 1 << L_BTN_B)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label("__SKIP_KBD_SHIFT__")
+        block.label(skip_kbd_shift)
 
         # --- 2. HOLD と TRG の更新計算 ---
         # A = 今回の最新HOLD (IXL)
         LD.A_IXL(block)
-        LD.HL_n16(block, INPUT_HOLD)
+        LD.HL_n16(block, input_hold)
         LD.C_mHL(block)  # C = 前回の HOLD
         LD.mHL_A(block)  # 今回の A を新しい INPUT_HOLD として保存
 
@@ -527,7 +530,7 @@ def build_update_input_func() -> Func:
         LD.A_C(block)  # A = 前回の HOLD
         CPL(block)  # A = NOT 前回の HOLD
         AND.B(block)  # A = NEW & (~OLD)
-        LD.mn16_A(block, INPUT_TRG)
+        LD.mn16_A(block, input_trg)
 
         POP.IX(block)
 
