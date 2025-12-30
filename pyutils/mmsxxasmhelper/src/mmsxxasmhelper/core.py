@@ -173,6 +173,12 @@ class Block:
         v0 では単一ブロック前提なので任意指定でOK。
         """
 
+        undefined_funcs = [func.name for func in _created_funcs
+                           if func.name not in self.labels]
+        if undefined_funcs:
+            names = ", ".join(sorted(set(undefined_funcs)))
+            raise ValueError(f"undefined func(s): {names}")
+
         for fx in self.fixups:
             if fx.kind == "abs16":
                 # fx.pos が下位バイト、fx.pos+1 が上位バイト

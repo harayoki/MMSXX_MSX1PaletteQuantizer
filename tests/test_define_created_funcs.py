@@ -4,6 +4,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
 
 import mmsxxasmhelper.core as core
+import pytest
 
 
 def _func_body(value: int):
@@ -28,3 +29,25 @@ def test_define_created_funcs_excludes_by_name_and_reference(monkeypatch):
     assert "FUNC_SKIP" not in block.labels
     assert block.labels[func_b.name] == 0
     assert bytes(block.code) == bytes([0x01, 0xC9])
+
+
+def test_finalize_errors_when_func_not_defined(monkeypatch):
+    monkeypatch.setattr(core, "_created_funcs", [], raising=False)
+
+    core.Func("UNDEFINED_FUNC", _func_body(0x00))
+
+    block = core.Block()
+
+    with pytest.raises(ValueError, match="undefined func\(s\): UNDEFINED_FUNC"):
+        block.finalize()
+
+
+def test_finalize_allows_defined_funcs(monkeypatch):
+    monkeypatch.setattr(core, "_created_funcs", [], raising=False)
+
+    func = core.Func("DEFINED_FUNC", _func_body(0x10))
+
+    block = core.Block()
+    func.define(block)
+
+    assert block.finalize() == bytes([0x10, 0xC9])
