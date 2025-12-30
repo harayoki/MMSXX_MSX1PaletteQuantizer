@@ -79,6 +79,7 @@ from mmsxxasmhelper.core import (
     DB,
     DW,
     NOP,
+    OUTI,
     unique_label,
 )
 from mmsxxasmhelper.msxutils import (
@@ -347,6 +348,76 @@ def build_init_name_table_func() -> Func:
 INIT_NAME_TABLE_CALL = build_init_name_table_func()
 
 
+def build_scroll_vram_xfer_func() -> Func:
+    def scroll_vram_xfer(block: Block) -> None:
+        # --- 入力規定 ---
+        # HL: 計算済みのROM開始アドレス (0x8000 - 0xBFFF)
+        # E : 開始バンク番号 (パターンなら START_BANK, カラーなら COLOR_BANK)
+        # D : 転送する行数 (1〜24)
+        # BC: (内部で使用) CはVDPポート, Bは256byteループ用
+
+        # ※ 事前に VRAM アドレスセットは完了していること
+
+        block.label("VRAM_PAGE_LOOP")
+        PUSH.DE(block)  # 行数(D) と バンク番号(E) を保存
+
+        # 現在のバンクをメガROMにセット (Eレジスタの値を使用)
+        LD.A_E(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+
+        LD.B_n8(block, 0)  # 1ページ(256byte)転送用
+        LD.C_n8(block, 0x98)  # VDPデータポート
+
+        # --- 1ページ(256byte) 転送ループ (展開版) ---
+        block.label("VRAM_BYTE_LOOP")
+        for _ in range(16):
+            # 1バイト転送 (18T)
+            OUTI(block)  # (HL)->(C), HL++, B--
+            # SCREEN 2用ウェイト (12T)　3マイクロ秒強稼ぐ
+            JR_n8(block, 0)
+        JR_NZ(block, "VRAM_BYTE_LOOP")
+
+        # --- バンク境界チェック ---
+        LD.A_H(block)
+        CP.n8(block, 0xC0)  # HLが0xC000（バンク端）に達したか？
+        JR_C(block, "NOT_NEXT_BANK")
+
+        # --- バンク跨ぎ発生時の処理 ---
+        POP.DE(block)  # 一時復帰してバンク番号(E)を取り出す
+        INC.E(block)  # バンク番号を次へ（関数を呼ぶ側には影響しない）
+        PUSH.DE(block)  # 更新したバンク番号を再度保存
+        LD.H_n8(block, 0x80)  # アドレスを 0x8000 に戻す
+        # 次のループの先頭で LD A,E / LD (0x7000),A が実行される
+
+        block.label("NOT_NEXT_BANK")
+        POP.DE(block)  # 行数(D) と バンク(E) を復帰
+        DEC.D(block)  # 行数カウンタを減らす
+        JR_NZ(block, "VRAM_PAGE_LOOP")
+
+    """
+    呼び出し方のイメージ
+    
+    ; パターン転送の場合
+    LD  HL, (計算したPGのROMアドレス)
+    LD  A, (CURRENT_IMAGE_START_BANK_ADDR)
+    LD  E, A
+    LD  B, 24   ; 24行
+    CALL scroll_vram_xfer
+    
+    ; カラー転送の場合
+    LD  HL, (計算したCTのROMアドレス)
+    LD  A, (CURRENT_IMAGE_COLOR_BANK_ADDR)
+    LD  E, A
+    LD  B, 24
+    CALL scroll_vram_xfer
+    """
+
+    return Func("scroll_vram_xfer", scroll_vram_xfer)
+
+
+SCROLL_VRAM_XFER_CALL = build_scroll_vram_xfer_func()
+
+
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
     """
     作業すべき行数をaレジスタに設定
@@ -478,6 +549,7 @@ def build_boot_bank(
     loop_infinite_macro(b)
 
     INIT_NAME_TABLE_CALL.define(b)
+    SCROLL_VRAM_XFER_CALL.define(b)
 
     b.label("IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
