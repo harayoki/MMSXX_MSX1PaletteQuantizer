@@ -228,9 +228,8 @@ class MemAddrAllocator:
     def __init__(self, base_address: int) -> None:
         self._base_address = base_address
         self._current_address = base_address
-        self._allocated: list[tuple[str, int]] = []
-        self._lookup: dict[str, int] = {}
-        self._descriptions: dict[str, str] = {}
+        self._allocated: list[str] = []
+        self._lookup: dict[str, dict[str, object]] = {}
 
         self._initial_bytes = bytearray()
 
@@ -255,7 +254,10 @@ class MemAddrAllocator:
         initial_value: bytes | bytearray | None = None,
         description: str = "",
     ) -> int:
-        """名前とサイズを登録し、割り当て先アドレスを返す。"""
+        """名前とサイズを登録し、割り当て先アドレスを返す。
+
+        例: ``allocator.add("BUFFER", 4, initial_value=b"\x01\x02\x03\x04", description="作業領域")``
+        """
 
         if name in self._lookup:
             msg = f"{name!r} is already allocated"
@@ -285,10 +287,15 @@ class MemAddrAllocator:
             value_length = 0
 
         address = self._current_address
-        self._allocated.append((name, address))
-        self._lookup[name] = address
+        self._allocated.append(name)
+        raw_initial_value = raw if raw else [0x00] * size
+        self._lookup[name] = {
+            "address": address,
+            "size": size,
+            "description": description,
+            "initial_value": bytes(raw_initial_value),
+        }
         self._current_address += size
-        self._descriptions[name] = description
 
         offset = self._ensure_capacity(address, size)
         if raw is not None:
@@ -300,7 +307,7 @@ class MemAddrAllocator:
         """登録済みの名前を指定してアドレスを取得する。"""
 
         try:
-            return self._lookup[name]
+            return self._lookup[name]["address"]  # type: ignore[index]
         except KeyError as exc:  # pragma: no cover - simple passthrough
             raise KeyError(name) from exc
 
@@ -310,10 +317,19 @@ class MemAddrAllocator:
 
     def as_str(self) -> str:
         s = ""
-        for name, address in self._allocated:
-            desc = self._descriptions.get(name, "")
-            desc = f"# {desc}" if desc else ""
-            s += f"{address:05X}h: {name} {desc}\n"
+        for index, name in enumerate(self._allocated):
+            entry = self._lookup[name]
+            address = entry["address"]
+            size = entry["size"]
+            desc = entry["description"]
+            initial = entry["initial_value"]
+
+            desc_text = f" # {desc}" if desc else ""
+            initial_hex = " ".join(f"{byte:02X}" for byte in initial)
+            s += (
+                f"[{index:02d}] {address:05X}h: {name} (size={size}, initial=[{initial_hex}])"
+                f"{desc_text}\n"
+            )
         return s
 
     @property
