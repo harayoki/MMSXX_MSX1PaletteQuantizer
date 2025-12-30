@@ -1925,6 +1925,35 @@ class OUT_C:
             raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
         b.emit(0xED, opcode)
 
+    @staticmethod
+    def B(b: Block) -> None:
+        OUT_C.r(b, "B")
+
+    @staticmethod
+    def C(b: Block) -> None:
+        OUT_C.r(b, "C")
+
+    @staticmethod
+    def D(b: Block) -> None:
+        OUT_C.r(b, "D")
+
+    @staticmethod
+    def E(b: Block) -> None:
+        OUT_C.r(b, "E")
+
+    @staticmethod
+    def H(b: Block) -> None:
+        OUT_C.r(b, "H")
+
+    @staticmethod
+    def L(b: Block) -> None:
+        OUT_C.r(b, "L")
+
+    @staticmethod
+    def A(b: Block) -> None:
+        OUT_C.r(b, "A")
+
+
 # ---------------------------------------------------------------------------
 # push / pop
 # ---------------------------------------------------------------------------
