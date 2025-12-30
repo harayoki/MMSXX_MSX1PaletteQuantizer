@@ -209,7 +209,9 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 # 便利python関数
 # ---------------------------------------------------------------------------
 
-def print_bytes(data: bytes, step: int = 16, address: int | None = 0) -> None:
+def print_bytes(data: bytes, step: int = 16, address: int | None = 0, title: str = "") -> None:
+    if title:
+        print(title)
     for i in range(0, len(data), step):
         chunk = data[i:i + step]
         chunk = ' '.join(f'{b:02x}' for b in chunk)
