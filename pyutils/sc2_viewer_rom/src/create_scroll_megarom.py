@@ -82,6 +82,7 @@ from mmsxxasmhelper.core import (
     NOP,
     OUT,
     OUT_A,
+    EX,
     SBC,
     OUT_C,
     OUTI,
@@ -840,7 +841,53 @@ def build_boot_bank(
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
 
-    # SPACE (論理 L_BTN_A) が「今押されたか」をまずチェック
+    # --- 上下入力の処理 ---
+    # 上キー判定
+    LD.A_mn16(b, ADDR.INPUT_HOLD)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_UP)
+    JR_Z(b, "CHECK_DOWN")
+
+    # 0 より大きければデクリメント
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "DO_SCROLL_NAME")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    JR(b, "DO_SCROLL_NAME")
+
+    b.label("CHECK_DOWN")
+    # 下キー判定
+    BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
+    JR_Z(b, "CHECK_SPACE")
+
+    # 最大値 (総行数 - 24) チェック
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)  # HL = limit
+
+    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    # 現在値 DE と 限界値 HL を比較
+    PUSH.HL(b)
+    LD.H_D(b)
+    LD.L_E(b)
+    POP.BC(b)
+    OR.A(b)
+    SBC.HL_BC(b)
+    JR_NC(b, "CHECK_SPACE")  # 現在値 >= 限界値ならスキップ
+
+    EX.DE_HL(b)  # HL = 現在のスクロール行
+    INC.HL(b)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+
+    b.label("DO_SCROLL_NAME")
+    # CURRENT_SCROLL_ROW の下位8bitを A に入れて名前テーブル更新関数を呼ぶ
+    LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    SCROLL_NAME_TABLE_FUNC.call(b)
+
+    # --- スペースキー判定 (画像切り替え) ---
+    b.label("CHECK_SPACE")
     LD.A_mn16(b, ADDR.INPUT_TRG)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
     JR_Z(b, "MAIN_LOOP")
