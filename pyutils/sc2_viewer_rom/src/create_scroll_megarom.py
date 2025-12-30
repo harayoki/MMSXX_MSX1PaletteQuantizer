@@ -543,20 +543,6 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
 
-    # # パターン／カラーバッファをゼロクリアして黒で埋める。
-    # XOR.A(b)  # A=0
-    # LD.HL_n16(b, PATTERN_RAM_BASE)  # 転送元 C000h
-    # LD.mHL_A(b)  # C000h = 0
-    # # コピー先とコピー元がかぶった連続メモリ転送で同じ値を配置 # 転送先 C001h # 転送バイト 0x1800
-    # ldir_macro(b, dest_DE=PATTERN_RAM_BASE+1, length_BC=PATTERN_RAM_SIZE-1)
-
-    # 現状パターンとカラーのバッファは同じ位置なのでクリア処理はいらない
-    # LD.HL_n16(b, COLOR_RAM_BASE)
-    # LD.DE_n16(b, COLOR_RAM_BASE + 1)
-    # LD.BC_n16(b, COLOR_RAM_SIZE - 1)
-    # LD.mHL_A(b)
-    # b.emit(0xED, 0xB0)  # LDIR
-
     # # パターン（画面24タイル分）RAM転送
     LD.HL_n16(b, PATTERN_BASE)
     SET_VRAM_WRITE_FUNC.call(b)
