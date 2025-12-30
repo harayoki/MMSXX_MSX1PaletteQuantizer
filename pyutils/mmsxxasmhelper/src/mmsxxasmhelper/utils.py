@@ -18,6 +18,7 @@ __all__ = [
     "debug_trap",
     "debug_print_labels",
     "print_bytes",
+    "MemoryAddressAllocator",
     "with_register_preserve",
 ]
 
@@ -219,3 +220,40 @@ def print_bytes(data: bytes, step: int = 16, address: int | None = 0, title: str
             chunk = f"{address: 05x}: {chunk}"
             address += step
         print(chunk)
+
+
+class MemoryAddressAllocator:
+    """メモリアドレスを順次管理するユーティリティ。"""
+
+    def __init__(self, base_address: int) -> None:
+        self._base_address = base_address
+        self._current_address = base_address
+        self._allocated: list[tuple[str, int]] = []
+        self._lookup: dict[str, int] = {}
+
+    def add(self, name: str, size: int) -> int:
+        """名前とサイズを登録し、割り当て先アドレスを返す。"""
+
+        if name in self._lookup:
+            msg = f"{name!r} is already allocated"
+            raise ValueError(msg)
+
+        address = self._current_address
+        self._allocated.append((name, address))
+        self._lookup[name] = address
+        self._current_address += size
+        return address
+
+    def get(self, name: str) -> int:
+        """登録済みの名前を指定してアドレスを取得する。"""
+
+        try:
+            return self._lookup[name]
+        except KeyError as exc:  # pragma: no cover - simple passthrough
+            raise KeyError(name) from exc
+
+    def debug_print(self) -> None:
+        """登録済みの名前とアドレスを出力する。"""
+
+        for name, address in self._allocated:
+            print(f"{name}: {address:#06x}")
