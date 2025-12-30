@@ -145,6 +145,7 @@ TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
+QUANTIZED_SUFFIX = "_quantized"
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -238,9 +239,39 @@ def find_msx1pq_cli(path: Path | None) -> Path:
     return Path(resolved)
 
 
+def quantized_output_path(prepared_png: Path, output_dir: Path) -> Path:
+    return output_dir / f"{prepared_png.stem}{QUANTIZED_SUFFIX}{prepared_png.suffix}"
+
+
+def is_cached_image_valid(
+    cached_image: Path, expected_size: tuple[int, int], newest_source_mtime: float
+) -> bool:
+    if not cached_image.is_file():
+        return False
+
+    try:
+        if cached_image.stat().st_mtime <= newest_source_mtime:
+            return False
+        with Image.open(cached_image) as img:
+            return img.size == expected_size
+    except OSError:
+        return False
+
+
+def load_quantized_image(
+    index: int, path: Path, action: str, log_lines: list[str]
+) -> ImageData:
+    with Image.open(path) as quantized_image:
+        width, height = quantized_image.size
+        log_and_store(
+            f"* quantized image #{index} {path} {action} ({width}x{height}px)",
+            log_lines,
+        )
+        return build_image_data_from_image(quantized_image)
+
+
 def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_suffix = "_quantized"
     cmd = [
         str(cli),
         "-i",
@@ -249,7 +280,7 @@ def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
         str(output_dir),
         "--no-preprocess",
         "--out-suffix",
-        out_suffix,
+        QUANTIZED_SUFFIX,
         "--force",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -261,7 +292,7 @@ def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
             f"stderr:\n{result.stderr}"
         )
 
-    out_path = output_dir / f"{prepared_png.stem}{out_suffix}{prepared_png.suffix}"
+    out_path = quantized_output_path(prepared_png, output_dir)
     if not out_path.is_file():
         raise SystemExit(f"Expected output not found: {out_path}")
     return out_path
@@ -856,6 +887,11 @@ def parse_args() -> argparse.Namespace:
         help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
     )
     parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
+    )
+    parser.add_argument(
         "--fill-byte",
         type=int_from_str,
         default=0xFF,
@@ -967,7 +1003,7 @@ def main() -> None:
     total_input_images = 0
 
     input_groups: list[list[Path]] = [list(group) for group in args.input]
-    prepared_images: list[tuple[str, Image.Image]] = []
+    prepared_images: list[tuple[str, Image.Image, float]] = []
     image_data_list: list[ImageData] = []
     rom: bytes
 
@@ -982,9 +1018,12 @@ def main() -> None:
                 raise SystemExit("Empty input group is not allowed")
 
             loaded_images: list[Image.Image] = []
+            newest_input_mtime = 0.0
             for path in group:
                 if not path.is_file():
                     raise SystemExit(f"not found: {path}")
+                path_mtime = path.stat().st_mtime
+                newest_input_mtime = max(newest_input_mtime, path_mtime)
                 with Image.open(path) as src:
                     image_format = src.format or path.suffix.lstrip(".").upper() or "UNKNOWN"
                     input_format_counter[image_format] += 1
@@ -993,7 +1032,7 @@ def main() -> None:
 
             merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
             group_name = "-".join(path.stem for path in group)
-            prepared_images.append((group_name, merged))
+            prepared_images.append((group_name, merged, newest_input_mtime))
 
         format_summary = ", ".join(
             f"{fmt}={count}" for fmt, count in sorted(input_format_counter.items())
@@ -1005,20 +1044,26 @@ def main() -> None:
         )
 
         with open_workdir(args.workdir) as workdir:
-            for idx, (group_name, image) in enumerate(prepared_images):
+            for idx, (group_name, image, newest_input_mtime) in enumerate(prepared_images):
                 prepared_path = workdir / f"{idx:02d}_{group_name}_prepared.png"
-                image.save(prepared_path)
-                # print(f"prepared iamge #{idx} {prepared_path} created")
+                quantized_path = quantized_output_path(prepared_path, workdir)
 
+                if not args.no_cache and is_cached_image_valid(
+                    quantized_path, image.size, newest_input_mtime
+                ):
+                    image_data = load_quantized_image(
+                        idx, quantized_path, "reused", log_lines
+                    )
+                    image_data_list.append(image_data)
+                    continue
+
+                image.save(prepared_path)
                 quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
                 os.unlink(prepared_path)
-                with Image.open(quantized_path) as quantized_image:
-                    width, height = quantized_image.size
-                    log_and_store(
-                        f"* quantized image #{idx} {quantized_path} created ({width}x{height}px)",
-                        log_lines,
-                    )
-                    image_data = build_image_data_from_image(quantized_image)
+
+                image_data = load_quantized_image(
+                    idx, quantized_path, "created", log_lines
+                )
                 image_data_list.append(image_data)
 
     if not image_data_list:
