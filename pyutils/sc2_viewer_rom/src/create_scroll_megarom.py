@@ -78,6 +78,7 @@ from mmsxxasmhelper.core import (
     XOR,
     DB,
     DW,
+    SUB,
     NOP,
     OUT,
     OUT_A,
@@ -168,18 +169,6 @@ class ADDR:
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
 
 # mem_addr_allocator.debug_print()
-
-# CURRENT_IMAGE_ADDR = WORK_RAM_BASE + 0
-# CURRENT_IMAGE_START_BANK_ADDR = CURRENT_IMAGE_ADDR + 1  # 画像データを格納しているバンク番号を保存するアドレス
-# CURRENT_IMAGE_ROW_COUNT_ADDR = CURRENT_IMAGE_START_BANK_ADDR + 1  # 画像の行数（タイル行数）を保存するアドレス
-# CURRENT_IMAGE_COLOR_BANK_ADDR = CURRENT_IMAGE_ROW_COUNT_ADDR + 2  # カラーパターンが置かれているバンク番号を保存するアドレス
-# CURRENT_IMAGE_COLOR_ADDRESS_ADDR = CURRENT_IMAGE_COLOR_BANK_ADDR + 1  # カラーパターンの先頭アドレスを保存するアドレス
-# CURRENT_SCROLL_ROW = CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 2  # スクロール位置を
-#
-# INPUT_HOLD = 0xC100  # 現在押されている全入力
-# INPUT_TRG = 0xC101  # 今回新しく押された入力
-# BEEP_CNT: int = 0xC102
-# BEEP_ACTIVE: int = 0xC103
 
 
 @dataclass
@@ -548,7 +537,7 @@ def calc_line_num_for_reg_a_macro(b: Block) -> None:
 def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
-    start_at:str,
+    start_at: str,
     fill_byte: int,
     log_lines: List[str] | None = None,
 ) -> bytes:
@@ -620,6 +609,26 @@ def build_boot_bank(
     LD.mHL_E(b)
     INC.HL(b)
     LD.mHL_D(b)
+
+    # --- [初期スクロール位置の計算] ---
+    if start_at == "bottom":
+        # 画像の総行数を A に取得
+        LD.A_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+        # 1画面分の 24行を引く
+        SUB.n8(b, 24)
+
+        # もし総行数が 24行未満なら、キャリーフラグが立って負になる
+        JR_NC(b, "INIT_POS_OK")
+        XOR.A(b)  # 24行未満なら 0 にリセット
+
+        b.label("INIT_POS_OK")
+        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW)  # 下位8bitに保存
+        LD.A_n8(b, 0)
+        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW + 1)  # 上位8bitを 0 で初期化
+    else:
+        XOR.A(b)
+        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW)
+        LD.mn16_A(b, ADDR.CURRENT_SCROLL_ROW + 1)
 
     # --- [初期表示] ---
     XOR.A(b)
