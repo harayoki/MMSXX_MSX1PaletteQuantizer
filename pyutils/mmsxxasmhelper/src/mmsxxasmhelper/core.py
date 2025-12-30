@@ -72,6 +72,8 @@ __all__ = [
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_A", "OUT_C",
+    "INI", "IND", "INIR", "INDR",
+    "OUTI", "OUTD", "OUTIR", "OUTDR",
     "PUSH", "POP",
     "NOP", "HALT", "DI", "EI",
 ]
@@ -1881,7 +1883,7 @@ def DW(b: Block, *values: int) -> None:
         b.emit(lo, hi)
 
 # ---------------------------------------------------------------------------
-# OUT 命令
+# OUT / IN 命令
 # ---------------------------------------------------------------------------
 
 
@@ -1952,6 +1954,70 @@ class OUT_C:
     @staticmethod
     def A(b: Block) -> None:
         OUT_C.r(b, "A")
+
+"""
+TODO IN系 実装
+"""
+
+# ---------------------------------------------------------------------------
+# ブロック入出力
+# ---------------------------------------------------------------------------
+
+
+def INI(b: Block) -> None:
+    """
+    Input and Increment,ポートCのデータを(HL)に書き込み、HLを+1、Bを-1する。
+    """
+    b.emit(0xED, 0xA2)
+
+
+def IND(b: Block) -> None:
+    """
+    Input and Decrement,ポートCのデータを(HL)に書き込み、HLを-1、Bを-1する。
+    """
+    b.emit(0xED, 0xAA)
+
+
+def INIR(b: Block) -> None:
+    """
+    "Input, Incr. and Repeat",INIを繰り返す。 Bが0になるまで連続で入力し続ける。
+    """
+    b.emit(0xED, 0xB2)
+
+
+def INDR(b: Block) -> None:
+    """
+    "Input, Decr. and Repeat" ,INDを繰り返す。 Bが0になるまで連続で入力し続ける。
+    """
+    b.emit(0xED, 0xBA)
+
+
+def OUTI(b: Block) -> None:
+    """
+    Output and Increment,(HL)のデータをポートCへ出力し、HLを+1、Bを-1する。
+    """
+    b.emit(0xED, 0xA3)
+
+
+def OUTD(b: Block) -> None:
+    """
+    Output and Decrement,(HL)のデータをポートCへ出力し、HLを-1、Bを-1する。
+    """
+    b.emit(0xED, 0xAB)
+
+
+def OUTIR(b: Block) -> None:
+    """
+    "Output, Incr. and Repeat",OUTIを繰り返す。 Bが0になるまで連続で出力し続ける。
+    """
+    b.emit(0xED, 0xB3)
+
+
+def OUTDR(b: Block) -> None:
+    """
+    "Output, Decr. and Repeat",OUTDを繰り返す。 Bが0になるまで連続で出力し続ける。
+    """
+    b.emit(0xED, 0xBB)
 
 
 # ---------------------------------------------------------------------------
