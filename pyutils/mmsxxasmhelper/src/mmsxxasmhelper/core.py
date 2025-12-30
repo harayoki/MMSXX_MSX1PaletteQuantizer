@@ -68,6 +68,7 @@ __all__ = [
     "Func", "define_created_funcs",
     "DB", "DW",
     "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR", "BIT",
+    "EX",
     "CPL", "NEG",
     "LDIR",
     "RLCA",
@@ -1434,6 +1435,11 @@ class SUB:
     def A(b: Block):
         b.emit(0x97)
 
+    @staticmethod
+    def n8(b: Block, n: int):
+        """a = a- n"""
+        b.emit(0xD6, n & 0xFF)
+
 
 class CP:
     """CP 系命令。"""
@@ -1773,6 +1779,26 @@ class BIT:
             raise ValueError("bit must be in 0..7")
         opcode = 0x40 | (bit << 3) | 6
         b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
+
+
+# ---------------------------------------------------------------------------
+# レジスタ交換
+# ---------------------------------------------------------------------------
+
+class EX:
+
+    @staticmethod
+    def DE_HL(b: Block) -> None:
+        b.emit(0xEB)
+
+    @staticmethod
+    def mSP_HL(b: Block) -> None:
+        b.emit(0xE3)
+
+    @staticmethod
+    def AF_AF(b: Block) -> None:
+        b.emit(0x08)
+
 
 # ---------------------------------------------------------------------------
 # ビット操作
