@@ -321,8 +321,8 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
     return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
 
 
-def build_init_name_table_func() -> Func:
-    def init_name_table_call(block: Block) -> None:
+def build_reset_name_table_func() -> Func:
+    def reset_name_table_call(block: Block) -> None:
         # VRAMアドレスセット (NAME_BASE = 0x1800)
         # 0x1800 を書き込みモードでセット
         LD.A_n8(block, 0x00)     # 下位8bit
@@ -352,10 +352,10 @@ def build_init_name_table_func() -> Func:
         DEC.D(block)             # 残りブロック数を減らす
         JR_NZ(block, OUTER_LOOP)
 
-    return Func("init_name_table_call", init_name_table_call)
+    return Func("init_name_table_call", reset_name_table_call)
 
 
-INIT_NAME_TABLE_FUNC = build_init_name_table_func()
+RESET_NAME_TABLE_FUNC = build_reset_name_table_func()
 
 
 def build_set_vram_write_func() -> Func:
@@ -503,7 +503,7 @@ def build_boot_bank(
     LD.mn16_A(b, BDRCLR)
     CALL(b, CHGCLR)
 
-    INIT_NAME_TABLE_FUNC.call(b)
+    RESET_NAME_TABLE_FUNC.call(b)
 
     # 現在のページを記憶
     LD.A_n8(b, 0)
@@ -543,7 +543,7 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
 
-    # # パターン（画面24タイル分）RAM転送
+    # パターン（画面24タイル分）RAM転送
     LD.HL_n16(b, PATTERN_BASE)
     SET_VRAM_WRITE_FUNC.call(b)
     LD.HL_n16(b, DATA_BANK_ADDR)
@@ -561,9 +561,13 @@ def build_boot_bank(
     LD.D_n8(b, 24)
     SCROLL_VRAM_XFER_FUNC.call(b)
 
+    b.label("MAIN_LOOP")
+    # TODO ここにキー読み取りとページ遷移コード
+    # spaceで次の画面へ、SHIFT＋SPACEで前の画面へ
+    # 画面切り替え時は RESET_NAME_TABLE_FUNC して からパターンとカラー転送する
     loop_infinite_macro(b)
 
-    INIT_NAME_TABLE_FUNC.define(b)
+    RESET_NAME_TABLE_FUNC.define(b)
     SET_VRAM_WRITE_FUNC.define(b)
     SCROLL_VRAM_XFER_FUNC.define(b)
     UPDATE_INPUT_FUNC.define(b)
