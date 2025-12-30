@@ -514,202 +514,122 @@ class INPUT_KEY_BIT:
 
 
 def build_update_input_func(
-    input_hold: int = 0xC100,
-    input_trg: int = 0xC101,
+        input_hold: int = 0xC100,
+        input_trg: int = 0xC101,
 ) -> Func:
-    """
-    論理入力を更新する共通関数。
-    キーボード、(将来的に)ジョイスティック、スマホI/O等を統合して
-    INPUT_HOLD / INPUT_TRG を作成する。ワークエリアのアドレスは引数で指定する。
-    """
-
-    # --- 入力関連システム変数・BIOS ---
-    SNSMAT = 0x0141  # キーマトリックス読み取り
-    GTSTCK = 0x00D5  # ジョイスティック状態取得
-    GTTRIG = 0x00D8  # ジョイスティックボタン取得
+    SNSMAT = 0x0141
+    GTSTCK = 0x00D5
+    GTTRIG = 0x00D8
 
     def update_input(block: Block) -> None:
-        skip_kbd_space = unique_label("__SKIP_KBD_SPACE__")
-        skip_kbd_shift = unique_label("__SKIP_KBD_SHIFT__")
-        kbd_up_set = unique_label("__KBD_UP_SET__")
-        kbd_after_up = unique_label("__KBD_AFTER_UP__")
-        kbd_down_set = unique_label("__KBD_DOWN_SET__")
-        pad1_start = unique_label("__PAD1_START__")
-        pad1_up_set = unique_label("__PAD1_UP_SET__")
-        pad1_after_up = unique_label("__PAD1_AFTER_UP__")
-        pad1_down_set = unique_label("__PAD1_DOWN_SET__")
-        pad2_start = unique_label("__PAD2_START__")
-        pad2_up_set = unique_label("__PAD2_UP_SET__")
-        pad2_after_up = unique_label("__PAD2_AFTER_UP__")
-        pad2_down_set = unique_label("__PAD2_DOWN_SET__")
-        pad2_after_down = unique_label("__PAD2_AFTER_DOWN__")
-        skip_trig_a1 = unique_label("__SKIP_TRIG_A1__")
-        skip_trig_a2 = unique_label("__SKIP_TRIG_A2__")
-
-        # --- 1. 物理入力のサンプリング ---
-        # 最終的に A レジスタに論理ビット(1=押下)を組み立てる
+        # PUSH でレジスタ保護
         PUSH.IX(block)
-        LD.IX_n16(block, 0)  # IXL を作業用ボタンフラグにする (0でリセット)
+        PUSH.BC(block)
 
-        # Keyboard cursor via GTSTCK(0)
+        # IXL を作業用ボタンフラグにする (0でリセット)
+        XOR.A(block)
+        LD.IXL_A(block)
+
+        # --- 1. Keyboard cursor (GTSTCK 0) ---
         LD.A_n8(block, 0)
         CALL(block, GTSTCK)
-        LD.B_A(block)
+        LD.B_A(block)  # B = 方向 (1-8)
 
-        LD.A_B(block)
-        CP.n8(block, 0x01)
-        JR_Z(block, kbd_up_set)
-        CP.n8(block, 0x05)
-        JR_Z(block, kbd_up_set)
-        CP.n8(block, 0x08)
-        JR_Z(block, kbd_up_set)
-        JR(block, kbd_after_up)
-        block.label(kbd_up_set)
+        # UP 判定 (1, 2, 8)
+        CP.n8(block, 1)
+        JR_Z(block, "_K_UP")
+        CP.n8(block, 2)
+        JR_Z(block, "_K_UP")
+        CP.n8(block, 8)
+        JR_NZ(block, "_K_SKIP_UP")
+        block.label("_K_UP")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_UP)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label(kbd_after_up)
+        block.label("_K_SKIP_UP")
 
+        # DOWN 判定 (4, 5, 6)
         LD.A_B(block)
-        CP.n8(block, 0x03)
-        JR_Z(block, kbd_down_set)
-        CP.n8(block, 0x06)
-        JR_Z(block, kbd_down_set)
-        CP.n8(block, 0x07)
-        JR_Z(block, kbd_down_set)
-        JR(block, pad1_start)
-        block.label(kbd_down_set)
+        CP.n8(block, 4)
+        JR_Z(block, "_K_DOWN")
+        CP.n8(block, 5)
+        JR_Z(block, "_K_DOWN")
+        CP.n8(block, 6)
+        JR_NZ(block, "_K_SKIP_DOWN")
+        block.label("_K_DOWN")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_DOWN)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label(pad1_start)
+        block.label("_K_SKIP_DOWN")
 
-        # Joypad (port 1) direction via GTSTCK(1)
+        # --- 2. ジョイスティック 1 & 2 ---
+        # Port 1
         LD.A_n8(block, 1)
         CALL(block, GTSTCK)
         LD.B_A(block)
-
-        LD.A_B(block)
-        CP.n8(block, 0x01)
-        JR_Z(block, pad1_up_set)
-        CP.n8(block, 0x05)
-        JR_Z(block, pad1_up_set)
-        CP.n8(block, 0x08)
-        JR_Z(block, pad1_up_set)
-        JR(block, pad1_after_up)
-        block.label(pad1_up_set)
+        CP.n8(block, 1)
+        JR_Z(block, "_J1_UP")
+        CP.n8(block, 2)
+        JR_Z(block, "_J1_UP")
+        CP.n8(block, 8)
+        JR_NZ(block, "_J1_SKIP_UP")
+        block.label("_J1_UP")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_UP)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label(pad1_after_up)
+        block.label("_J1_SKIP_UP")
 
         LD.A_B(block)
-        CP.n8(block, 0x03)
-        JR_Z(block, pad1_down_set)
-        CP.n8(block, 0x06)
-        JR_Z(block, pad1_down_set)
-        CP.n8(block, 0x07)
-        JR_Z(block, pad1_down_set)
-        JR(block, pad2_start)
-        block.label(pad1_down_set)
+        CP.n8(block, 4)
+        JR_Z(block, "_J1_DOWN")
+        CP.n8(block, 5)
+        JR_Z(block, "_J1_DOWN")
+        CP.n8(block, 6)
+        JR_NZ(block, "_J1_SKIP_DOWN")
+        block.label("_J1_DOWN")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_DOWN)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label(pad2_start)
+        block.label("_J1_SKIP_DOWN")
 
-        # Joypad (port 2) direction via GTSTCK(2)
-        LD.A_n8(block, 2)
-        CALL(block, GTSTCK)
-        LD.B_A(block)
-
-        LD.A_B(block)
-        CP.n8(block, 0x01)
-        JR_Z(block, pad2_up_set)
-        CP.n8(block, 0x05)
-        JR_Z(block, pad2_up_set)
-        CP.n8(block, 0x08)
-        JR_Z(block, pad2_up_set)
-        JR(block, pad2_after_up)
-        block.label(pad2_up_set)
-        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_UP)
-        OR.IXL(block)
-        LD.IXL_A(block)
-        block.label(pad2_after_up)
-
-        LD.A_B(block)
-        CP.n8(block, 0x03)
-        JR_Z(block, pad2_down_set)
-        CP.n8(block, 0x06)
-        JR_Z(block, pad2_down_set)
-        CP.n8(block, 0x07)
-        JR_Z(block, pad2_down_set)
-        JR(block, pad2_after_down)
-        block.label(pad2_down_set)
-        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_DOWN)
-        OR.IXL(block)
-        LD.IXL_A(block)
-        block.label(pad2_after_down)
-
-        # Keyboard: SPACE (Matrix 8, Bit 0)
+        # --- 3. SPACE / SHIFT ---
+        # SPACE (Matrix 8, Bit 0)
         LD.A_n8(block, 8)
         CALL(block, SNSMAT)
-        # Bit 0 が 0 なら押下。反転させて論理Bit4へ
-        CPL(block)
         BIT.n8_A(block, 0)
-        JR_Z(block, skip_kbd_space)
+        JR_NZ(block, "_SKIP_SPACE")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_A)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label(skip_kbd_space)
+        block.label("_SKIP_SPACE")
 
-        # Joypad Trigger A (primary) ports 1 and 2)
-        LD.A_n8(block, 1)
-        CALL(block, GTTRIG)
-        CP.n8(block, 0)
-        JR_Z(block, skip_trig_a1)
-        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_A)
-        OR.IXL(block)
-        LD.IXL_A(block)
-        block.label(skip_trig_a1)
-
-        LD.A_n8(block, 2)
-        CALL(block, GTTRIG)
-        CP.n8(block, 0)
-        JR_Z(block, skip_trig_a2)
-        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_A)
-        OR.IXL(block)
-        LD.IXL_A(block)
-        block.label(skip_trig_a2)
-
-        # Keyboard: SHIFT (Matrix 6, Bit 0)
+        # SHIFT (Matrix 6, Bit 0)
         LD.A_n8(block, 6)
         CALL(block, SNSMAT)
-        CPL(block)
         BIT.n8_A(block, 0)
-        JR_Z(block, skip_kbd_shift)
+        JR_NZ(block, "_SKIP_SHIFT")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_B)
         OR.IXL(block)
         LD.IXL_A(block)
-        block.label(skip_kbd_shift)
+        block.label("_SKIP_SHIFT")
 
-        # --- 2. HOLD と TRG の更新計算 ---
-        # A = 今回の最新HOLD (IXL)
+        # --- 4. HOLD / TRG 更新 ---
         LD.A_IXL(block)
         LD.HL_n16(block, input_hold)
-        LD.C_mHL(block)  # C = 前回の HOLD
-        LD.mHL_A(block)  # 今回の A を新しい INPUT_HOLD として保存
+        LD.C_mHL(block)  # 前回の HOLD
+        LD.mHL_A(block)  # 今回の HOLD 保存
 
-        # TRG = NEW_HOLD AND (NOT OLD_HOLD)
-        # C = OLD_HOLD なので反転して A と AND
-        LD.B_A(block)  # B = 今回の HOLD
-        LD.A_C(block)  # A = 前回の HOLD
-        CPL(block)  # A = NOT 前回の HOLD
-        AND.B(block)  # A = NEW & (~OLD)
+        LD.B_A(block)  # NEW
+        LD.A_C(block)  # OLD
+        CPL(block)  # ~OLD
+        AND.B(block)  # NEW & ~OLD
         LD.mn16_A(block, input_trg)
 
+        POP.BC(block)
         POP.IX(block)
+        RET(block)
 
-    return Func("update_input", update_input)
+    return Func("update_input", update_input, no_auto_ret=True)
 
 
 """

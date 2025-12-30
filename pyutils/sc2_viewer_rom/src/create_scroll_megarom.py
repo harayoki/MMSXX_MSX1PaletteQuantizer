@@ -841,8 +841,7 @@ def build_boot_bank(
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
 
-    # --- 上下入力の処理 ---
-    # 上キー判定
+    # --- 上入力の処理 ---
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_UP)
     JR_Z(b, "CHECK_DOWN")
@@ -851,13 +850,14 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     LD.A_H(b)
     OR.L(b)
-    JR_Z(b, "DO_SCROLL_NAME")
+    JR_Z(b, "DO_SCROLL_NAME")  # 0なら引かない
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     JR(b, "DO_SCROLL_NAME")
 
     b.label("CHECK_DOWN")
     # 下キー判定
+    LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
     JR_Z(b, "CHECK_SPACE")
 
@@ -865,24 +865,25 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
     LD.BC_n16(b, 24)
     OR.A(b)
-    SBC.HL_BC(b)  # HL = limit
+    SBC.HL_BC(b)  # HL = 最大スクロール行(limit)
 
     LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    # 現在値 DE と 限界値 HL を比較
+    # DE(現在値) と HL(限界値) を比較
+    # Z80で HL > DE を判定するために SBC を使用
     PUSH.HL(b)
-    LD.H_D(b)
-    LD.L_E(b)
-    POP.BC(b)
-    OR.A(b)
-    SBC.HL_BC(b)
-    JR_NC(b, "CHECK_SPACE")  # 現在値 >= 限界値ならスキップ
+    OR.A(b)  # キャリークリア
+    SBC.HL_DE(b)  # HL = limit - current
+    POP.HL(b)
+    JR_Z(b, "CHECK_SPACE")  # limit == current ならこれ以上増やさない
+    JR_C(b, "CHECK_SPACE")  # limit < current (異常系) なら増やさない
 
-    EX.DE_HL(b)  # HL = 現在のスクロール行
+    # まだ余裕があるならインクリメント
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
     b.label("DO_SCROLL_NAME")
-    # CURRENT_SCROLL_ROW の下位8bitを A に入れて名前テーブル更新関数を呼ぶ
+    # ネームテーブルのみ更新（下位8bitを渡す）
     LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     SCROLL_NAME_TABLE_FUNC.call(b)
 
@@ -890,28 +891,29 @@ def build_boot_bank(
     b.label("CHECK_SPACE")
     LD.A_mn16(b, ADDR.INPUT_TRG)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
-    JR_Z(b, "MAIN_LOOP")
+    JR_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
 
-    # スペースが押された！ 次に SHIFT (論理 L_BTN_B) が「現在保持されているか」をチェック
+    # SPACEが押された場合のみここに来る
+    # 次に SHIFT (L_BTN_B) の状態を確認
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
-    JR_NZ(b, "PREV_IMAGE")  # SHIFTありなら戻る
+    JR_NZ(b, "PREV_IMAGE")  # SHIFTありなら PREV へ
 
-    # --- [NEXT_IMAGE: 次へ（ループ対応）] ---
+    # --- [NEXT_IMAGE: 次へ] ---
     b.label("NEXT_IMAGE")
     LD.A_mn16(b, ADDR.CURRENT_IMAGE_ADDR)
     INC.A(b)
     CP.n8(b, len(image_entries))
-    JR_C(b, "__GO_UPDATE__")  # 枚数未満ならそのまま更新へ
-    XOR.A(b)  # 枚数に達したら 0 (最初) に戻す
+    JR_C(b, "__GO_UPDATE__")
+    XOR.A(b)  # ループ
     JR(b, "__GO_UPDATE__")
 
-    # --- [PREV_IMAGE: 前へ（ループ対応）] ---
+    # --- [PREV_IMAGE: 前へ] ---
     b.label("PREV_IMAGE")
     LD.A_mn16(b, ADDR.CURRENT_IMAGE_ADDR)
-    OR.A(b)  # 現在 0 かチェック
+    OR.A(b)
     JR_NZ(b, "__SUB_AND_UPDATE__")
-    LD.A_n8(b, len(image_entries) - 1)  # 0 なら最後の画像番号へ
+    LD.A_n8(b, len(image_entries) - 1)
     JR(b, "__GO_UPDATE__")
 
     b.label("__SUB_AND_UPDATE__")
@@ -921,7 +923,6 @@ def build_boot_bank(
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
     SIMPLE_BEEP_FUNC.call(b)
     JR(b, "MAIN_LOOP")
-
     # --- 関数定義 ---
     define_created_funcs(b)
 
