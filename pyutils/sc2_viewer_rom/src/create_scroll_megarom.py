@@ -925,10 +925,46 @@ def build_boot_bank(
     # --- 関数定義 ---
     define_created_funcs(b)
 
+    # --- [事前計算テーブル群] ---
+    # 1. バンクオフセットテーブル (行数 0-255 -> 0-3 バンク)
+    # 1バンク16KB = 64行分。行数を64で割った商。
+    b.label("TABLE_DIV64")
+    TABLE_DIV64 = [i // 64 for i in range(256)]
+    print_bytes(TABLE_DIV64, title="TABLE_DIV64")
+    DB(b, *TABLE_DIV64)
+
+    # 2. バンク内アドレス Hオフセットテーブル (行数 0-255 -> 0x00-0x3F)
+    # 1行256バイトなので、行数 % 64 がそのまま 0x8000 からの Hレジスタ加算分になる。
+    b.label("TABLE_MOD64")
+    TABLE_MOD64 = [i % 64 for i in range(256)]
+    print_bytes(TABLE_MOD64, title="TABLE_MOD64")
+    DB(b, *TABLE_MOD64)
+
+    # 3. VRAMブロック内 行番号テーブル (行数 0-255 -> 0-7)
+    # SCREEN 2 は 8行(256タイル)単位でブロック化されているため、その中での相対行。
+    b.label("TABLE_MOD8")
+    TABLE_MOD8 = [i % 8 for i in range(256)]
+    print_bytes(TABLE_MOD8, title="TABLE_MOD8")
+    DB(b, *TABLE_MOD8)
+
+    # 4. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
+    # タイル番号のオフセット計算用。
+    b.label("TABLE_MOD24")
+    TABLE_MOD24 = [i % 24 for i in range(256)]
+    print_bytes(TABLE_MOD24, title="TABLE_MOD24")
+    DB(b, *TABLE_MOD24)
+
+    # --- [画像データ配置ヘッダー] ---
     b.label("IMAGE_HEADER_TABLE")
+    print_bytes(header_bytes, title="IMAGE_HEADER_TABLE")
     DB(b, *header_bytes)
 
     assembled = b.finalize(origin=ROM_BASE)
+
+    data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
+    log_and_store("---- labels ----", log_lines)
+    log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
+
     used_bytes = len(assembled)
     if used_bytes > PAGE_SIZE:
         raise ValueError(
@@ -944,10 +980,6 @@ def build_boot_bank(
         f"{free_bytes} bytes ({free_percent:.2f}%) free",
         log_lines,
     )
-
-    data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
-    log_and_store("---- labels ----", log_lines)
-    log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
 
     return data
 
@@ -1056,8 +1088,6 @@ def build(
     )
     if len(header_bytes) != expected_header_length:
         raise AssertionError("header_bytes length mismatch")
-
-    print_bytes(header_bytes, title="header bytes")
 
     banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
     banks.extend(data_banks)
