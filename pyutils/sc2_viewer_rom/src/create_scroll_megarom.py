@@ -75,6 +75,7 @@ from mmsxxasmhelper.core import (
     POP,
     PUSH,
     XOR,
+    AND,
     DB,
     DW,
     SUB,
