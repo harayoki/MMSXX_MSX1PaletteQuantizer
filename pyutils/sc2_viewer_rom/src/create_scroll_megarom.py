@@ -165,10 +165,16 @@ class ADDR:
         madd("CURRENT_IMAGE_COLOR_ADDRESS_ADDR", 2, description="カラーパターンの先頭アドレス"))
     CURRENT_SCROLL_ROW = (
         madd("CURRENT_SCROLL_ROW", 2, description="スクロール位置"))
+
     INPUT_HOLD = madd("INPUT_HOLD", 1, description="現在押されている全入力")
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
+
+    PG_BUFFER = madd("PG_BUFFER", 256)
+    CT_BUFFER = madd("CT_BUFFER", 256)
+    TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
+    VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
 
 # mem_addr_allocator.debug_print()
 
