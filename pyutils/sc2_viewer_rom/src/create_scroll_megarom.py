@@ -419,8 +419,6 @@ def build_reset_name_table_func() -> Func:
 RESET_NAME_TABLE_FUNC = build_reset_name_table_func()
 
 
-
-
 def build_scroll_vram_xfer_func() -> Func:
     def scroll_vram_xfer(block: Block) -> None:
         # --- 入力規定 ---
@@ -497,121 +495,6 @@ def build_scroll_vram_xfer_func() -> Func:
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
-
-
-# def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
-#     def update_image_display(block: Block) -> None:
-#         # 入力: A = 表示したい画像番号
-#         # 安全装置: 範囲外なら RET
-#         CP.n8(block, image_entries_count)
-#         RET_NC(block)
-#
-#         # 1. 画像番号の保存
-#         LD.mn16_A(block, ADDR.CURRENT_IMAGE_ADDR)
-#
-#         # 2. ヘッダテーブル(6bytes/entry)から情報をワークRAMにロード
-#         LD.L_A(block)
-#         LD.H_n8(block, 0)
-#         PUSH.HL(block)
-#         POP.DE(block)
-#         ADD.HL_HL(block)  # *2
-#         ADD.HL_DE(block)  # *3
-#         ADD.HL_HL(block)  # *6
-#         LD.DE_label(block, "IMAGE_HEADER_TABLE")
-#         ADD.HL_DE(block)
-#
-#         # CURRENT_IMAGE_START_BANK_ADDR から 6バイト分コピー
-#         # これにより ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR 等が更新される
-#         LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-#         for _ in range(6):
-#             LD.A_mHL(block)
-#             LD.mDE_A(block)
-#             INC.HL(block)
-#             INC.DE(block)
-#
-#         # --- [追加: スクロール位置のリセット] ---
-#         # 画像切り替え時に、指定の設定に合わせて位置を初期化する
-#         INIT_POS_OK = unique_label("_INIT_POS_OK")
-#         if start_at == "bottom":
-#             # 画像の総行数を A に取得 (現状 256行未満想定の 8bit 計算)
-#             LD.A_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
-#             SUB.n8(block, 24)
-#             JR_NC(block, INIT_POS_OK)
-#             XOR.A(block)  # 24行未満なら 0 にリセット
-#             block.label(INIT_POS_OK)
-#             LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW)  # Low byte
-#             XOR.A(block)
-#             LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW + 1)  # High byte を 0 でリセット
-#         else:
-#             XOR.A(block)
-#             LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW)
-#             LD.mn16_A(block, ADDR.CURRENT_SCROLL_ROW + 1)
-#
-#         # --- [VRAM転送の動的アドレス計算ルーチン] ---
-#         def calc_scroll_ptr(b: Block, is_color: bool):
-#             # (中略: 既存の calc_scroll_ptr の実装はそのまま)
-#             if is_color:
-#                 LD.HL_mn16(b, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-#                 LD.A_mn16(b, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
-#             else:
-#                 LD.HL_n16(b, DATA_BANK_ADDR)
-#                 LD.A_mn16(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-#
-#             PUSH.AF(b)
-#             LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-#             ADD.A_H(b)
-#             LD.H_A(b)
-#             POP.AF(b)
-#
-#             PUSH.AF(b)
-#             LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW + 1)
-#             ADD.A_A(b)
-#             ADD.A_A(b)
-#             LD.E_A(b)
-#             POP.AF(b)
-#             ADD.A_E(b)
-#             LD.E_A(b)
-#
-#             NORM_LOOP = unique_label("_NORM")
-#             NORM_DONE = unique_label("_NORM_DONE")
-#             b.label(NORM_LOOP)
-#             LD.A_H(b)
-#             CP.n8(b, 0xC0)
-#             JR_C(b, NORM_DONE)
-#             SUB.n8(b, 0x40)
-#             LD.H_A(b)
-#             INC.E(b)
-#             JR(b, NORM_LOOP)
-#             b.label(NORM_DONE)
-#
-#         # 4. VRAM 描画
-#         RESET_NAME_TABLE_FUNC.call(block)
-#
-#         # パターンジェネレータ転送
-#         calc_scroll_ptr(block, is_color=False)
-#         PUSH.HL(block)
-#         PUSH.DE(block)
-#         LD.HL_n16(block, PATTERN_BASE)
-#         SET_VRAM_WRITE_FUNC.call(block)
-#         POP.DE(block)
-#         POP.HL(block)
-#         LD.D_n8(block, 24)
-#         SCROLL_VRAM_XFER_FUNC.call(block)
-#
-#         # カラーテーブル転送
-#         calc_scroll_ptr(block, is_color=True)
-#         PUSH.HL(block)
-#         PUSH.DE(block)
-#         LD.HL_n16(block, COLOR_BASE)
-#         SET_VRAM_WRITE_FUNC.call(block)
-#         POP.DE(block)
-#         POP.HL(block)
-#         LD.D_n8(block, 24)
-#         SCROLL_VRAM_XFER_FUNC.call(block)
-#
-#         RET(block)
-#
-#     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
 
 
 def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
@@ -746,6 +629,118 @@ def build_update_image_display_func(image_entries_count: int, start_at: str) -> 
 UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
 
 BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE)
+
+
+def build_sync_scroll_row_func() -> Func:
+    def sync_scroll_row(block: Block) -> None:
+        # --- ① パターン (PG) 転送準備 ---
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        PUSH.HL(block)  # 行番号保存
+
+        # バンクとアドレスをテーブルから一発取得
+        LD.DE_label(block, "TABLE_DIV64")
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        LD.C_A(block)  # C = バンクオフセット
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+        ADD.A_C(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク切り替え
+
+        POP.HL(block)
+        PUSH.HL(block)
+        LD.DE_label(block, "TABLE_MOD64")
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        ADD.A_n8(block, 0x80)
+        LD.H_A(block)
+        LD.L_n8(block, 0)  # HL = 完璧なROM内PGアドレス
+
+        LD.DE_n16(block, ADDR.PG_BUFFER)
+        LD.BC_n16(block, 256)
+        ldir_macro(block)  # RAMへ
+
+        # --- ② カラー (CT) 転送準備 (ここが重要) ---
+        POP.HL(block)  # 行番号 L
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)  # StartAddr_H
+        ADD.A_L(block)  # A = StartH + RowIndex
+        LD.H_A(block)
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)  # BaseBank
+        LD.E_A(block)
+
+        # 【正規化ループ】 H >= 0xC0 の間、バンクを送りアドレスを戻す
+        block.label("CT_NORM_LOOP")
+        LD.A_H(block)
+        CP.n8(block, 0xC0)
+        JR_C(block, "CT_NORM_DONE")
+        SUB.n8(block, 0x40)  # H -= 0x4000
+        LD.H_A(block)
+        INC.E(block)  # Bank++
+        JR(block, "CT_NORM_LOOP")
+
+        block.label("CT_NORM_DONE")
+        LD.A_E(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)  # カラー用バンクに切り替え
+        LD.L_n8(block, 0)  # HL = 完璧なROM内CTアドレス
+
+        LD.DE_n16(block, ADDR.CT_BUFFER)
+        LD.BC_n16(block, 256)
+        ldir_macro(block)
+
+        # プログラムバンク(バンク0)に戻す
+        XOR.A(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+
+        # --- ④ RAMバッファ -> VRAM (上中下ミラーリング転送) ---
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, "TABLE_MOD8")
+        ADD.HL_DE(block)
+        LD.A_mHL(block)  # A = 0-7 行目のオフセット
+        LD.mn16_A(block, ADDR.VRAM_ROW_OFFSET)  # ワークに保存
+
+        # パターン転送 (0x0000, 0x0800, 0x1000)
+        for base_h in [0x00, 0x08, 0x10]:
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            ADD.A_n8(block, base_h)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            SET_VRAM_WRITE_FUNC.call(block)
+
+            LD.HL_n16(block, ADDR.PG_BUFFER)
+            LD.C_n8(block, 0x98)  # VDP Data Port
+
+            # 速度優先のためループを展開 (256個のOUTIを生成)
+            # 1バイトあたり 18T-states。ループ方式(30T)より約40%高速。
+            # Boot Bank の容量に余裕があるため、この「力技」を採用。
+            for _ in range(256):  # 高速転送ループ
+                OUTI(block)
+
+        # カラー転送 (0x2000, 0x2800, 0x3000)
+        for base_h in [0x20, 0x28, 0x30]:
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            ADD.A_n8(block, base_h)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            SET_VRAM_WRITE_FUNC.call(block)
+
+            LD.HL_n16(block, ADDR.CT_BUFFER)
+            LD.C_n8(block, 0x98)
+
+            # 速度優先のためループを展開 (256個のOUTIを生成)
+            # 1バイトあたり 18T-states。ループ方式(30T)より約40%高速。
+            # Boot Bank の容量に余裕があるため、この「力技」を採用。
+            for _ in range(256):
+                OUTI(block)
+
+        RET(block)
+
+    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True)
+
+
+SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func()
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
