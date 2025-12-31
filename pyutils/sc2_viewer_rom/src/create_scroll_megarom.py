@@ -38,7 +38,6 @@ NEXT
 項目がテキストで並び 上下で選択項目切り替え 左右で項目設定切り替え など
 
 
-
 """
 
 from __future__ import annotations
@@ -1205,15 +1204,16 @@ def create_debug_image_data_list(debug_image_index: int) -> List[ImageData]:
 
 
 def ensure_output_writable(path: Path) -> None:
+    """アウトプットファイルが書き込み出来るが（処理の事前に）チェックする"""
     if path.exists():
         if path.is_dir():
             raise SystemExit(f"Output path is a directory: {path}")
         try:
-            with path.open("r+b"):
-                pass
+            # openMSXで開いているROMは r+b でのOPENをパスするので同名に変更する事で状態をチェックする
+            os.replace(path, path)
         except Exception as exc:  # pragma: no cover - CLI error path
             raise SystemExit(f"ERROR! failed to open ROM file for writing: {path}: {exc}") from exc
-
+    return
 
 def main() -> None:
     args = parse_args()
