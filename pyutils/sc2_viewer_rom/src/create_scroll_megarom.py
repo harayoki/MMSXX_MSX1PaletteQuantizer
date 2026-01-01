@@ -1045,7 +1045,10 @@ def build_boot_bank(
 
     data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
     log_and_store("---- labels ----", log_lines)
-    log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
+    log_and_store(
+        debug_print_labels(b, origin=0x4000, no_print=True, include_offset=True),
+        log_lines,
+    )
 
     used_bytes = len(assembled)
     if used_bytes > PAGE_SIZE:
@@ -1089,7 +1092,10 @@ def build_outi_funcs_bank(
         log_lines,
     )
     log_and_store("---- labels ----", log_lines)
-    log_and_store(debug_print_labels(b, origin=0, no_print=True), log_lines)
+    log_and_store(
+        debug_print_labels(b, origin=0, no_print=True, include_offset=True),
+        log_lines,
+    )
 
     banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
     ensure_funcs_defined(OUTI_FUNCS)
