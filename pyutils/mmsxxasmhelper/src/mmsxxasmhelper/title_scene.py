@@ -194,10 +194,6 @@ def build_title_screen_func(
         JP_NZ(block, EXIT_START)
 
         if countdown_seconds > 0:
-            LD.A_mn16(block, title_seconds_remaining_addr)
-            OR.A(block)
-            JR_Z(block, EXIT_START)
-
             LD.A_mn16(block, title_frame_counter_addr)
             DEC.A(block)
             LD.mn16_A(block, title_frame_counter_addr)
@@ -211,9 +207,9 @@ def build_title_screen_func(
             LD.A_mn16(block, title_seconds_remaining_addr)
             DEC.A(block)
             LD.mn16_A(block, title_seconds_remaining_addr)
-            write_countdown_digits(block)
-            OR.A(block)
+            CP.n8(block, 0xFF)
             JP_Z(block, EXIT_START)
+            write_countdown_digits(block)
 
         JP(block, LOOP_LABEL)
 
