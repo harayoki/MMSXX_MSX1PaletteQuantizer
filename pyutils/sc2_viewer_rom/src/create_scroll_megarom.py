@@ -449,7 +449,7 @@ def build_scroll_vram_xfer_func() -> Func:
         # --- 1ページ(256byte) 転送ループ (64展開版) ---
         # OUTI_256はバンクが一緒なので使えない RAMコピーするとむしろ重くなる
         block.label("VRAM_BYTE_LOOP")
-        for _ in range(16):
+        for _ in range(32):  # 16でもいいが32のほうが2%くらいはやい
             # 1バイト転送 (18T)
             OUTI(block)  # (HL)->(C), HL++, B--
 
