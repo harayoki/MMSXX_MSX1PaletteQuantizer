@@ -1070,7 +1070,7 @@ def build_outi_funcs_bank(
     b = Block()
 
     define_created_funcs(b, group=OUTI_FUNCS_GROUP)
-    assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP])
+    assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
     if bank_count > 1:
         raise ValueError(

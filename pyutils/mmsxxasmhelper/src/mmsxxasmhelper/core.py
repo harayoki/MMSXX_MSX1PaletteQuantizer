@@ -92,6 +92,7 @@ from typing import Callable, Dict, List, Literal, Optional
 
 _label_counter = count()
 DEFAULT_FUNC_GROUP_NAME = "default"
+_created_funcs: Dict[str, "Func"] = {}
 _created_funcs_by_group: Dict[str, List["Func"]] = {}
 
 
@@ -168,11 +169,13 @@ class Block:
 
     # --- 出力確定 ---
 
-    def finalize(self, origin: int = 0, groups: Optional[List[str]] = None) -> bytes:
+    def finalize(self, origin: int = 0, groups: Optional[List[str]] = None, func_in_bunk: bool = False) -> bytes:
         """fixupを解決してバイト列を返す。
 
         origin はこの Block をメモリ上のどこに配置するかのベースアドレス。
         v0 では単一ブロック前提なので任意指定でOK。
+
+        # TODO func_in_bunkを用いた分岐
         """
 
         groups_to_check = groups or [DEFAULT_FUNC_GROUP_NAME]
@@ -572,6 +575,7 @@ class Func:
         self.body = body
         self.no_auto_ret = no_auto_ret
         _created_funcs_by_group.setdefault(group, []).append(self)
+        _created_funcs[self.name] = self
         print(f"Func created: {self.name} (group: {group})")
 
     def define(self, b: Block) -> None:
