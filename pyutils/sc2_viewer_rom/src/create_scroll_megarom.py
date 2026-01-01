@@ -96,6 +96,10 @@ from mmsxxasmhelper.core import (
     define_created_funcs,
     define_all_created_funcs_label_only,
     DEFAULT_FUNC_GROUP_NAME,
+    get_funcs_by_group,
+    ensure_funcs_defined,
+    set_funcs_call_offset,
+    set_funcs_bank,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -513,6 +517,8 @@ OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
 OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
 OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
 OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
+OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
+set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
 def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
     """
@@ -792,9 +798,7 @@ def build_sync_scroll_row_func() -> Func:
             LD.HL_n16(block, ADDR.PG_BUFFER)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
-            # OUTI_256_FUNC.call(block)
-            for _ in range(256):
-                OUTI(block)
+            OUTI_256_FUNC.call(block)
 
 
         # カラー転送 (0x20, 0x28, 0x30)
@@ -807,9 +811,7 @@ def build_sync_scroll_row_func() -> Func:
             LD.HL_n16(block, ADDR.CT_BUFFER)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
-            # OUTI_256_FUNC.call(block)
-            for _ in range(256):
-                OUTI(block)
+            OUTI_256_FUNC.call(block)
 
         # 最後にページ2をメインバンク(0)に戻しておく
         XOR.A(block)
@@ -847,6 +849,8 @@ def build_boot_bank(
     UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries), start_at)
 
     set_debug(True)
+
+    ensure_funcs_defined(OUTI_FUNCS)
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
@@ -1087,7 +1091,10 @@ def build_outi_funcs_bank(
     log_and_store("---- labels ----", log_lines)
     log_and_store(debug_print_labels(b, origin=0, no_print=True), log_lines)
 
-    return [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
+    banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
+    ensure_funcs_defined(OUTI_FUNCS)
+
+    return banks
 
 
 def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
@@ -1135,6 +1142,7 @@ def build(
         f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
         log_lines,
     )
+    set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
     next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     header_bytes: list[int] = []
 
