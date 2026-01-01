@@ -42,6 +42,32 @@ def test_finalize_errors_when_func_not_defined(monkeypatch):
         block.finalize()
 
 
+def test_finalize_checks_only_default_group_when_unspecified(monkeypatch):
+    monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
+
+    core.Func("UNDEFINED_OTHER_GROUP", _func_body(0x00), group="other")
+
+    block = core.Block()
+
+    # group="other" の func は対象外なのでエラーにならない
+    block.finalize()
+
+
+def test_finalize_checks_specified_groups(monkeypatch):
+    monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
+
+    core.Func("UNDEFINED_DEFAULT", _func_body(0x00))
+    core.Func("UNDEFINED_GROUP", _func_body(0x01), group="grp")
+
+    block = core.Block()
+
+    with pytest.raises(ValueError, match="UNDEFINED_GROUP"):
+        block.finalize(0, ["grp"])
+
+    with pytest.raises(ValueError, match="UNDEFINED_DEFAULT, UNDEFINED_GROUP"):
+        block.finalize(0, [core.DEFAULT_FUNC_GROUP_NAME, "grp"])
+
+
 def test_finalize_allows_defined_funcs(monkeypatch):
     monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
 

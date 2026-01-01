@@ -83,7 +83,7 @@ __all__ = [
 
 from dataclasses import dataclass
 from itertools import count
-from typing import Callable, Dict, List, Literal
+from typing import Callable, Dict, List, Literal, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -168,17 +168,18 @@ class Block:
 
     # --- 出力確定 ---
 
-    def finalize(self, origin: int = 0) -> bytes:
+    def finalize(self, origin: int = 0, groups: Optional[List[str]] = None) -> bytes:
         """fixupを解決してバイト列を返す。
 
         origin はこの Block をメモリ上のどこに配置するかのベースアドレス。
         v0 では単一ブロック前提なので任意指定でOK。
         """
 
+        groups_to_check = groups or [DEFAULT_FUNC_GROUP_NAME]
         undefined_funcs = [
             func.name
-            for funcs in _created_funcs_by_group.values()
-            for func in funcs
+            for group in groups_to_check
+            for func in _created_funcs_by_group.get(group, [])
             if func.name not in self.labels
         ]
         if undefined_funcs:
