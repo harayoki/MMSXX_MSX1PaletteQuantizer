@@ -445,8 +445,11 @@ def build_scroll_vram_xfer_func() -> Func:
         for _ in range(16):
             # 1バイト転送 (18T)
             OUTI(block)  # (HL)->(C), HL++, B--
-            # SCREEN 2用ウェイト (12T)　3マイクロ秒強稼ぐ
-            JR_n8(block, 0)
+
+            # ウェイト無しでは画面が崩れた
+            # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
+            NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
+
         JR_NZ(block, "VRAM_BYTE_LOOP")
 
         # --- バンク境界チェック ---
