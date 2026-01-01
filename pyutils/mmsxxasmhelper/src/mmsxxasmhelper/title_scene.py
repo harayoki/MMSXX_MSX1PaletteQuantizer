@@ -62,7 +62,7 @@ def build_title_screen_func(
     )
     logo_body_text = (title_logo_text or default_logo_text).rstrip("\n")
     logo_full_text = (
-        f"{logo_body_text}\n{logo_insert_text}" if logo_body_text else logo_insert_text
+        f"{logo_body_text}\n\n{logo_insert_text}" if logo_body_text else logo_insert_text
     )
     logo_lines = logo_full_text.rstrip("\n").split("\n") if logo_full_text else []
     title_logo_width = max((len(line) for line in logo_lines), default=0)
@@ -76,7 +76,7 @@ def build_title_screen_func(
     title_subtext_y = title_logo_y + len(logo_lines) + 1 if logo_lines else 2
     title_countdown_text = "Starting in    sec."
     title_countdown_x = (40 - len(title_countdown_text)) // 2
-    title_countdown_y = title_subtext_y + len(title_subtext_lines)
+    title_countdown_y = title_subtext_y + len(title_subtext_lines) + 1
     title_countdown_digit_x = title_countdown_x + len("Starting in")
     title_frame_ticks = 60
     title_digit_count = 3
