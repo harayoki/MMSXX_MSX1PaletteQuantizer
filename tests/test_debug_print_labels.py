@@ -37,6 +37,23 @@ def test_debug_print_labels_outputs_addresses():
     ]
 
 
+def test_debug_print_labels_outputs_offsets():
+    b = Block()
+    b.label("zero")
+    NOP(b)
+    b.label("one")
+
+    b.finalize(origin=0x1234)
+
+    buffer = StringIO()
+    utils.debug_print_labels(b, origin=0x1234, stream=buffer, include_offset=True)
+
+    assert buffer.getvalue().splitlines() == [
+        "1234 (+0000): zero",
+        "1235 (+0001): one",
+    ]
+
+
 def test_debug_print_labels_respects_debug_flag():
     utils.set_debug(False)
 
