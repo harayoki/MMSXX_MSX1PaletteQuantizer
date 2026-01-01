@@ -68,12 +68,15 @@ def build_title_screen_func(
     title_logo_width = max((len(line) for line in logo_lines), default=0)
     title_logo_x = (40 - title_logo_width) // 2 if logo_lines else 0
     title_logo_y = 2 if logo_lines else 0
-    title_subtext = "SPACE to start. ESC to settings. "
-    title_subtext_x = (40 - len(title_subtext)) // 2
+    title_subtext_lines = [
+        "PUSH SPACE to start.",
+        "PUSH ESC to settings / help.",
+    ]
+    title_subtext_x = [(40 - len(line)) // 2 for line in title_subtext_lines]
     title_subtext_y = title_logo_y + len(logo_lines) + 1 if logo_lines else 2
     title_countdown_text = "Starting in    sec."
     title_countdown_x = (40 - len(title_countdown_text)) // 2
-    title_countdown_y = title_subtext_y + 1
+    title_countdown_y = title_subtext_y + len(title_subtext_lines)
     title_countdown_digit_x = title_countdown_x + len("Starting in")
     title_frame_ticks = 60
     title_digit_count = 3
@@ -160,7 +163,10 @@ def build_title_screen_func(
             write_text_with_cursor_macro(
                 block, "\n".join(logo_lines), title_logo_x, title_logo_y
             )
-        write_text_with_cursor_macro(block, title_subtext, title_subtext_x, title_subtext_y)
+        for idx, line in enumerate(title_subtext_lines):
+            write_text_with_cursor_macro(
+                block, line, title_subtext_x[idx], title_subtext_y + idx
+            )
         write_text_with_cursor_macro(
             block, title_countdown_text, title_countdown_x, title_countdown_y
         )
