@@ -90,9 +90,11 @@ from mmsxxasmhelper.core import (
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
     CHGMOD,
+    CHPUT,
     FORCLR,
     BAKCLR,
     BDRCLR,
+    INITXT,
     LDIRVM,
     enaslt_macro,
     place_msx_rom_header_macro,
@@ -107,6 +109,9 @@ from mmsxxasmhelper.msxutils import (
     build_set_vram_write_func,
     build_scroll_name_table_func,
     build_outi_repeat_func,
+    set_screen_colors_macro,
+    set_text_cursor_macro,
+    write_text_with_cursor_macro,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -147,6 +152,28 @@ QUANTIZED_SUFFIX = "_quantized"
 OUTI_FUNCS_GROUP = "outi_funcs"
 
 OUTI_FUNCS_BACK_NUM:int = 1
+SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
+
+TITLE_LOGO_TEXT = (
+    "  __  __ __  __ ______  ____  __\n"
+    " |  \\/  |  \\/  / ___\\ \\/ /\\ \\/ /\n"
+    " | |\\/| | |\\/| \\___ \\  /  \\  / \n"
+    " | |  | | |  | |___) /  \\  /  \\ \\\n"
+    " |_|  |_|_|  |_|____/_/\\_\\/_/\\_\\\n"
+    "                                "
+)
+TITLE_LOGO_WIDTH = max(len(line) for line in TITLE_LOGO_TEXT.split("\n"))
+TITLE_LOGO_X = (40 - TITLE_LOGO_WIDTH) // 2
+TITLE_LOGO_Y = 2
+TITLE_SUBTEXT = "Press SPACE to start. ESC to settings."
+TITLE_SUBTEXT_X = (40 - len(TITLE_SUBTEXT)) // 2
+TITLE_SUBTEXT_Y = TITLE_LOGO_Y + len(TITLE_LOGO_TEXT.split("\n")) + 1
+TITLE_COUNTDOWN_TEXT = "Starting in   seconds..."
+TITLE_COUNTDOWN_X = (40 - len(TITLE_COUNTDOWN_TEXT)) // 2
+TITLE_COUNTDOWN_Y = TITLE_SUBTEXT_Y + 1
+TITLE_COUNTDOWN_DIGIT_X = TITLE_COUNTDOWN_X + len("Starting in ")
+TITLE_FRAME_TICKS = 60
+TITLE_DIGIT_COUNT = 3
 
 
 # 状況を保存するメモリアドレス
@@ -172,6 +199,12 @@ class ADDR:
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
+    TITLE_SECONDS_REMAINING = madd(
+        "TITLE_SECONDS_REMAINING", 1, description="タイトル画面の残り秒数")
+    TITLE_FRAME_COUNTER = madd(
+        "TITLE_FRAME_COUNTER", 1, description="1秒あたりのフレームカウンタ")
+    TITLE_COUNTDOWN_DIGITS = madd(
+        "TITLE_COUNTDOWN_DIGITS", 3, description="タイトルの残り秒数文字列")
 
     PG_BUFFER = madd("PG_BUFFER", 256)
     CT_BUFFER = madd("CT_BUFFER", 256)
@@ -384,7 +417,7 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
     return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
 
 
-def build_reset_name_table_func() -> Func:
+def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def reset_name_table_call(block: Block) -> None:
         # VRAMアドレスセット (NAME_BASE = 0x1800)
         # 0x1800 を書き込みモードでセット
@@ -415,13 +448,13 @@ def build_reset_name_table_func() -> Func:
         DEC.D(block)             # 残りブロック数を減らす
         JR_NZ(block, OUTER_LOOP)
 
-    return Func("init_name_table_call", reset_name_table_call)
+    return Func("init_name_table_call", reset_name_table_call, group=group)
 
 
-RESET_NAME_TABLE_FUNC = build_reset_name_table_func()
+RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
-def build_scroll_vram_xfer_func() -> Func:
+def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def scroll_vram_xfer(block: Block) -> None:
         # --- 入力規定 ---
         # HL: 計算済みのROM開始アドレス (0x8000 - 0xBFFF)
@@ -494,12 +527,14 @@ def build_scroll_vram_xfer_func() -> Func:
     CALL scroll_vram_xfer
     """
 
-    return Func("scroll_vram_xfer", scroll_vram_xfer)
+    return Func("scroll_vram_xfer", scroll_vram_xfer, group=group)
 
 
-SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
-SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
-SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
+SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
+SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
+    SET_VRAM_WRITE_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
 OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
 OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
@@ -508,7 +543,9 @@ OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
 OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
 set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
-def build_update_image_display_func(image_entries_count: int) -> Func:
+def build_update_image_display_func(
+    image_entries_count: int, *, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
     """
     縦2028ドットを超える画像にも対応したかもしれない実装（未検証）
     """
@@ -640,15 +677,155 @@ def build_update_image_display_func(image_entries_count: int) -> Func:
 
         RET(block)
 
-    return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
+    return Func(
+        "UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True, group=group
+    )
 
 
-UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
+UPDATE_INPUT_FUNC = build_update_input_func(
+    ADDR.INPUT_HOLD, ADDR.INPUT_TRG, group=SCROLL_VIEWER_FUNC_GROUP
+)
 
-BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE)
+BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
+    ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE, group=SCROLL_VIEWER_FUNC_GROUP
+)
 
 
-def build_sync_scroll_row_func() -> Func:
+def build_title_screen_func(
+    countdown_seconds: int, *, group: str = SCROLL_VIEWER_FUNC_GROUP
+) -> Func:
+    countdown_seconds = max(0, min(countdown_seconds, 255))
+
+    def write_countdown_digits(block: Block) -> None:
+        HUND_LOOP = unique_label("COUNTDOWN_HUND_LOOP")
+        TENS_LOOP = unique_label("COUNTDOWN_TENS_LOOP")
+        ONES_READY = unique_label("COUNTDOWN_ONES_READY")
+        HUND_DONE = unique_label("COUNTDOWN_HUND_DONE")
+        TENS_DONE = unique_label("COUNTDOWN_TENS_DONE")
+
+        set_text_cursor_macro(block, TITLE_COUNTDOWN_DIGIT_X, TITLE_COUNTDOWN_Y)
+
+        LD.A_mn16(block, ADDR.TITLE_SECONDS_REMAINING)
+        LD.B_n8(block, 0)
+
+        block.label(HUND_LOOP)
+        CP.n8(block, 100)
+        JR_C(block, TENS_LOOP)
+        SUB.n8(block, 100)
+        INC.B(block)
+        JR(block, HUND_LOOP)
+
+        block.label(TENS_LOOP)
+        LD.C_n8(block, 0)
+
+        TENS_LOOP_INNER = unique_label("COUNTDOWN_TENS_LOOP_INNER")
+        block.label(TENS_LOOP_INNER)
+        CP.n8(block, 10)
+        JR_C(block, ONES_READY)
+        SUB.n8(block, 10)
+        INC.C(block)
+        JR(block, TENS_LOOP_INNER)
+
+        block.label(ONES_READY)
+        LD.D_A(block)
+
+        HUND_NON_ZERO = unique_label("COUNTDOWN_HUND_NON_ZERO")
+        block.label(HUND_NON_ZERO)
+        LD.A_B(block)
+        OR.A(block)
+        JR_NZ(block, HUND_NON_ZERO + "_VAL")
+        LD.A_n8(block, ord(" "))
+        JR(block, HUND_DONE)
+        block.label(HUND_NON_ZERO + "_VAL")
+        LD.A_B(block)
+        ADD.A_n8(block, ord("0"))
+        block.label(HUND_DONE)
+        LD.mn16_A(block, ADDR.TITLE_COUNTDOWN_DIGITS)
+
+        TENS_NON_ZERO = unique_label("COUNTDOWN_TENS_NON_ZERO")
+        block.label(TENS_NON_ZERO)
+        LD.A_B(block)
+        OR.A(block)
+        JR_NZ(block, TENS_NON_ZERO + "_VAL")
+        LD.A_C(block)
+        OR.A(block)
+        JR_NZ(block, TENS_NON_ZERO + "_VAL")
+        LD.A_n8(block, ord(" "))
+        JR(block, TENS_DONE)
+        block.label(TENS_NON_ZERO + "_VAL")
+        LD.A_C(block)
+        ADD.A_n8(block, ord("0"))
+        block.label(TENS_DONE)
+        LD.mn16_A(block, ADDR.TITLE_COUNTDOWN_DIGITS + 1)
+
+        LD.A_D(block)
+        ADD.A_n8(block, ord("0"))
+        LD.mn16_A(block, ADDR.TITLE_COUNTDOWN_DIGITS + 2)
+
+        for idx in range(TITLE_DIGIT_COUNT):
+            LD.A_mn16(block, ADDR.TITLE_COUNTDOWN_DIGITS + idx)
+            CALL(block, CHPUT)
+
+    def title_screen(block: Block) -> None:
+        CALL(block, INITXT)
+        set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
+
+        write_text_with_cursor_macro(block, TITLE_LOGO_TEXT, TITLE_LOGO_X, TITLE_LOGO_Y)
+        write_text_with_cursor_macro(block, TITLE_SUBTEXT, TITLE_SUBTEXT_X, TITLE_SUBTEXT_Y)
+        write_text_with_cursor_macro(
+            block, TITLE_COUNTDOWN_TEXT, TITLE_COUNTDOWN_X, TITLE_COUNTDOWN_Y
+        )
+
+        if countdown_seconds > 0:
+            LD.A_n8(block, countdown_seconds & 0xFF)
+        else:
+            XOR.A(block)
+        LD.mn16_A(block, ADDR.TITLE_SECONDS_REMAINING)
+        LD.A_n8(block, TITLE_FRAME_TICKS & 0xFF)
+        LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+
+        write_countdown_digits(block)
+
+        LOOP_LABEL = unique_label("TITLE_LOOP")
+        block.label(LOOP_LABEL)
+        HALT(block)
+        UPDATE_INPUT_FUNC.call(block)
+
+        LD.A_mn16(block, ADDR.INPUT_TRG)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_BTN_A)
+        JR_NZ(block, "TITLE_END")
+
+        if countdown_seconds > 0:
+            LD.A_mn16(block, ADDR.TITLE_SECONDS_REMAINING)
+            OR.A(block)
+            JR_Z(block, "TITLE_END")
+
+            LD.A_mn16(block, ADDR.TITLE_FRAME_COUNTER)
+            DEC.A(block)
+            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+            FRAME_WAIT = unique_label("TITLE_FRAME_WAIT")
+            JR_Z(block, FRAME_WAIT)
+            JP(block, LOOP_LABEL)
+
+            block.label(FRAME_WAIT)
+            LD.A_n8(block, TITLE_FRAME_TICKS & 0xFF)
+            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+            LD.A_mn16(block, ADDR.TITLE_SECONDS_REMAINING)
+            DEC.A(block)
+            LD.mn16_A(block, ADDR.TITLE_SECONDS_REMAINING)
+            write_countdown_digits(block)
+            OR.A(block)
+            JR_Z(block, "TITLE_END")
+
+        JP(block, LOOP_LABEL)
+
+        block.label("TITLE_END")
+        RET(block)
+
+    return Func("TITLE_SCREEN", title_screen, group=group)
+
+
+def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
         # (バンク切り替えと初期アドレス計算はそのまま)
@@ -815,10 +992,10 @@ def build_sync_scroll_row_func() -> Func:
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
         RET(block)
-    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True)
+    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
 
 
-SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func()
+SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -837,12 +1014,18 @@ def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
     fill_byte: int,
+    title_wait_seconds: int,
     log_lines: List[str] | None = None,
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
 
-    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries))
+    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(
+        len(image_entries), group=SCROLL_VIEWER_FUNC_GROUP
+    )
+    TITLE_SCREEN_FUNC = build_title_screen_func(
+        title_wait_seconds, group=SCROLL_VIEWER_FUNC_GROUP
+    )
 
     set_debug(True)
 
@@ -858,6 +1041,8 @@ def build_boot_bank(
     b.label("start")
     init_stack_pointer_macro(b)
     enaslt_macro(b)
+
+    TITLE_SCREEN_FUNC.call(b)
 
     LD.A_n8(b, 2)
     CALL(b, CHGMOD)
@@ -1027,7 +1212,7 @@ def build_boot_bank(
     # JR(b, "MAIN_LOOP")  #相対限界超える
     JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
-    define_created_funcs(b, group=DEFAULT_FUNC_GROUP_NAME)
+    define_created_funcs(b, group=SCROLL_VIEWER_FUNC_GROUP)
 
     # --- [事前計算テーブル群] ---
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
@@ -1164,12 +1349,17 @@ def build(
     images: Sequence[ImageData],
     start_positions: Sequence[str] | None = None,
     fill_byte: int = 0xFF,
+    title_wait_seconds: int = 3,
     log_lines: list[str] | None = None,
 ) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
     if not images:
         raise ValueError("images must not be empty")
+
+    title_wait_seconds = max(0, min(title_wait_seconds, 255))
+
+    log_and_store(f"Title wait seconds: {title_wait_seconds}", log_lines)
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
@@ -1252,7 +1442,11 @@ def build(
     if len(header_bytes) != expected_header_length:
         raise AssertionError("header_bytes length mismatch")
 
-    banks = [build_boot_bank(image_entries, header_bytes, fill_byte)]
+    banks = [
+        build_boot_bank(
+            image_entries, header_bytes, fill_byte, title_wait_seconds, log_lines
+        )
+    ]
     banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
@@ -1315,6 +1509,12 @@ def parse_args() -> argparse.Namespace:
         type=int_from_str,
         default=0xFF,
         help="未使用領域の埋め値 (default: 0xFF)",
+    )
+    parser.add_argument(
+        "--title-wait-seconds",
+        type=int,
+        default=3,
+        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
     )
     parser.add_argument(
         "--rom-info",
@@ -1525,6 +1725,7 @@ def main() -> None:
         image_data_list,
         start_positions=start_positions,
         fill_byte=args.fill_byte,
+        title_wait_seconds=args.title_wait_seconds,
         log_lines=log_lines,
     )
 
