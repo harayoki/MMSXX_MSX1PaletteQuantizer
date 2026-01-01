@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
 
 import mmsxxasmhelper.core as core
 import mmsxxasmhelper.msxutils as msxutils
@@ -9,7 +9,7 @@ import mmsxxasmhelper.config_scene as config_scene
 
 
 def test_build_screen0_config_menu_generates_bytes(monkeypatch):
-    monkeypatch.setattr(core, "_created_funcs", [], raising=False)
+    monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
 
     entries = [
         config_scene.Screen0ConfigEntry("MODE", ["MSX1", "MSX2"], 0xC200),

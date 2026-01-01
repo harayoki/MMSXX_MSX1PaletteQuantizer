@@ -61,11 +61,13 @@ __all__ = [
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
     "unique_label",
+    "DEFAULT_FUNC_GROUP_NAME",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
-    "Func", "define_created_funcs",
+    "Func", "define_created_funcs", "define_all_created_funcs_label_only",
+    "get_funcs_by_group", "ensure_funcs_defined", "set_funcs_call_offset", "set_funcs_bank",
     "DB", "DW",
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
@@ -82,7 +84,7 @@ __all__ = [
 
 from dataclasses import dataclass
 from itertools import count
-from typing import Callable, Dict, List, Literal
+from typing import Callable, Dict, List, Literal, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +92,9 @@ from typing import Callable, Dict, List, Literal
 # ---------------------------------------------------------------------------
 
 _label_counter = count()
-_created_funcs: List["Func"] = []
+DEFAULT_FUNC_GROUP_NAME = "default"
+_created_funcs: Dict[str, "Func"] = {}
+_created_funcs_by_group: Dict[str, List["Func"]] = {}
 
 
 def unique_label(prefix: str = "__L") -> str:
@@ -112,11 +116,13 @@ class Fixup:
     kind:   "abs16" 固定 (JP/CALL 共通)
     pos:    下位バイトを書き込む位置(コード内インデックス)
     target: ラベル名
+    offset: 追加オフセット（アドレス解決時に足される定数）
     """
 
     kind: FixupKind
     pos: int
     target: str
+    offset: int = 0
 
 
 class Block:
@@ -148,13 +154,13 @@ class Block:
 
     # --- fixup 登録 ---
 
-    def add_abs16_fixup(self, pos: int, target: str) -> None:
+    def add_abs16_fixup(self, pos: int, target: str, offset: int = 0) -> None:
         """16bitアドレスを書き込むためのfixupを登録。
 
         pos: 下位バイトを書き込む位置
         """
 
-        self.fixups.append(Fixup(kind="abs16", pos=pos, target=target))
+        self.fixups.append(Fixup(kind="abs16", pos=pos, target=target, offset=offset))
 
     def add_rel8_fixup(self, pos: int, target: str) -> None:
         """8bit相対オフセットを書き込むためのfixupを登録。
@@ -166,15 +172,22 @@ class Block:
 
     # --- 出力確定 ---
 
-    def finalize(self, origin: int = 0) -> bytes:
+    def finalize(self, origin: int = 0, groups: Optional[List[str]] = None, func_in_bunk: bool = False) -> bytes:
         """fixupを解決してバイト列を返す。
 
         origin はこの Block をメモリ上のどこに配置するかのベースアドレス。
         v0 では単一ブロック前提なので任意指定でOK。
+
+        # TODO func_in_bunkを用いた分岐
         """
 
-        undefined_funcs = [func.name for func in _created_funcs
-                           if func.name not in self.labels]
+        groups_to_check = groups or [DEFAULT_FUNC_GROUP_NAME]
+        undefined_funcs = [
+            func.name
+            for group in groups_to_check
+            for func in _created_funcs_by_group.get(group, [])
+            if func.name not in self.labels
+        ]
         if undefined_funcs:
             names = ", ".join(sorted(set(undefined_funcs)))
             raise ValueError(f"undefined func(s): {names}")
@@ -182,7 +195,7 @@ class Block:
         for fx in self.fixups:
             if fx.kind == "abs16":
                 # fx.pos が下位バイト、fx.pos+1 が上位バイト
-                addr = origin + self._get_label_addr(fx.target)
+                addr = origin + self._get_label_addr(fx.target) + fx.offset
                 lo = addr & 0xFF
                 hi = (addr >> 8) & 0xFF
                 self.code[fx.pos] = lo
@@ -364,9 +377,9 @@ def const_bytes_padded(name: str, size: int, fill: int = 0x00, *values: int) -> 
 # ---------------------------------------------------------------------------
 
 
-def _jp_abs16(b: Block, opcode: int, target: str) -> None:
+def _jp_abs16(b: Block, opcode: int, target: str, offset: int = 0) -> None:
     pos = b.emit(opcode, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, target)
+    b.add_abs16_fixup(pos + 1, target, offset=offset)
 
 
 def _jr_rel8(b: Block, opcode: int, target: str) -> None:
@@ -476,13 +489,13 @@ def DJNZ(b: Block, target: str) -> None:
     _jr_rel8(b, 0x10, target)
 
 
-def CALL_label(b: Block, target: str) -> None:
+def CALL_label(b: Block, target: str, *, offset: int = 0) -> None:
     """
     CALL（ラベル指定版）
     """
     # CALL nn (opcode 0xCD, nn = 16bit)
     pos = b.emit(0xCD, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, target)
+    b.add_abs16_fixup(pos + 1, target, offset=offset)
 
 
 def CALL(b: Block, address: int) -> None:
@@ -554,47 +567,134 @@ Body = Callable[[Block], None]
 class Func:
     """CALL可能な関数を表す薄いラッパ。"""
 
-    def __init__(self, name: str, body: Body, no_auto_ret: bool = False) -> None:
+    def __init__(
+        self,
+        name: str,
+        body: Body,
+        no_auto_ret: bool = False,
+        group: str = DEFAULT_FUNC_GROUP_NAME,
+        defined_pc: int | None = None,
+        call_offset: int = 0,
+        bank: int | None = None,
+    ) -> None:
         self.name = name
         self.body = body
         self.no_auto_ret = no_auto_ret
-        _created_funcs.append(self)
+        self.defined_pc: int | None = defined_pc
+        self.call_offset = call_offset
+        self.bank = bank
+        _created_funcs_by_group.setdefault(group, []).append(self)
+        _created_funcs[self.name] = self
+        print(f"Func created: {self.name} (group: {group})")
 
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
 
-        b.label(self.name)
+        self.define_label_only(b)
+        start_pc = b.pc
         self.body(b)
+        self.defined_pc = start_pc
+        body_size = b.pc - start_pc
+
+        print(f"Func defined: {self.name} (body_size={body_size})")
 
         if not self.no_auto_ret:
             # RET
             b.emit(0xC9)
 
-    def call(self, b: Block) -> None:
+    def define_label_only(self, b: Block) -> None:
+        """関数のラベルだけを配置する。"""
+
+        b.label(self.name)
+
+    def call(self, b: Block, *, offset: int = 0) -> None:
         """CALL命令を発行。"""
 
-        CALL_label(b, self.name)
+        effective_offset = offset if offset != 0 else self.call_offset
+
+        if effective_offset != 0 and self.defined_pc is not None:
+            CALL(b, self.defined_pc + effective_offset)
+            return
+
+        CALL_label(b, self.name, offset=offset)
 
 
-def define_created_funcs(b: Block, *except_funcs: str | Func) -> None:
+def define_created_funcs(
+    b: Block, group: str = DEFAULT_FUNC_GROUP_NAME, *except_funcs: str | Func
+) -> None:
     """Func で作られた関数をまとめて define するヘルパー。
 
     Func の生成時に内部で登録される一覧から、作成順に ``define`` を行う。
     ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
-    渡すことができる。
+    渡すことができる。 ``group`` はどのグループに登録された ``Func`` を
+    define するかを指定する。 未指定の場合はデフォルトグループを対象とする。
     """
 
+    funcs = _created_funcs_by_group.get(group, [])
     excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
     excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
     defined_names: set[str] = set()
 
-    for func in _created_funcs:
+    for func in funcs:
         if func in excluded_by_ref or func.name in excluded_by_name:
             continue
         if func.name in defined_names:
             continue
         func.define(b)
         defined_names.add(func.name)
+
+
+def define_all_created_funcs_label_only(
+    b: Block, group: str = DEFAULT_FUNC_GROUP_NAME, *except_funcs: str | Func
+) -> None:
+    """Func で作られた関数のラベルだけをまとめて define するヘルパー。
+
+    Func の生成時に内部で登録される一覧から、作成順に ``define_label_only`` を
+    行う。 ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
+    渡すことができる。
+    """
+    funcs = _created_funcs_by_group.get(group, [])
+    excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
+    excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
+    defined_names: set[str] = set()
+
+    for func in funcs:
+        if func in excluded_by_ref or func.name in excluded_by_name:
+            continue
+        if func.name in defined_names:
+            continue
+        func.define_label_only(b)
+        defined_names.add(func.name)
+
+
+def get_funcs_by_group(group: str = DEFAULT_FUNC_GROUP_NAME) -> tuple[Func, ...]:
+    """登録済み ``Func`` をグループ単位で取得する。"""
+
+    return tuple(_created_funcs_by_group.get(group, ()))
+
+
+def ensure_funcs_defined(funcs: Iterable[Func]) -> None:
+    """指定された ``Func`` のアドレスが確定していることを確認する。"""
+
+    undefined_funcs = [func.name for func in funcs if func.defined_pc is None]
+    if undefined_funcs:
+        names = ", ".join(sorted(undefined_funcs))
+        raise ValueError(f"Func address not defined for: {names}")
+
+
+def set_funcs_call_offset(funcs: Iterable[Func], offset: int) -> None:
+    """``Func`` 呼び出し時に自動で使用するベースオフセットを設定する。"""
+
+    for func in funcs:
+        func.call_offset = offset
+
+
+def set_funcs_bank(funcs: Iterable[Func], bank: int | None) -> None:
+    """``Func`` が配置されるバンク番号を記録する。"""
+
+    for func in funcs:
+        func.bank = bank
+
 
 
 # ---------------------------------------------------------------------------

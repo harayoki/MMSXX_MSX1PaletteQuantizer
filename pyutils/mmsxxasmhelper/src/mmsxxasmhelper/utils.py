@@ -66,7 +66,12 @@ JIFFY_ADDR = 0xFC9E
 # ---------------------------------------------------------------------------
 
 
-def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = True):
+def create_rng_seed_func(
+    rng_state_addr: int,
+    preserve_reg_bc: bool = True,
+    *,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
+):
     """
     ランダムシードの値を指定アドレスに描きこむ
     :param rng_state_addr: 読み書きするアドレス
@@ -83,10 +88,15 @@ def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = True):
             POP.BC(b)
         LD.mn16_A(b, rng_state_addr)
 
-    return Func("create_rng_seed", _create_rng_seed)
+    return Func("create_rng_seed", _create_rng_seed, group=group)
 
 
-def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
+def rng_next_func(
+    rng_state_addr: int,
+    preserve_reg_bc: bool = True,
+    *,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
+) -> Func:
     """
     古典的簡易ランダムアルゴリズム
     あるアドレスの値を次のランダム値に更新する Aレジスタに更新後の値を返す
@@ -110,7 +120,7 @@ def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
             POP.BC(b)
         RET(b)
 
-    return Func("rng_next", _rng_next)
+    return Func("rng_next", _rng_next, group=group)
 
 
 # ---------------------------------------------------------------------------
@@ -178,13 +188,21 @@ def debug_trap(b: Block) -> None:
 # finalize 後に決定したラベルアドレスを表示するデバッグ用ヘルパー
 #
 
-def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool = False) -> str:
+def debug_print_labels(
+    b: Block,
+    origin: int = 0,
+    *,
+    stream=None,
+    no_print: bool = False,
+    include_offset: bool = False,
+) -> str:
     """
     finalize 後に決定したラベルアドレスをダンプする。
     :param b: Block
-    :param origin: アドレスの
+    :param origin: アドレスの基点
     :param stream:
     :param no_print: print しない（でテキストだけ得る）
+    :param include_offset: オフセットも併記する
     """
 
     if not DEBUG:
@@ -197,7 +215,11 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 
     messages = []
     for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
-        message = f"{origin + offset:04X}: {name}"
+        absolute = origin + offset
+        if include_offset:
+            message = f"{absolute:04X} (+{offset:04X}): {name}"
+        else:
+            message = f"{absolute:04X}: {name}"
         messages.append(message)
         if not no_print:
             print(message, file=stream)

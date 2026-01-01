@@ -1,41 +1,24 @@
 #!/usr/bin/env python3
 """
-MSX1 縦スクロール ROM ビルダー。
+MSX1 SCREEN2 の縦スクロール ROM ビルダー。
 
-縦長の PNG画像 を １枚（今後複数枚に機能拡張予定）受け取り 以下の手順で ROM を生成する:
-
-1. 入力 PNG を左端を基準で横256pxにトリミング。足りない場合は右側を背景色でパディング。
-2. 縦は 8px 単位になるように下側へ背景色でパディング。
-3. `msx1pq_cli`（PATH もしくは引数で指定）を用いて MSX1 ルール準拠の PNG を生成。
-    ※ 美しくするための前処理や加工は行われず機械的に変換する。
-    質の高い画像にしたい場合はあらかじめmsx1pq_cliや他のツールで対応しておく。
-4. パターンジェネレータとカラーテーブルを隙間なく連結し、バンク境界をまたいで
-   ASCII16 MegaROM のデータバンクに格納。
-5. プログラム領域の直後に各画像 6 バイトのヘッダ（開始バンク、行数、色データ開始
-   バンクとアドレス）を 3 バイトずつの情報として並べ、最後に 4 バイトの終端情報を
-   付与。
-6. ビューアーとともにROMデータとして出力。
-
-実装中
-・ヘッダテーブルの行数とカラーデータ開始情報を読み取り1画面分を描画
-
-NEXT
-RAMからVRAMコピーなどを用いて（実際のアルゴリズムは未定）速さを考慮しつつ
-1行単位でスクロールできるように
-
-NEXT
-・複数枚画像をROMに埋め込めるように
-・複数枚画像をはグループ化可能 グループごとに縦に連結した1枚の画像として扱う
-・スペースで次の画像に SHIFT＋スペースで前の画像に
-・上下でスクロール
-・オートスクロールモード搭載 最後の行まで達したら次の画像の一番上に
-・簡易BGMルーチン搭載
-・デフォルトの挙動はコマンドラインOPTION指定できまる
-・ESCを押すと管理画面（SCRENN0）に切り替わり設定を替えられる。彩度ESCで復帰。
-・再生画像番号指定、オートスクロール＆その速度指定、BGM ONOFFなど
-
-※ 管理画面の機能はライブラリ化して他のツール・ゲームでも使えるようにする
-項目がテキストで並び 上下で選択項目切り替え 左右で項目設定切り替え など
+現状の実装で行うこと:
+- 入力はグループ単位で受け取り、各グループ内の PNG を左端基準で幅 256px にトリミング
+  ／不足分を背景色で右パディングし、高さを 8px 単位まで下パディングしたうえで縦方向に
+  連結する。
+- `msx1pq_cli`（PATH または --msx1pq-cli で指定）で MSX1 ルール準拠の量子化 PNG を生成し、
+  ワークディレクトリに *_quantized.png としてキャッシュする。入力より新しいキャッシュが
+  あれば再利用し、--no-cache 指定時のみ再生成する。
+- 量子化済み画像を 256 バイト × tile_rows のパターン／カラーデータに変換し、ASCII16
+  MegaROM のデータバンクへバンク境界をまたぎながら隙間なく配置する。
+- ブートバンクにスクロールビューアーを配置し、プログラム直後に各画像 6 バイトのヘッダー
+  （開始バンク、行数、カラーデータのバンクとアドレス）を並べ、末尾に 0xFF × 4 の終端情報
+  を付与する。
+- ビューアーは SCREEN 2 を初期化し、start_at オプションに応じて初期スクロール位置を設定。
+  上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送する。スペースで次の画像、
+  SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易 Beep を鳴らす。
+- `--use-debug-image` を指定するとテスト用パターンを生成し、それ以外ではビルド結果を
+  ROM として出力、必要に応じてログを rominfo に書き出す。
 
 
 """
@@ -63,6 +46,7 @@ from mmsxxasmhelper.core import (
     Func,
     INC,
     JP,
+    JP_NZ,
     JR,
     JR_C,
     JR_NC,
@@ -75,6 +59,7 @@ from mmsxxasmhelper.core import (
     POP,
     PUSH,
     XOR,
+    AND,
     DB,
     DW,
     SUB,
@@ -87,10 +72,17 @@ from mmsxxasmhelper.core import (
     OUTI,
     RET,
     RET_NC,
+    RLCA,
     BIT,
     HALT,
     unique_label,
     define_created_funcs,
+    define_all_created_funcs_label_only,
+    DEFAULT_FUNC_GROUP_NAME,
+    get_funcs_by_group,
+    ensure_funcs_defined,
+    set_funcs_call_offset,
+    set_funcs_bank,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -111,6 +103,7 @@ from mmsxxasmhelper.msxutils import (
     build_beep_control_utils,
     build_set_vram_write_func,
     build_scroll_name_table_func,
+    build_outi_repeat_func,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -148,6 +141,10 @@ SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
+OUTI_FUNCS_GROUP = "outi_funcs"
+
+OUTI_FUNCS_BACK_NUM:int = 1
+
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -439,14 +436,17 @@ def build_scroll_vram_xfer_func() -> Func:
         LD.B_n8(block, 0)  # 1ページ(256byte)転送用
         LD.C_n8(block, 0x98)  # VDPデータポート
 
-        # --- 1ページ(256byte) 転送ループ (展開版) ---
+        # --- 1ページ(256byte) 転送ループ (64展開版) ---
+        # OUTI_256はバンクが一緒なので使えない RAMコピーするとむしろ重くなる
         block.label("VRAM_BYTE_LOOP")
-        for _ in range(16):
+        for _ in range(32):  # 16でもいいが32のほうが2%くらいはやい
             # 1バイト転送 (18T)
             OUTI(block)  # (HL)->(C), HL++, B--
-            # SCREEN 2用ウェイト (12T)　3マイクロ秒強稼ぐ
-            JR_n8(block, 0)
-        JR_NZ(block, "VRAM_BYTE_LOOP")
+
+            # ウェイト無しでは画面が崩れた
+            # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
+            NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
+        JP_NZ(block, "VRAM_BYTE_LOOP")
 
         # --- バンク境界チェック ---
         LD.A_H(block)
@@ -463,7 +463,7 @@ def build_scroll_vram_xfer_func() -> Func:
         block.label("NOT_NEXT_BANK")
         POP.DE(block)  # 行数(D) と バンク(E) を復帰
         DEC.D(block)  # 行数カウンタを減らす
-        JR_NZ(block, "VRAM_PAGE_LOOP")
+        JP_NZ(block, "VRAM_PAGE_LOOP")
 
     """
     呼び出し方のイメージ
@@ -495,7 +495,13 @@ def build_scroll_vram_xfer_func() -> Func:
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
-
+OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
+OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
+OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
+OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
+OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
+OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
+set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
 def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
     """
@@ -634,109 +640,167 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(A
 def build_sync_scroll_row_func() -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
+        # (バンク切り替えと初期アドレス計算はそのまま)
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        RLCA(block)
+        RLCA(block)
+        AND.n8(block, 0x03)
+        LD.C_A(block)
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+        ADD.A_C(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        LD.B_A(block)
+
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        AND.n8(block, 0x3F)
+        ADD.A_n8(block, 0x80)
+        LD.H_A(block)
+        LD.L_n8(block, 0)
+
+        # --- PG 並べ替え読み込み (Z80ループ版) ---
+        LD.DE_n16(block, ADDR.PG_BUFFER)
+        LD.A_n8(block, 32)  # タイル数カウンタ
+
+        TILE_LOOP_PG = unique_label("TILE_LOOP_PG")
+        block.label(TILE_LOOP_PG)
+        PUSH.AF(block)  # カウンタ保存
+        PUSH.HL(block)
+        PUSH.BC(block)
+
+        # 1タイル(8ライン)の読み込み
+        for _ in range(8):
+            lbl_skip = unique_label("PG_SKIP")
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, lbl_skip)
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.B(block)
+            LD.A_B(block)
+            LD.mn16_A(block, ASCII16_PAGE2_REG)
+            block.label(lbl_skip)
+
+            LD.A_mHL(block)
+            LD.mDE_A(block)
+            INC.DE(block)
+            LD.BC_n16(block, 32)
+            ADD.HL_BC(block)
+
+        POP.BC(block)
+        LD.A_B(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク戻す
+        POP.HL(block)
+        INC.HL(block)  # 次のタイルアドレスへ
+
+        POP.AF(block)
+        DEC.A(block)
+        JP_NZ(block, TILE_LOOP_PG)  # 32回繰り返す
+
+        # --- ② カラー (CT) 転送準備 ---
+        # (CT用のアドレス計算)
         LD.A_mn16(block, ADDR.TARGET_ROW)
         LD.L_A(block)
         LD.H_n8(block, 0)
-        PUSH.HL(block)  # 行番号保存
-
-        # バンクとアドレスをテーブルから一発取得
-        LD.DE_label(block, "TABLE_DIV64")
-        ADD.HL_DE(block)
-        LD.A_mHL(block)
-        LD.C_A(block)  # C = バンクオフセット
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-        ADD.A_C(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク切り替え
-
-        POP.HL(block)
-        PUSH.HL(block)
-        LD.DE_label(block, "TABLE_MOD64")
-        ADD.HL_DE(block)
-        LD.A_mHL(block)
-        ADD.A_n8(block, 0x80)
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)
+        ADD.A_L(block)
         LD.H_A(block)
-        LD.L_n8(block, 0)  # HL = 完璧なROM内PGアドレス
-
-        LD.DE_n16(block, ADDR.PG_BUFFER)
-        LD.BC_n16(block, 256)
-        ldir_macro(block)  # RAMへ
-
-        # --- ② カラー (CT) 転送準備 (ここが重要) ---
-        POP.HL(block)  # 行番号 L
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)  # StartAddr_H
-        ADD.A_L(block)  # A = StartH + RowIndex
-        LD.H_A(block)
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)  # BaseBank
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
         LD.E_A(block)
 
-        # 【正規化ループ】 H >= 0xC0 の間、バンクを送りアドレスを戻す
-        block.label("CT_NORM_LOOP")
+        lbl_ct_norm = unique_label("CT_NORM")
+        lbl_ct_done = unique_label("CT_DONE")
+        block.label(lbl_ct_norm)
         LD.A_H(block)
         CP.n8(block, 0xC0)
-        JR_C(block, "CT_NORM_DONE")
-        SUB.n8(block, 0x40)  # H -= 0x4000
+        JR_C(block, lbl_ct_done)
+        SUB.n8(block, 0x40)
         LD.H_A(block)
-        INC.E(block)  # Bank++
-        JR(block, "CT_NORM_LOOP")
+        INC.E(block)
+        JR(block, lbl_ct_norm)
+        block.label(lbl_ct_done)
 
-        block.label("CT_NORM_DONE")
         LD.A_E(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)  # カラー用バンクに切り替え
-        LD.L_n8(block, 0)  # HL = 完璧なROM内CTアドレス
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        LD.B_A(block)
+        LD.L_n8(block, 0)
 
+        # --- CT 並べ替え読み込み (Z80ループ版) ---
         LD.DE_n16(block, ADDR.CT_BUFFER)
-        LD.BC_n16(block, 256)
-        ldir_macro(block)
+        LD.A_n8(block, 32)
 
-        # プログラムバンク(バンク0)に戻す
+        TILE_LOOP_CT = unique_label("TILE_LOOP_CT")
+        block.label(TILE_LOOP_CT)
+        PUSH.AF(block)
+        PUSH.HL(block)
+        PUSH.BC(block)
+
+        for _ in range(8):
+            lbl_ct_skip = unique_label("CT_SKIP")
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, lbl_ct_skip)
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.B(block)
+            LD.A_B(block)
+            LD.mn16_A(block, ASCII16_PAGE2_REG)
+            block.label(lbl_ct_skip)
+
+            LD.A_mHL(block)
+            LD.mDE_A(block)
+            INC.DE(block)
+            LD.BC_n16(block, 32)
+            ADD.HL_BC(block)
+
+        POP.BC(block)
+        LD.A_B(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        POP.HL(block)
+        INC.HL(block)
+
+        POP.AF(block)
+        DEC.A(block)
+        JP_NZ(block, TILE_LOOP_CT)
+
+        # --- ③ VRAM 転送 (ミラーリング) ---
+        # ページ2に高速転送関数が入っているバンクを接続
+        LD.A_n8(block, OUTI_FUNCS_BACK_NUM)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        AND.n8(block, 0x07)  # A = 行オフセット(0-7)
+        LD.B_A(block)  # Bレジスタに行オフセットを保持
+
+        # パターン転送 (0x00, 0x08, 0x10)
+        for base_h in [0x00, 0x08, 0x10]:
+            LD.A_B(block)
+            ADD.A_n8(block, base_h)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            SET_VRAM_WRITE_FUNC.call(block)
+            LD.HL_n16(block, ADDR.PG_BUFFER)  # 転送元RAMアドレス
+            LD.C_n8(block, 0x98)
+            # 256個の OUTI 羅列関数を呼び出し
+            OUTI_256_FUNC.call(block)
+
+
+        # カラー転送 (0x20, 0x28, 0x30)
+        for base_h in [0x20, 0x28, 0x30]:
+            LD.A_B(block)
+            ADD.A_n8(block, base_h)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            SET_VRAM_WRITE_FUNC.call(block)
+            LD.HL_n16(block, ADDR.CT_BUFFER)  # 転送元RAMアドレス
+            LD.C_n8(block, 0x98)
+            # 256個の OUTI 羅列関数を呼び出し
+            OUTI_256_FUNC.call(block)
+
+        # 最後にページ2をメインバンク(0)に戻しておく
         XOR.A(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
-        # --- ④ RAMバッファ -> VRAM (上中下ミラーリング転送) ---
-        LD.A_mn16(block, ADDR.TARGET_ROW)
-        LD.L_A(block)
-        LD.H_n8(block, 0)
-        LD.DE_label(block, "TABLE_MOD8")
-        ADD.HL_DE(block)
-        LD.A_mHL(block)  # A = 0-7 行目のオフセット
-        LD.mn16_A(block, ADDR.VRAM_ROW_OFFSET)  # ワークに保存
-
-        # パターン転送 (0x0000, 0x0800, 0x1000)
-        for base_h in [0x00, 0x08, 0x10]:
-            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, base_h)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
-            SET_VRAM_WRITE_FUNC.call(block)
-
-            LD.HL_n16(block, ADDR.PG_BUFFER)
-            LD.C_n8(block, 0x98)  # VDP Data Port
-
-            # 速度優先のためループを展開 (256個のOUTIを生成)
-            # 1バイトあたり 18T-states。ループ方式(30T)より約40%高速。
-            # Boot Bank の容量に余裕があるため、この「力技」を採用。
-            for _ in range(256):  # 高速転送ループ
-                OUTI(block)
-
-        # カラー転送 (0x2000, 0x2800, 0x3000)
-        for base_h in [0x20, 0x28, 0x30]:
-            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, base_h)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
-            SET_VRAM_WRITE_FUNC.call(block)
-
-            LD.HL_n16(block, ADDR.CT_BUFFER)
-            LD.C_n8(block, 0x98)
-
-            # 速度優先のためループを展開 (256個のOUTIを生成)
-            # 1バイトあたり 18T-states。ループ方式(30T)より約40%高速。
-            # Boot Bank の容量に余裕があるため、この「力技」を採用。
-            for _ in range(256):
-                OUTI(block)
-
         RET(block)
-
     return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True)
 
 
@@ -768,6 +832,8 @@ def build_boot_bank(
     UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries), start_at)
 
     set_debug(True)
+
+    ensure_funcs_defined(OUTI_FUNCS)
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
@@ -841,7 +907,8 @@ def build_boot_bank(
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
 
-    # --- 上入力の処理 ---
+    # --- [メインループ内の上下入力処理をここから差し替え] ---
+    # 上キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_UP)
     JR_Z(b, "CHECK_DOWN")
@@ -850,10 +917,14 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     LD.A_H(b)
     OR.L(b)
-    JR_Z(b, "DO_SCROLL_NAME")  # 0なら引かない
+    JR_Z(b, "CHECK_DOWN")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
-    JR(b, "DO_SCROLL_NAME")
+
+    # ターゲット行は「新しく入ってきた上端の行」
+    LD.A_L(b)
+    LD.mn16_A(b, ADDR.TARGET_ROW)
+    JR(b, "DO_UPDATE_SCROLL")
 
     b.label("CHECK_DOWN")
     # 下キー判定
@@ -865,27 +936,40 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
     LD.BC_n16(b, 24)
     OR.A(b)
-    SBC.HL_BC(b)  # HL = 最大スクロール行(limit)
+    SBC.HL_BC(b)  # HL = limit
 
     LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    # DE(現在値) と HL(限界値) を比較
-    # Z80で HL > DE を判定するために SBC を使用
     PUSH.HL(b)
-    OR.A(b)  # キャリークリア
-    SBC.HL_DE(b)  # HL = limit - current
+    OR.A(b)
+    SBC.HL_DE(b)
     POP.HL(b)
-    JR_Z(b, "CHECK_SPACE")  # limit == current ならこれ以上増やさない
-    JR_C(b, "CHECK_SPACE")  # limit < current (異常系) なら増やさない
+    JR_Z(b, "CHECK_SPACE")  # 下限到達
+    JR_C(b, "CHECK_SPACE")
 
-    # まだ余裕があるならインクリメント
+    # 1行下へ移動
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
-    b.label("DO_SCROLL_NAME")
-    # ネームテーブルのみ更新（下位8bitを渡す）
+    # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
+    LD.BC_n16(b, 23)
+    ADD.HL_BC(b)
+    LD.A_L(b)
+    LD.mn16_A(b, ADDR.TARGET_ROW)
+
+    b.label("DO_UPDATE_SCROLL")
+    # 1. 新しい行の PG/CT を転送
+    SYNC_SCROLL_ROW_FUNC.call(b)
+
+    # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
     LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    LD.DE_label(b, "TABLE_MOD24")
+    ADD.HL_DE(b)
+    LD.A_mHL(b)
     SCROLL_NAME_TABLE_FUNC.call(b)
+    # --- [差し替えここまで] ---
 
     # --- スペースキー判定 (画像切り替え) ---
     b.label("CHECK_SPACE")
@@ -922,33 +1006,13 @@ def build_boot_bank(
     b.label("__GO_UPDATE__")
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
     SIMPLE_BEEP_FUNC.call(b)
-    JR(b, "MAIN_LOOP")
+    # JR(b, "MAIN_LOOP")  #相対限界超える
+    JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
-    define_created_funcs(b)
+    define_created_funcs(b, group=DEFAULT_FUNC_GROUP_NAME)
 
     # --- [事前計算テーブル群] ---
-    # 1. バンクオフセットテーブル (行数 0-255 -> 0-3 バンク)
-    # 1バンク16KB = 64行分。行数を64で割った商。
-    b.label("TABLE_DIV64")
-    TABLE_DIV64 = [i // 64 for i in range(256)]
-    print_bytes(TABLE_DIV64, title="TABLE_DIV64")
-    DB(b, *TABLE_DIV64)
-
-    # 2. バンク内アドレス Hオフセットテーブル (行数 0-255 -> 0x00-0x3F)
-    # 1行256バイトなので、行数 % 64 がそのまま 0x8000 からの Hレジスタ加算分になる。
-    b.label("TABLE_MOD64")
-    TABLE_MOD64 = [i % 64 for i in range(256)]
-    print_bytes(TABLE_MOD64, title="TABLE_MOD64")
-    DB(b, *TABLE_MOD64)
-
-    # 3. VRAMブロック内 行番号テーブル (行数 0-255 -> 0-7)
-    # SCREEN 2 は 8行(256タイル)単位でブロック化されているため、その中での相対行。
-    b.label("TABLE_MOD8")
-    TABLE_MOD8 = [i % 8 for i in range(256)]
-    print_bytes(TABLE_MOD8, title="TABLE_MOD8")
-    DB(b, *TABLE_MOD8)
-
-    # 4. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
+    # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
     # タイル番号のオフセット計算用。
     b.label("TABLE_MOD24")
     TABLE_MOD24 = [i % 24 for i in range(256)]
@@ -964,7 +1028,10 @@ def build_boot_bank(
 
     data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
     log_and_store("---- labels ----", log_lines)
-    log_and_store(debug_print_labels(b, origin=0x4000, no_print=True), log_lines)
+    log_and_store(
+        debug_print_labels(b, origin=0x4000, no_print=True, include_offset=True),
+        log_lines,
+    )
 
     used_bytes = len(assembled)
     if used_bytes > PAGE_SIZE:
@@ -983,6 +1050,40 @@ def build_boot_bank(
     )
 
     return data
+
+
+def build_outi_funcs_bank(
+    fill_byte: int, log_lines: list[str] | None = None
+) -> list[bytes]:
+    b = Block()
+
+    define_created_funcs(b, group=OUTI_FUNCS_GROUP)
+    assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
+    bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
+    if bank_count > 1:
+        raise ValueError(
+            "OUTI funcs bank must fit within a single bank; actual: "
+            f"{bank_count} banks"
+        )
+    total_size = bank_count * PAGE_SIZE
+    data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
+    used_percent = len(assembled) / PAGE_SIZE * 100
+    log_and_store(
+        "OUTI funcs bank usage: "
+        f"{len(assembled)} bytes across {bank_count} bank(s) "
+        f"({used_percent:.2f}% of first bank)",
+        log_lines,
+    )
+    log_and_store("---- labels ----", log_lines)
+    log_and_store(
+        debug_print_labels(b, origin=0, no_print=True, include_offset=True),
+        log_lines,
+    )
+
+    banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
+    ensure_funcs_defined(OUTI_FUNCS)
+
+    return banks
 
 
 def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
@@ -1024,7 +1125,14 @@ def build(
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    next_bank = 1
+    outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines)
+    OUTI_FUNCS_BACK_NUM = 1
+    log_and_store(
+        f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
+        log_lines,
+    )
+    set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
+    next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     header_bytes: list[int] = []
 
     for i, image in enumerate(images):
@@ -1091,6 +1199,7 @@ def build(
         raise AssertionError("header_bytes length mismatch")
 
     banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
+    banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
 
@@ -1245,6 +1354,7 @@ def ensure_output_writable(path: Path) -> None:
         except Exception as exc:  # pragma: no cover - CLI error path
             raise SystemExit(f"ERROR! failed to open ROM file for writing: {path}: {exc}") from exc
     return
+
 
 def main() -> None:
     args = parse_args()
