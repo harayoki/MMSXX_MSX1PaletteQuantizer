@@ -193,6 +193,10 @@ def build_title_screen_func(
         HALT(block)
         update_input_func.call(block)
 
+        LD.A_mn16(block, input_trg_addr)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_ESC)
+        JP_NZ(block, EXIT_ESC)
+
         CALL(block, chsns)
         JR_Z(block, "TITLE_SKIP_KBD")
         CALL(block, chget)
