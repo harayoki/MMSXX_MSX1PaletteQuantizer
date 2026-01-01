@@ -41,6 +41,7 @@ except ImportError:
     from mmsxxasmhelper.utils import pad_bytes
 
 
+ASCII16_PAGE1_REG = 0x6000  # 0x4000–0x7FFF を切替
 ASCII16_PAGE2_REG = 0x7000  # 0x8000–0xBFFF を切替
 CURRENT_BANK_ADDR = 0xC000  # 表示バンク番号の保存先 (RAM)
 PAGE_SIZE = 0x4000  # 16 KiB
@@ -88,6 +89,10 @@ def build_boot_bank() -> bytes:
 
     # ENASLOT を呼び出してバンクアクセスを有効化
     enaslt_macro(b)
+
+    # コードを配置している page1 を確実に bank0 に固定しておく
+    LD.A_n8(b, 0)
+    LD.mn16_A(b, ASCII16_PAGE1_REG)
 
     # SCREEN 8 初期化
     LD.A_n8(b, 8)
