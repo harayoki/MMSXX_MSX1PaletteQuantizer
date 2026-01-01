@@ -112,7 +112,7 @@ from mmsxxasmhelper.msxutils import (
     set_text_cursor_macro,
     write_text_with_cursor_macro,
 )
-from mmsxxasmhelper.mscutils import build_title_screen_func
+from mmsxxasmhelper.titlescene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
     ldir_macro,
