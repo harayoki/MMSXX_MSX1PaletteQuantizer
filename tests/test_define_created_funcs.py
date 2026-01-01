@@ -62,10 +62,10 @@ def test_finalize_checks_specified_groups(monkeypatch):
     block = core.Block()
 
     with pytest.raises(ValueError, match="UNDEFINED_GROUP"):
-        block.finalize(0, "grp")
+        block.finalize(0, ["grp"])
 
     with pytest.raises(ValueError, match="UNDEFINED_DEFAULT, UNDEFINED_GROUP"):
-        block.finalize(0, core.DEFAULT_FUNC_GROUP_NAME, "grp")
+        block.finalize(0, [core.DEFAULT_FUNC_GROUP_NAME, "grp"])
 
 
 def test_finalize_allows_defined_funcs(monkeypatch):
