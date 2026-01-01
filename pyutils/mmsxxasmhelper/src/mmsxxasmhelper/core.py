@@ -61,6 +61,7 @@ __all__ = [
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
     "unique_label",
+    "DEFAULT_FUNC_GROUP_NAME",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
@@ -90,7 +91,7 @@ from typing import Callable, Dict, List, Literal
 # ---------------------------------------------------------------------------
 
 _label_counter = count()
-_DEFAULT_FUNC_GROUP = "default"
+DEFAULT_FUNC_GROUP_NAME = "default"
 _created_funcs_by_group: Dict[str, List["Func"]] = {}
 
 
@@ -564,7 +565,7 @@ class Func:
         name: str,
         body: Body,
         no_auto_ret: bool = False,
-        group: str = _DEFAULT_FUNC_GROUP,
+        group: str = DEFAULT_FUNC_GROUP_NAME,
     ) -> None:
         self.name = name
         self.body = body
@@ -588,7 +589,7 @@ class Func:
 
 
 def define_created_funcs(
-    b: Block, group: str = _DEFAULT_FUNC_GROUP, *except_funcs: str | Func
+    b: Block, group: str = DEFAULT_FUNC_GROUP_NAME, *except_funcs: str | Func
 ) -> None:
     """Func で作られた関数をまとめて define するヘルパー。
 
