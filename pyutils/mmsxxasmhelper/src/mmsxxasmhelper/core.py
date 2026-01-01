@@ -578,9 +578,11 @@ class Func:
         """関数本体を配置する (label + body + RET)。"""
 
         self.define_label_only(b)
+        start_pc = b.pc
         self.body(b)
+        body_size = b.pc - start_pc
 
-        print(f"Func defined: {self.name} (no_auto_ret={self.no_auto_ret})")
+        print(f"Func defined: {self.name} (body_size={body_size})")
 
         if not self.no_auto_ret:
             # RET
