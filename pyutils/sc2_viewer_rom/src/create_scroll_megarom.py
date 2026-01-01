@@ -1070,8 +1070,7 @@ def build_outi_funcs_bank(
     b = Block()
 
     define_created_funcs(b, group=OUTI_FUNCS_GROUP)
-
-    assembled = b.finalize(origin=ROM_BASE, groups=[OUTI_FUNCS_GROUP])
+    assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP])
     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
     if bank_count > 1:
         raise ValueError(
@@ -1087,6 +1086,8 @@ def build_outi_funcs_bank(
         f"({used_percent:.2f}% of first bank)",
         log_lines,
     )
+    log_and_store("---- labels ----", log_lines)
+    log_and_store(debug_print_labels(b, origin=0, no_print=True), log_lines)
 
     return [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
 
