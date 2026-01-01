@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
 
 import mmsxxasmhelper.core as core
 import pytest
@@ -15,7 +15,7 @@ def _func_body(value: int):
 
 
 def test_define_created_funcs_excludes_by_name_and_reference(monkeypatch):
-    monkeypatch.setattr(core, "_created_funcs", [], raising=False)
+    monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
 
     func_a = core.Func("FUNC_A", _func_body(0x00))
     func_b = core.Func("FUNC_B", _func_body(0x01))
@@ -23,7 +23,7 @@ def test_define_created_funcs_excludes_by_name_and_reference(monkeypatch):
 
     block = core.Block()
 
-    core.define_created_funcs(block, "FUNC_SKIP", func_a)
+    core.define_created_funcs(block, core._DEFAULT_FUNC_GROUP, "FUNC_SKIP", func_a)
 
     assert "FUNC_A" not in block.labels
     assert "FUNC_SKIP" not in block.labels
@@ -32,7 +32,7 @@ def test_define_created_funcs_excludes_by_name_and_reference(monkeypatch):
 
 
 def test_finalize_errors_when_func_not_defined(monkeypatch):
-    monkeypatch.setattr(core, "_created_funcs", [], raising=False)
+    monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
 
     core.Func("UNDEFINED_FUNC", _func_body(0x00))
 
@@ -43,7 +43,7 @@ def test_finalize_errors_when_func_not_defined(monkeypatch):
 
 
 def test_finalize_allows_defined_funcs(monkeypatch):
-    monkeypatch.setattr(core, "_created_funcs", [], raising=False)
+    monkeypatch.setattr(core, "_created_funcs_by_group", {}, raising=False)
 
     func = core.Func("DEFINED_FUNC", _func_body(0x10))
 
