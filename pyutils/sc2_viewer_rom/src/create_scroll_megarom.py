@@ -150,7 +150,7 @@ SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
-INSERT_BANK_FUNC_GROUP = "insert_bank_funcs"
+OUTI_FUNCS_GROUP = "outi_funcs"
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -501,11 +501,11 @@ def build_scroll_vram_xfer_func() -> Func:
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
-OUTI_128_FUNC = build_outi_repeat_func(128, group=INSERT_BANK_FUNC_GROUP)
-OUTI_256_FUNC = build_outi_repeat_func(256, group=INSERT_BANK_FUNC_GROUP)
-OUTI_512_FUNC = build_outi_repeat_func(512, group=INSERT_BANK_FUNC_GROUP)
-OUTI_1024_FUNC = build_outi_repeat_func(1024, group=INSERT_BANK_FUNC_GROUP)
-OUTI_2048_FUNC = build_outi_repeat_func(2048, group=INSERT_BANK_FUNC_GROUP)
+OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
+OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
+OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
+OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
+OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
 
 def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
     """
@@ -1059,20 +1059,25 @@ def build_boot_bank(
     return data
 
 
-def build_insert_func_banks(
+def build_outi_funcs_bank(
     fill_byte: int, log_lines: list[str] | None = None
 ) -> list[bytes]:
     b = Block()
 
-    define_created_funcs(b, group=INSERT_BANK_FUNC_GROUP)
+    define_created_funcs(b, group=OUTI_FUNCS_GROUP)
 
-    assembled = b.finalize(origin=ROM_BASE, groups=[INSERT_BANK_FUNC_GROUP])
+    assembled = b.finalize(origin=ROM_BASE, groups=[OUTI_FUNCS_GROUP])
     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
+    if bank_count > 1:
+        raise ValueError(
+            "OUTI funcs bank must fit within a single bank; actual: "
+            f"{bank_count} banks"
+        )
     total_size = bank_count * PAGE_SIZE
     data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
     used_percent = len(assembled) / PAGE_SIZE * 100
     log_and_store(
-        "Insert func bank usage: "
+        "OUTI funcs bank usage: "
         f"{len(assembled)} bytes across {bank_count} bank(s) "
         f"({used_percent:.2f}% of first bank)",
         log_lines,
@@ -1120,8 +1125,13 @@ def build(
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    insert_func_banks = build_insert_func_banks(fill_byte, log_lines=log_lines)
-    next_bank = 1 + len(insert_func_banks)
+    outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines)
+    outi_funcs_bank_num = 1
+    log_and_store(
+        f"OUTI funcs bank number: {outi_funcs_bank_num}",
+        log_lines,
+    )
+    next_bank = outi_funcs_bank_num + len(outi_funcs_banks)
     header_bytes: list[int] = []
 
     for i, image in enumerate(images):
@@ -1188,7 +1198,7 @@ def build(
         raise AssertionError("header_bytes length mismatch")
 
     banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
-    banks.extend(insert_func_banks)
+    banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
 
