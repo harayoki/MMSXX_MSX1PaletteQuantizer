@@ -155,23 +155,24 @@ OUTI_FUNCS_BACK_NUM:int = 1
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
 TITLE_LOGO_TEXT = (
-    "  __  __ __  __ ______  ____  __\n"
-    " |  \\/  |  \\/  / ___\\ \\/ /\\ \\/ /\n"
-    " | |\\/| | |\\/| \\___ \\  /  \\  / \n"
-    " | |  | | |  | |___) /  \\  /  \\ \\\n"
-    " |_|  |_|_|  |_|____/_/\\_\\/_/\\_\\\n"
-    "                                "
+    r" __  __ __  __  ______  ____  __" + "\n"
+    r"|  \/  |  \/  |/ ___\ \/ /\ \/ /" + "\n"
+    r"| |\/| | |\/| |\___  \  /  \  / " + "\n"
+    r"| |  | | |  | |___/  /  \  /  \ " + "\n"
+    r"|_|  |_|_|  |_|_____/_/\_\/_/\_\ " + "\n"
+    "\n"                                           
+    "{SUBTITLE HERE}"
 )
 TITLE_LOGO_WIDTH = max(len(line) for line in TITLE_LOGO_TEXT.split("\n"))
 TITLE_LOGO_X = (40 - TITLE_LOGO_WIDTH) // 2
 TITLE_LOGO_Y = 2
-TITLE_SUBTEXT = "Press SPACE to start. ESC to settings."
+TITLE_SUBTEXT = "SPACE to start. ESC to settings."
 TITLE_SUBTEXT_X = (40 - len(TITLE_SUBTEXT)) // 2
 TITLE_SUBTEXT_Y = TITLE_LOGO_Y + len(TITLE_LOGO_TEXT.split("\n")) + 1
-TITLE_COUNTDOWN_TEXT = "Starting in   seconds..."
+TITLE_COUNTDOWN_TEXT = "Starting in    sec."
 TITLE_COUNTDOWN_X = (40 - len(TITLE_COUNTDOWN_TEXT)) // 2
 TITLE_COUNTDOWN_Y = TITLE_SUBTEXT_Y + 1
-TITLE_COUNTDOWN_DIGIT_X = TITLE_COUNTDOWN_X + len("Starting in ")
+TITLE_COUNTDOWN_DIGIT_X = TITLE_COUNTDOWN_X + len("Starting in")
 TITLE_FRAME_TICKS = 60
 TITLE_DIGIT_COUNT = 3
 
@@ -1513,7 +1514,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--title-wait-seconds",
         type=int,
-        default=3,
+        default=8,
         help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
     )
     parser.add_argument(
