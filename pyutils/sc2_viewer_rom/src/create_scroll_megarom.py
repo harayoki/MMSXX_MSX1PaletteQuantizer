@@ -664,10 +664,10 @@ def build_sync_scroll_row_func() -> Func:
         LD.DE_n16(block, ADDR.PG_BUFFER)
         for tile_idx in range(32):
             PUSH.HL(block)
+            PUSH.BC(block)
             for line_idx in range(8):
                 # ラベル名をタイルのインデックスに合わせてユニークにする
                 lbl_skip = f"PG_SKIP_{tile_idx}_{line_idx}"
-                lbl_next = f"PG_NEXT_{tile_idx}_{line_idx}"
 
                 LD.A_H(block)
                 CP.n8(block, 0xC0)
@@ -683,14 +683,11 @@ def build_sync_scroll_row_func() -> Func:
                 LD.A_mHL(block)
                 LD.mDE_A(block)
                 INC.DE(block)
-                LD.A_L(block)
-                ADD.A_n8(block, 32)
-                LD.L_A(block)
-                JR_NC(block, lbl_next)
-                INC.H(block)
-                block.label(lbl_next)
+                LD.BC_n16(block, 32)
+                ADD.HL_BC(block)
+            POP.BC(block)
             LD.A_B(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)  # 現在のバンクを反映
+            LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク戻す
             POP.HL(block)
             INC.HL(block)
 
@@ -725,9 +722,9 @@ def build_sync_scroll_row_func() -> Func:
         LD.DE_n16(block, ADDR.CT_BUFFER)
         for tile_idx in range(32):
             PUSH.HL(block)
+            PUSH.BC(block)
             for line_idx in range(8):
                 lbl_ct_skip = f"CT_SKIP_{tile_idx}_{line_idx}"
-                lbl_ct_next = f"CT_NEXT_{tile_idx}_{line_idx}"
 
                 LD.A_H(block)
                 CP.n8(block, 0xC0)
@@ -742,12 +739,9 @@ def build_sync_scroll_row_func() -> Func:
                 LD.A_mHL(block)
                 LD.mDE_A(block)
                 INC.DE(block)
-                LD.A_L(block)
-                ADD.A_n8(block, 32)
-                LD.L_A(block)
-                JR_NC(block, lbl_ct_next)
-                INC.H(block)
-                block.label(lbl_ct_next)
+                LD.BC_n16(block, 32)
+                ADD.HL_BC(block)
+            POP.BC(block)
             LD.A_B(block)
             LD.mn16_A(block, ASCII16_PAGE2_REG)
             POP.HL(block)
