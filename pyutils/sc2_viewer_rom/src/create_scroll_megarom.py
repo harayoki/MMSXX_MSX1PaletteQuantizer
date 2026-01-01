@@ -50,6 +50,7 @@ from mmsxxasmhelper.core import (
     INC,
     JP,
     JP_NZ,
+    JP_Z,
     JR,
     JR_C,
     JR_NC,
@@ -860,7 +861,7 @@ def build_dummy_config_scene_func(
 
         for y, line in enumerate(help_lines):
             write_text_with_cursor_macro(
-                block, line, 0, y, current_screen_mode=0
+                block, line, 0, y
             )
 
         # 入力状態を一度更新してトリガーをリセット
@@ -1107,7 +1108,7 @@ def build_boot_bank(
     b.label("CHECK_SPACE")
     LD.A_mn16(b, ADDR.INPUT_TRG)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
-    JR_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
+    JP_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
 
     # SPACEが押された場合のみここに来る
     # 次に SHIFT (L_BTN_B) の状態を確認
