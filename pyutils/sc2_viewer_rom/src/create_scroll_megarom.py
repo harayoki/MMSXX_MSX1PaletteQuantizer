@@ -90,7 +90,6 @@ from mmsxxasmhelper.core import (
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
     CHGMOD,
-    CHPUT,
     FORCLR,
     BAKCLR,
     BDRCLR,
@@ -113,6 +112,7 @@ from mmsxxasmhelper.msxutils import (
     set_text_cursor_macro,
     write_text_with_cursor_macro,
 )
+from mmsxxasmhelper.titlescene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
     ldir_macro,
@@ -153,28 +153,6 @@ OUTI_FUNCS_GROUP = "outi_funcs"
 
 OUTI_FUNCS_BACK_NUM:int = 1
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
-
-TITLE_LOGO_TEXT = (
-    r" __  __ __  __  ______  ____  __" + "\n"
-    r"|  \/  |  \/  |/ ___\ \/ /\ \/ /" + "\n"
-    r"| |\/| | |\/| |\___  \  /  \  / " + "\n"
-    r"| |  | | |  | |___/  /  \  /  \ " + "\n"
-    r"|_|  |_|_|  |_|_____/_/\_\/_/\_\ " + "\n"
-    "\n"                                           
-    "{SUBTITLE HERE}"
-)
-TITLE_LOGO_WIDTH = max(len(line) for line in TITLE_LOGO_TEXT.split("\n"))
-TITLE_LOGO_X = (40 - TITLE_LOGO_WIDTH) // 2
-TITLE_LOGO_Y = 2
-TITLE_SUBTEXT = "SPACE to start. ESC to settings."
-TITLE_SUBTEXT_X = (40 - len(TITLE_SUBTEXT)) // 2
-TITLE_SUBTEXT_Y = TITLE_LOGO_Y + len(TITLE_LOGO_TEXT.split("\n")) + 1
-TITLE_COUNTDOWN_TEXT = "Starting in    sec."
-TITLE_COUNTDOWN_X = (40 - len(TITLE_COUNTDOWN_TEXT)) // 2
-TITLE_COUNTDOWN_Y = TITLE_SUBTEXT_Y + 1
-TITLE_COUNTDOWN_DIGIT_X = TITLE_COUNTDOWN_X + len("Starting in")
-TITLE_FRAME_TICKS = 60
-TITLE_DIGIT_COUNT = 3
 
 
 # 状況を保存するメモリアドレス
@@ -692,140 +670,6 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
 )
 
 
-def build_title_screen_func(
-    countdown_seconds: int, *, group: str = SCROLL_VIEWER_FUNC_GROUP
-) -> Func:
-    countdown_seconds = max(0, min(countdown_seconds, 255))
-
-    def write_countdown_digits(block: Block) -> None:
-        HUND_LOOP = unique_label("COUNTDOWN_HUND_LOOP")
-        TENS_LOOP = unique_label("COUNTDOWN_TENS_LOOP")
-        ONES_READY = unique_label("COUNTDOWN_ONES_READY")
-        HUND_DONE = unique_label("COUNTDOWN_HUND_DONE")
-        TENS_DONE = unique_label("COUNTDOWN_TENS_DONE")
-
-        set_text_cursor_macro(block, TITLE_COUNTDOWN_DIGIT_X, TITLE_COUNTDOWN_Y)
-
-        LD.A_mn16(block, ADDR.TITLE_SECONDS_REMAINING)
-        LD.B_n8(block, 0)
-
-        block.label(HUND_LOOP)
-        CP.n8(block, 100)
-        JR_C(block, TENS_LOOP)
-        SUB.n8(block, 100)
-        INC.B(block)
-        JR(block, HUND_LOOP)
-
-        block.label(TENS_LOOP)
-        LD.C_n8(block, 0)
-
-        TENS_LOOP_INNER = unique_label("COUNTDOWN_TENS_LOOP_INNER")
-        block.label(TENS_LOOP_INNER)
-        CP.n8(block, 10)
-        JR_C(block, ONES_READY)
-        SUB.n8(block, 10)
-        INC.C(block)
-        JR(block, TENS_LOOP_INNER)
-
-        block.label(ONES_READY)
-        LD.D_A(block)
-
-        HUND_NON_ZERO = unique_label("COUNTDOWN_HUND_NON_ZERO")
-        block.label(HUND_NON_ZERO)
-        LD.A_B(block)
-        OR.A(block)
-        JR_NZ(block, HUND_NON_ZERO + "_VAL")
-        LD.A_n8(block, ord(" "))
-        JR(block, HUND_DONE)
-        block.label(HUND_NON_ZERO + "_VAL")
-        LD.A_B(block)
-        ADD.A_n8(block, ord("0"))
-        block.label(HUND_DONE)
-        LD.mn16_A(block, ADDR.TITLE_COUNTDOWN_DIGITS)
-
-        TENS_NON_ZERO = unique_label("COUNTDOWN_TENS_NON_ZERO")
-        block.label(TENS_NON_ZERO)
-        LD.A_B(block)
-        OR.A(block)
-        JR_NZ(block, TENS_NON_ZERO + "_VAL")
-        LD.A_C(block)
-        OR.A(block)
-        JR_NZ(block, TENS_NON_ZERO + "_VAL")
-        LD.A_n8(block, ord(" "))
-        JR(block, TENS_DONE)
-        block.label(TENS_NON_ZERO + "_VAL")
-        LD.A_C(block)
-        ADD.A_n8(block, ord("0"))
-        block.label(TENS_DONE)
-        LD.mn16_A(block, ADDR.TITLE_COUNTDOWN_DIGITS + 1)
-
-        LD.A_D(block)
-        ADD.A_n8(block, ord("0"))
-        LD.mn16_A(block, ADDR.TITLE_COUNTDOWN_DIGITS + 2)
-
-        for idx in range(TITLE_DIGIT_COUNT):
-            LD.A_mn16(block, ADDR.TITLE_COUNTDOWN_DIGITS + idx)
-            CALL(block, CHPUT)
-
-    def title_screen(block: Block) -> None:
-        CALL(block, INITXT)
-        set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
-
-        write_text_with_cursor_macro(block, TITLE_LOGO_TEXT, TITLE_LOGO_X, TITLE_LOGO_Y)
-        write_text_with_cursor_macro(block, TITLE_SUBTEXT, TITLE_SUBTEXT_X, TITLE_SUBTEXT_Y)
-        write_text_with_cursor_macro(
-            block, TITLE_COUNTDOWN_TEXT, TITLE_COUNTDOWN_X, TITLE_COUNTDOWN_Y
-        )
-
-        if countdown_seconds > 0:
-            LD.A_n8(block, countdown_seconds & 0xFF)
-        else:
-            XOR.A(block)
-        LD.mn16_A(block, ADDR.TITLE_SECONDS_REMAINING)
-        LD.A_n8(block, TITLE_FRAME_TICKS & 0xFF)
-        LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
-
-        write_countdown_digits(block)
-
-        LOOP_LABEL = unique_label("TITLE_LOOP")
-        block.label(LOOP_LABEL)
-        HALT(block)
-        UPDATE_INPUT_FUNC.call(block)
-
-        LD.A_mn16(block, ADDR.INPUT_TRG)
-        BIT.n8_A(block, INPUT_KEY_BIT.L_BTN_A)
-        JR_NZ(block, "TITLE_END")
-
-        if countdown_seconds > 0:
-            LD.A_mn16(block, ADDR.TITLE_SECONDS_REMAINING)
-            OR.A(block)
-            JR_Z(block, "TITLE_END")
-
-            LD.A_mn16(block, ADDR.TITLE_FRAME_COUNTER)
-            DEC.A(block)
-            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
-            FRAME_WAIT = unique_label("TITLE_FRAME_WAIT")
-            JR_Z(block, FRAME_WAIT)
-            JP(block, LOOP_LABEL)
-
-            block.label(FRAME_WAIT)
-            LD.A_n8(block, TITLE_FRAME_TICKS & 0xFF)
-            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
-            LD.A_mn16(block, ADDR.TITLE_SECONDS_REMAINING)
-            DEC.A(block)
-            LD.mn16_A(block, ADDR.TITLE_SECONDS_REMAINING)
-            write_countdown_digits(block)
-            OR.A(block)
-            JR_Z(block, "TITLE_END")
-
-        JP(block, LOOP_LABEL)
-
-        block.label("TITLE_END")
-        RET(block)
-
-    return Func("TITLE_SCREEN", title_screen, group=group)
-
-
 def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
@@ -1025,7 +869,14 @@ def build_boot_bank(
         len(image_entries), group=SCROLL_VIEWER_FUNC_GROUP
     )
     TITLE_SCREEN_FUNC = build_title_screen_func(
-        title_wait_seconds, group=SCROLL_VIEWER_FUNC_GROUP
+        title_wait_seconds,
+        subtitle_text="SCROLL VIEWER",
+        input_trg_addr=ADDR.INPUT_TRG,
+        title_seconds_remaining_addr=ADDR.TITLE_SECONDS_REMAINING,
+        title_frame_counter_addr=ADDR.TITLE_FRAME_COUNTER,
+        title_countdown_digits_addr=ADDR.TITLE_COUNTDOWN_DIGITS,
+        update_input_func=UPDATE_INPUT_FUNC,
+        group=SCROLL_VIEWER_FUNC_GROUP,
     )
 
     set_debug(True)
