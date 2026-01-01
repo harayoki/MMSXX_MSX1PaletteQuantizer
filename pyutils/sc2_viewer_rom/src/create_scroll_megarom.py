@@ -11,12 +11,14 @@ MSX1 SCREEN2 の縦スクロール ROM ビルダー。
   あれば再利用し、--no-cache 指定時のみ再生成する。
 - 量子化済み画像を 256 バイト × tile_rows のパターン／カラーデータに変換し、ASCII16
   MegaROM のデータバンクへバンク境界をまたぎながら隙間なく配置する。
-- ブートバンクにスクロールビューアーを配置し、プログラム直後に各画像 6 バイトのヘッダー
-  （開始バンク、行数、カラーデータのバンクとアドレス）を並べ、末尾に 0xFF × 4 の終端情報
+- ブートバンクにスクロールビューアーを配置し、プログラム直後に各画像 7 バイトのヘッダー
+  （開始バンク、行数、初期スクロール方向、カラーデータのバンクとアドレス）を並べ、末尾
+  に 0xFF × 4 の終端情報
   を付与する。
-- ビューアーは SCREEN 2 を初期化し、start_at オプションに応じて初期スクロール位置を設定。
-  上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送する。スペースで次の画像、
-  SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易 Beep を鳴らす。
+- ビューアーは SCREEN 2 を初期化し、画像ヘッダーに埋め込まれた初期スクロール方向に応じて
+  初期スクロール位置を設定。上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送
+  する。スペースで次の画像、SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易
+  Beep を鳴らす。
 - `--use-debug-image` を指定するとテスト用パターンを生成し、それ以外ではビルド結果を
   ROM として出力、必要に応じてログを rominfo に書き出す。
 
@@ -27,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -138,7 +141,7 @@ PATTERN_RAM_SIZE = 0x1800
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
-IMAGE_HEADER_ENTRY_SIZE = 6
+IMAGE_HEADER_ENTRY_SIZE = 7
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
 OUTI_FUNCS_GROUP = "outi_funcs"
@@ -156,6 +159,8 @@ class ADDR:
         madd("CURRENT_IMAGE_START_BANK_ADDR", 1, description="画像データを格納しているバンク番号"))
     CURRENT_IMAGE_ROW_COUNT_ADDR = (
         madd("CURRENT_IMAGE_ROW_COUNT_ADDR", 2, description="画像の行数（タイル行数）を保存"))
+    CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION = (
+        madd("CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION", 1, description="0=上から,255=下から"))
     CURRENT_IMAGE_COLOR_BANK_ADDR = (
         madd("CURRENT_IMAGE_COLOR_BANK_ADDR", 1,description="カラーパターンが置かれているバンク番号"))
     CURRENT_IMAGE_COLOR_ADDRESS_ADDR = (
@@ -503,7 +508,7 @@ OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
 OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
 set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
-def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
+def build_update_image_display_func(image_entries_count: int) -> Func:
     """
     縦2028ドットを超える画像にも対応したかもしれない実装（未検証）
     """
@@ -516,47 +521,53 @@ def build_update_image_display_func(image_entries_count: int, start_at: str) -> 
         # 1. 画像番号の保存
         LD.mn16_A(block, ADDR.CURRENT_IMAGE_ADDR)
 
-        # 2. ヘッダテーブル(6bytes/entry)から情報をワークRAMにロード
+        # 2. ヘッダテーブル(7bytes/entry)から情報をワークRAMにロード
         LD.L_A(block)
         LD.H_n8(block, 0)
         PUSH.HL(block)
         POP.DE(block)
         ADD.HL_HL(block)  # *2
-        ADD.HL_DE(block)  # *3
-        ADD.HL_HL(block)  # *6
+        ADD.HL_HL(block)  # *4
+        ADD.HL_DE(block)  # *5
+        ADD.HL_DE(block)  # *6
+        ADD.HL_DE(block)  # *7
         LD.DE_label(block, "IMAGE_HEADER_TABLE")
         ADD.HL_DE(block)
 
-        # CURRENT_IMAGE_START_BANK_ADDR から 6バイト分コピー
+        # CURRENT_IMAGE_START_BANK_ADDR から 7バイト分コピー
         LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-        for _ in range(6):
+        for _ in range(7):
             LD.A_mHL(block)
             LD.mDE_A(block)
             INC.HL(block)
             INC.DE(block)
 
         # --- [16bit対応: スクロール位置のリセット] ---
-        # start_at の設定に基づき CURRENT_SCROLL_ROW を初期化する
+        # 画像ヘッダの設定に基づき CURRENT_SCROLL_ROW を初期化する
         INIT_POS_OK = unique_label("_INIT_POS_OK")
-        if start_at == "bottom":
-            # HL = 総行数 (16bit)
-            LD.HL_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+        INIT_FROM_TOP = unique_label("_INIT_FROM_TOP")
 
-            # HL = HL - 24 (1画面分)
-            LD.BC_n16(block, 24)
-            OR.A(block)  # キャリークリア
-            SBC.HL_BC(block)  # HL = HL - 24
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION)
+        CP.n8(block, 0xFF)
+        JR_NZ(block, INIT_FROM_TOP)
 
-            # 結果が負（24未満）なら 0 にクランプ
-            JR_NC(block, INIT_POS_OK)
-            LD.HL_n16(block, 0)
+        # 下端開始: (総行数 - 24) をクランプして設定
+        LD.HL_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+        LD.BC_n16(block, 24)
+        OR.A(block)  # キャリークリア
+        SBC.HL_BC(block)
+        JR_NC(block, INIT_POS_OK)
+        LD.HL_n16(block, 0)
+        block.label(INIT_POS_OK)
+        LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+        JR(block, "_INIT_POS_DONE")
 
-            block.label(INIT_POS_OK)
-            LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
-        else:
-            # top の場合は常に 0
-            LD.HL_n16(block, 0)
-            LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+        # 上端開始: 常に 0
+        block.label(INIT_FROM_TOP)
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+
+        block.label("_INIT_POS_DONE")
 
         # --- [VRAM転送の動的アドレス計算ルーチン] ---
         # 入力: なし (ADDRの値を参照), 出力: HL=ROMアドレス, E=バンク
@@ -822,14 +833,13 @@ def calc_line_num_for_reg_a_macro(b: Block) -> None:
 def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
-    start_at: str,
     fill_byte: int,
     log_lines: List[str] | None = None,
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
 
-    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries), start_at)
+    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries))
 
     set_debug(True)
 
@@ -881,6 +891,11 @@ def build_boot_bank(
     INC.HL(b)
     LD.mHL_D(b)
     POP.HL(b)
+
+    # INITIAL SCROLL DIRECTION
+    INC.HL(b)
+    LD.A_mHL(b)
+    LD.mn16_A(b, ADDR.CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION)
 
     # CURRENT_IMAGE_COLOR_BANK_ADDR = COLOR TABLE BANK
     INC.HL(b)
@@ -1144,7 +1159,7 @@ def log_and_store(message: str, log_lines: list[str] | None) -> None:
 
 def build(
     images: Sequence[ImageData],
-    start_at: str = "bottom",
+    start_positions: Sequence[str] | None = None,
     fill_byte: int = 0xFF,
     log_lines: list[str] | None = None,
 ) -> bytes:
@@ -1164,6 +1179,11 @@ def build(
     set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
     next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     header_bytes: list[int] = []
+
+    if start_positions is None:
+        start_positions = ["top"] * len(images)
+    elif len(start_positions) != len(images):
+        raise ValueError("start_positions length must match images length")
 
     for i, image in enumerate(images):
         log_and_store(f"* packing image #{i} tiles:{image.tile_rows}", log_lines)
@@ -1202,18 +1222,19 @@ def build(
         )
         next_bank += len(banks)
 
+        start_at_flag = 0xFF if start_positions[i] == "bottom" else 0
         header_byte = [
-                start_bank,
-                image.tile_rows & 0xFF,
-                (image.tile_rows >> 8) & 0xFF,
-                # カラーテーブルのバンク＆アドレス情報は パターンジェネレータ側から計算できるが
-                # デバッグなどのやりやすさを考え、埋め込んでおく。将来的になくしてもいい。
-                # 255 枚 * 6 byte =　1.494.. k Bytes : 現状
-                # 255 枚 * 3 byte =　0.747.. k Bytes : 省けるバイト数 1kない 現状のブートバンクは余裕があるので許容
-                color_bank & 0xFF,
-                color_address & 0xFF,
-                (color_address >> 8) & 0xFF,
-            ]
+            start_bank,
+            image.tile_rows & 0xFF,
+            (image.tile_rows >> 8) & 0xFF,
+            start_at_flag,
+            # カラーテーブルのバンク＆アドレス情報は パターンジェネレータ側から計算できるが
+            # デバッグなどのやりやすさを考え、埋め込んでおく。将来的になくしてもいい。
+            # 255 枚 * 7 byte =　1.746.. k Bytes : 現状
+            color_bank & 0xFF,
+            color_address & 0xFF,
+            (color_address >> 8) & 0xFF,
+        ]
         print(f"header #{i} {header_byte}")
         header_bytes.extend(header_byte)
 
@@ -1228,7 +1249,7 @@ def build(
     if len(header_bytes) != expected_header_length:
         raise AssertionError("header_bytes length mismatch")
 
-    banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
+    banks = [build_boot_bank(image_entries, header_bytes, fill_byte)]
     banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
@@ -1301,8 +1322,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--start-at",
         choices=["top", "bottom"],
-        default="bottom",
-        help="初期表示位置 (default: bottom)",
+        default="top",
+        help="全画像の初期表示位置デフォルト (default: top)",
+    )
+    parser.add_argument(
+        "--start-at-override",
+        nargs="+",
+        choices=["top", "bottom"],
+        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
+    )
+    parser.add_argument(
+        "--start-at-random",
+        action="store_true",
+        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
     )
     return parser.parse_args()
 
@@ -1474,7 +1506,24 @@ def main() -> None:
     if not image_data_list:
         raise SystemExit("No images were prepared")
 
-    rom = build(image_data_list, start_at=args.start_at, fill_byte=args.fill_byte, log_lines=log_lines)
+    if args.start_at_random and args.start_at_override:
+        raise SystemExit("--start-at-random と --start-at-override は同時に指定できません")
+
+    if args.start_at_random:
+        start_positions = [random.choice(["top", "bottom"]) for _ in image_data_list]
+    elif args.start_at_override:
+        if len(args.start_at_override) != len(image_data_list):
+            raise SystemExit("--start-at-override の数は画像数と一致させてください")
+        start_positions = args.start_at_override
+    else:
+        start_positions = [args.start_at] * len(image_data_list)
+
+    rom = build(
+        image_data_list,
+        start_positions=start_positions,
+        fill_byte=args.fill_byte,
+        log_lines=log_lines,
+    )
 
     out = args.output
     if out is None:
