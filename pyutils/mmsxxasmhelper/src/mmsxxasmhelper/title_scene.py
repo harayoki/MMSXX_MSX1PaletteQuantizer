@@ -69,8 +69,13 @@ def build_title_screen_func(
     title_logo_x = (40 - title_logo_width) // 2 if logo_lines else 0
     title_logo_y = 2 if logo_lines else 0
     title_subtext_lines = [
+        "",
+        "",
         "PUSH SPACE to start.",
         "PUSH ESC to settings / help.",
+        "",
+        "programmed by harayoki",
+        "",
     ]
     title_subtext_x = [(40 - len(line)) // 2 for line in title_subtext_lines]
     title_subtext_y = title_logo_y + len(logo_lines) + 1 if logo_lines else 2
