@@ -90,7 +90,8 @@ from typing import Callable, Dict, List, Literal
 # ---------------------------------------------------------------------------
 
 _label_counter = count()
-_created_funcs: List["Func"] = []
+_DEFAULT_FUNC_GROUP = "default"
+_created_funcs_by_group: Dict[str, List["Func"]] = {}
 
 
 def unique_label(prefix: str = "__L") -> str:
@@ -173,8 +174,12 @@ class Block:
         v0 では単一ブロック前提なので任意指定でOK。
         """
 
-        undefined_funcs = [func.name for func in _created_funcs
-                           if func.name not in self.labels]
+        undefined_funcs = [
+            func.name
+            for funcs in _created_funcs_by_group.values()
+            for func in funcs
+            if func.name not in self.labels
+        ]
         if undefined_funcs:
             names = ", ".join(sorted(set(undefined_funcs)))
             raise ValueError(f"undefined func(s): {names}")
@@ -554,11 +559,17 @@ Body = Callable[[Block], None]
 class Func:
     """CALL可能な関数を表す薄いラッパ。"""
 
-    def __init__(self, name: str, body: Body, no_auto_ret: bool = False) -> None:
+    def __init__(
+        self,
+        name: str,
+        body: Body,
+        no_auto_ret: bool = False,
+        group: str = _DEFAULT_FUNC_GROUP,
+    ) -> None:
         self.name = name
         self.body = body
         self.no_auto_ret = no_auto_ret
-        _created_funcs.append(self)
+        _created_funcs_by_group.setdefault(group, []).append(self)
 
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
@@ -576,19 +587,23 @@ class Func:
         CALL_label(b, self.name)
 
 
-def define_created_funcs(b: Block, *except_funcs: str | Func) -> None:
+def define_created_funcs(
+    b: Block, group: str = _DEFAULT_FUNC_GROUP, *except_funcs: str | Func
+) -> None:
     """Func で作られた関数をまとめて define するヘルパー。
 
     Func の生成時に内部で登録される一覧から、作成順に ``define`` を行う。
     ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
-    渡すことができる。
+    渡すことができる。 ``group`` はどのグループに登録された ``Func`` を
+    define するかを指定する。 未指定の場合はデフォルトグループを対象とする。
     """
 
+    funcs = _created_funcs_by_group.get(group, [])
     excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
     excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
     defined_names: set[str] = set()
 
-    for func in _created_funcs:
+    for func in funcs:
         if func in excluded_by_ref or func.name in excluded_by_name:
             continue
         if func.name in defined_names:
