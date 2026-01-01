@@ -651,8 +651,8 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(A
 def build_sync_scroll_row_func() -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
+        # (バンク切り替えと初期アドレス計算はそのまま)
         LD.A_mn16(block, ADDR.TARGET_ROW)
-        # バンク切り替え: 行数 / 64
         RLCA(block)
         RLCA(block)
         AND.n8(block, 0x03)
@@ -660,47 +660,55 @@ def build_sync_scroll_row_func() -> Func:
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
         ADD.A_C(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
-        LD.B_A(block)  # 現在のバンクをBに保持
+        LD.B_A(block)
 
-        # ROM内アドレス計算
         LD.A_mn16(block, ADDR.TARGET_ROW)
         AND.n8(block, 0x3F)
         ADD.A_n8(block, 0x80)
         LD.H_A(block)
-        LD.L_n8(block, 0)  # HL = $8000 + MOD64*256
+        LD.L_n8(block, 0)
 
-        # --- PG 並べ替え読み込み (バンク跨ぎ対応) ---
+        # --- PG 並べ替え読み込み (Z80ループ版) ---
         LD.DE_n16(block, ADDR.PG_BUFFER)
-        for tile_idx in range(32):
-            PUSH.HL(block)
-            PUSH.BC(block)
-            for line_idx in range(8):
-                # ラベル名をタイルのインデックスに合わせてユニークにする
-                lbl_skip = f"PG_SKIP_{tile_idx}_{line_idx}"
+        LD.A_n8(block, 32)  # タイル数カウンタ
 
-                LD.A_H(block)
-                CP.n8(block, 0xC0)
-                JR_C(block, lbl_skip)
-                # バンク跨ぎ処理
-                SUB.n8(block, 0x40)
-                LD.H_A(block)
-                INC.B(block)
-                LD.A_B(block)
-                LD.mn16_A(block, ASCII16_PAGE2_REG)
+        TILE_LOOP_PG = unique_label("TILE_LOOP_PG")
+        block.label(TILE_LOOP_PG)
+        PUSH.AF(block)  # カウンタ保存
+        PUSH.HL(block)
+        PUSH.BC(block)
 
-                block.label(lbl_skip)
-                LD.A_mHL(block)
-                LD.mDE_A(block)
-                INC.DE(block)
-                LD.BC_n16(block, 32)
-                ADD.HL_BC(block)
-            POP.BC(block)
+        # 1タイル(8ライン)の読み込み
+        for _ in range(8):
+            lbl_skip = unique_label("PG_SKIP")
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, lbl_skip)
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.B(block)
             LD.A_B(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク戻す
-            POP.HL(block)
-            INC.HL(block)
+            LD.mn16_A(block, ASCII16_PAGE2_REG)
+            block.label(lbl_skip)
 
-        # --- ② カラー (CT) 転送準備 (バンク跨ぎ対応) ---
+            LD.A_mHL(block)
+            LD.mDE_A(block)
+            INC.DE(block)
+            LD.BC_n16(block, 32)
+            ADD.HL_BC(block)
+
+        POP.BC(block)
+        LD.A_B(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク戻す
+        POP.HL(block)
+        INC.HL(block)  # 次のタイルアドレスへ
+
+        POP.AF(block)
+        DEC.A(block)
+        JP_NZ(block, TILE_LOOP_PG)  # 32回繰り返す
+
+        # --- ② カラー (CT) 転送準備 ---
+        # (CT用のアドレス計算)
         LD.A_mn16(block, ADDR.TARGET_ROW)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -708,11 +716,10 @@ def build_sync_scroll_row_func() -> Func:
         ADD.A_L(block)
         LD.H_A(block)
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
-        LD.E_A(block)  # E = BaseBank
+        LD.E_A(block)
 
-        # カラーバンク正規化 (開始位置が $C0 を超える場合の補正)
-        lbl_ct_norm = "CT_NORM_LOOP_V3"
-        lbl_ct_done = "CT_NORM_DONE_V3"
+        lbl_ct_norm = unique_label("CT_NORM")
+        lbl_ct_done = unique_label("CT_DONE")
         block.label(lbl_ct_norm)
         LD.A_H(block)
         CP.n8(block, 0xC0)
@@ -725,45 +732,56 @@ def build_sync_scroll_row_func() -> Func:
 
         LD.A_E(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
-        LD.B_A(block)  # B = 現在のCTバンク
+        LD.B_A(block)
         LD.L_n8(block, 0)
 
-        # --- CT 並べ替え読み込み (バンク跨ぎ対応) ---
+        # --- CT 並べ替え読み込み (Z80ループ版) ---
         LD.DE_n16(block, ADDR.CT_BUFFER)
-        for tile_idx in range(32):
-            PUSH.HL(block)
-            PUSH.BC(block)
-            for line_idx in range(8):
-                lbl_ct_skip = f"CT_SKIP_{tile_idx}_{line_idx}"
+        LD.A_n8(block, 32)
 
-                LD.A_H(block)
-                CP.n8(block, 0xC0)
-                JR_C(block, lbl_ct_skip)
-                SUB.n8(block, 0x40)
-                LD.H_A(block)
-                INC.B(block)
-                LD.A_B(block)
-                LD.mn16_A(block, ASCII16_PAGE2_REG)
+        TILE_LOOP_CT = unique_label("TILE_LOOP_CT")
+        block.label(TILE_LOOP_CT)
+        PUSH.AF(block)
+        PUSH.HL(block)
+        PUSH.BC(block)
 
-                block.label(lbl_ct_skip)
-                LD.A_mHL(block)
-                LD.mDE_A(block)
-                INC.DE(block)
-                LD.BC_n16(block, 32)
-                ADD.HL_BC(block)
-            POP.BC(block)
+        for _ in range(8):
+            lbl_ct_skip = unique_label("CT_SKIP")
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, lbl_ct_skip)
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.B(block)
             LD.A_B(block)
             LD.mn16_A(block, ASCII16_PAGE2_REG)
-            POP.HL(block)
-            INC.HL(block)
+            block.label(lbl_ct_skip)
+
+            LD.A_mHL(block)
+            LD.mDE_A(block)
+            INC.DE(block)
+            LD.BC_n16(block, 32)
+            ADD.HL_BC(block)
+
+        POP.BC(block)
+        LD.A_B(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        POP.HL(block)
+        INC.HL(block)
+
+        POP.AF(block)
+        DEC.A(block)
+        JP_NZ(block, TILE_LOOP_CT)
 
         # --- ③ VRAM 転送 (ミラーリング) ---
-        XOR.A(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)  # メインバンクに戻す
+        # ページ2に高速転送関数が入っているバンクを接続
+        LD.A_n8(block, OUTI_FUNCS_BACK_NUM)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        loop_infinite_macro(block)  # 安全装置
 
         LD.A_mn16(block, ADDR.TARGET_ROW)
         AND.n8(block, 0x07)  # A = 行オフセット(0-7)
-        LD.B_A(block)
+        LD.B_A(block)  # Bレジスタに行オフセットを保持
 
         # パターン転送 (0x00, 0x08, 0x10)
         for base_h in [0x00, 0x08, 0x10]:
@@ -772,10 +790,13 @@ def build_sync_scroll_row_func() -> Func:
             LD.H_A(block)
             LD.L_n8(block, 0)
             SET_VRAM_WRITE_FUNC.call(block)
-            LD.HL_n16(block, ADDR.PG_BUFFER)
+            LD.HL_n16(block, ADDR.PG_BUFFER)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
+            # 256個の OUTI 羅列関数を呼び出し
+            # OUTI_256_FUNC.call(block)
             for _ in range(256):
                 OUTI(block)
+
 
         # カラー転送 (0x20, 0x28, 0x30)
         for base_h in [0x20, 0x28, 0x30]:
@@ -784,13 +805,18 @@ def build_sync_scroll_row_func() -> Func:
             LD.H_A(block)
             LD.L_n8(block, 0)
             SET_VRAM_WRITE_FUNC.call(block)
-            LD.HL_n16(block, ADDR.CT_BUFFER)
+            LD.HL_n16(block, ADDR.CT_BUFFER)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
+            # 256個の OUTI 羅列関数を呼び出し
+            # OUTI_256_FUNC.call(block)
             for _ in range(256):
                 OUTI(block)
 
-        RET(block)
+        # 最後にページ2をメインバンク(0)に戻しておく
+        XOR.A(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)
 
+        RET(block)
     return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True)
 
 
