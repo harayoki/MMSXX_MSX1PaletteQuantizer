@@ -1027,16 +1027,8 @@ def build_boot_bank(
     JR_Z(b, "CHECK_UP")
     CONFIG_SCENE_FUNC.call(b)
     apply_viewer_screen_settings(b)
-    RESET_NAME_TABLE_FUNC.call(b)
-
-    # 現在のスクロール位置に合わせて名前テーブルを補正
-    LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    LD.L_A(b)
-    LD.H_n8(b, 0)
-    LD.DE_label(b, "TABLE_MOD24")
-    ADD.HL_DE(b)
-    LD.A_mHL(b)
-    SCROLL_NAME_TABLE_FUNC.call(b)
+    LD.A_mn16(b, ADDR.CURRENT_IMAGE_ADDR)
+    UPDATE_IMAGE_DISPLAY_FUNC.call(b)
     JP(b, "MAIN_LOOP")
 
     b.label("CHECK_UP")
