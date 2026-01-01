@@ -861,7 +861,7 @@ def build_dummy_config_scene_func(
 
         for y, line in enumerate(help_lines):
             write_text_with_cursor_macro(
-                block, line, 0, y
+                block, line, 1, y
             )
 
         # 入力状態を一度更新してトリガーをリセット

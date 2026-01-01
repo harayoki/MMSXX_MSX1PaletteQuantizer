@@ -521,6 +521,8 @@ def build_update_input_func(
         group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> Func:
     SNSMAT = 0x0141
+    CHSNS = 0x009C
+    CHGET = 0x009F
     GTSTCK = 0x00D5
     GTTRIG = 0x00D8
 
@@ -615,6 +617,17 @@ def build_update_input_func(
         OR.IXL(block)
         LD.IXL_A(block)
         block.label("_SKIP_SHIFT")
+
+        # ESC キー (キーボードバッファ)
+        CALL(block, CHSNS)
+        JR_Z(block, "_SKIP_ESC")
+        CALL(block, CHGET)
+        CP.n8(block, 0x1B)
+        JR_NZ(block, "_SKIP_ESC")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_ESC)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_ESC")
 
         # --- 4. HOLD / TRG 更新 ---
         LD.A_IXL(block)
