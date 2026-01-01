@@ -67,6 +67,7 @@ __all__ = [
     "CALL_label", "CALL",
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
     "Func", "define_created_funcs", "define_all_created_funcs_label_only",
+    "get_funcs_by_group", "ensure_funcs_defined", "set_funcs_call_offset", "set_funcs_bank",
     "DB", "DW",
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
@@ -572,11 +573,16 @@ class Func:
         body: Body,
         no_auto_ret: bool = False,
         group: str = DEFAULT_FUNC_GROUP_NAME,
+        defined_pc: int | None = None,
+        call_offset: int = 0,
+        bank: int | None = None,
     ) -> None:
         self.name = name
         self.body = body
         self.no_auto_ret = no_auto_ret
-        self.defined_pc: int | None = None
+        self.defined_pc: int | None = defined_pc
+        self.call_offset = call_offset
+        self.bank = bank
         _created_funcs_by_group.setdefault(group, []).append(self)
         _created_funcs[self.name] = self
         print(f"Func created: {self.name} (group: {group})")
@@ -604,8 +610,10 @@ class Func:
     def call(self, b: Block, *, offset: int = 0) -> None:
         """CALL命令を発行。"""
 
-        if offset != 0 and self.defined_pc is not None:
-            CALL(b, self.defined_pc + offset)
+        effective_offset = offset if offset != 0 else self.call_offset
+
+        if effective_offset != 0 and self.defined_pc is not None:
+            CALL(b, self.defined_pc + effective_offset)
             return
 
         CALL_label(b, self.name, offset=offset)
@@ -657,6 +665,35 @@ def define_all_created_funcs_label_only(
             continue
         func.define_label_only(b)
         defined_names.add(func.name)
+
+
+def get_funcs_by_group(group: str = DEFAULT_FUNC_GROUP_NAME) -> tuple[Func, ...]:
+    """登録済み ``Func`` をグループ単位で取得する。"""
+
+    return tuple(_created_funcs_by_group.get(group, ()))
+
+
+def ensure_funcs_defined(funcs: Iterable[Func]) -> None:
+    """指定された ``Func`` のアドレスが確定していることを確認する。"""
+
+    undefined_funcs = [func.name for func in funcs if func.defined_pc is None]
+    if undefined_funcs:
+        names = ", ".join(sorted(undefined_funcs))
+        raise ValueError(f"Func address not defined for: {names}")
+
+
+def set_funcs_call_offset(funcs: Iterable[Func], offset: int) -> None:
+    """``Func`` 呼び出し時に自動で使用するベースオフセットを設定する。"""
+
+    for func in funcs:
+        func.call_offset = offset
+
+
+def set_funcs_bank(funcs: Iterable[Func], bank: int | None) -> None:
+    """``Func`` が配置されるバンク番号を記録する。"""
+
+    for func in funcs:
+        func.bank = bank
 
 
 
