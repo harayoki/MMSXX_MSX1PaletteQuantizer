@@ -1024,7 +1024,6 @@ def build_boot_bank(
     JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
     define_created_funcs(b, group=DEFAULT_FUNC_GROUP_NAME)
-    define_all_created_funcs_label_only(b, group=OUTI_FUNCS_GROUP)
 
     # --- [事前計算テーブル群] ---
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)

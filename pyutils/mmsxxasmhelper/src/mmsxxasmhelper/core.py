@@ -115,11 +115,13 @@ class Fixup:
     kind:   "abs16" 固定 (JP/CALL 共通)
     pos:    下位バイトを書き込む位置(コード内インデックス)
     target: ラベル名
+    offset: 追加オフセット（アドレス解決時に足される定数）
     """
 
     kind: FixupKind
     pos: int
     target: str
+    offset: int = 0
 
 
 class Block:
@@ -151,13 +153,13 @@ class Block:
 
     # --- fixup 登録 ---
 
-    def add_abs16_fixup(self, pos: int, target: str) -> None:
+    def add_abs16_fixup(self, pos: int, target: str, offset: int = 0) -> None:
         """16bitアドレスを書き込むためのfixupを登録。
 
         pos: 下位バイトを書き込む位置
         """
 
-        self.fixups.append(Fixup(kind="abs16", pos=pos, target=target))
+        self.fixups.append(Fixup(kind="abs16", pos=pos, target=target, offset=offset))
 
     def add_rel8_fixup(self, pos: int, target: str) -> None:
         """8bit相対オフセットを書き込むためのfixupを登録。
@@ -192,7 +194,7 @@ class Block:
         for fx in self.fixups:
             if fx.kind == "abs16":
                 # fx.pos が下位バイト、fx.pos+1 が上位バイト
-                addr = origin + self._get_label_addr(fx.target)
+                addr = origin + self._get_label_addr(fx.target) + fx.offset
                 lo = addr & 0xFF
                 hi = (addr >> 8) & 0xFF
                 self.code[fx.pos] = lo
@@ -374,9 +376,9 @@ def const_bytes_padded(name: str, size: int, fill: int = 0x00, *values: int) -> 
 # ---------------------------------------------------------------------------
 
 
-def _jp_abs16(b: Block, opcode: int, target: str) -> None:
+def _jp_abs16(b: Block, opcode: int, target: str, offset: int = 0) -> None:
     pos = b.emit(opcode, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, target)
+    b.add_abs16_fixup(pos + 1, target, offset=offset)
 
 
 def _jr_rel8(b: Block, opcode: int, target: str) -> None:
@@ -486,13 +488,13 @@ def DJNZ(b: Block, target: str) -> None:
     _jr_rel8(b, 0x10, target)
 
 
-def CALL_label(b: Block, target: str) -> None:
+def CALL_label(b: Block, target: str, *, offset: int = 0) -> None:
     """
     CALL（ラベル指定版）
     """
     # CALL nn (opcode 0xCD, nn = 16bit)
     pos = b.emit(0xCD, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, target)
+    b.add_abs16_fixup(pos + 1, target, offset=offset)
 
 
 def CALL(b: Block, address: int) -> None:
@@ -574,6 +576,7 @@ class Func:
         self.name = name
         self.body = body
         self.no_auto_ret = no_auto_ret
+        self.defined_pc: int | None = None
         _created_funcs_by_group.setdefault(group, []).append(self)
         _created_funcs[self.name] = self
         print(f"Func created: {self.name} (group: {group})")
@@ -584,6 +587,7 @@ class Func:
         self.define_label_only(b)
         start_pc = b.pc
         self.body(b)
+        self.defined_pc = start_pc
         body_size = b.pc - start_pc
 
         print(f"Func defined: {self.name} (body_size={body_size})")
@@ -597,10 +601,14 @@ class Func:
 
         b.label(self.name)
 
-    def call(self, b: Block) -> None:
+    def call(self, b: Block, *, offset: int = 0) -> None:
         """CALL命令を発行。"""
 
-        CALL_label(b, self.name)
+        if offset != 0 and self.defined_pc is not None:
+            CALL(b, self.defined_pc + offset)
+            return
+
+        CALL_label(b, self.name, offset=offset)
 
 
 def define_created_funcs(
