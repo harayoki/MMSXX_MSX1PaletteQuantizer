@@ -840,7 +840,50 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
 
 
+def build_dummy_config_scene_func(
+    *, update_input_func: Func, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """簡易ヘルプを表示するダミーのコンフィグシーンを作成する。"""
+
+    help_lines = (
+        "SCROLL VIEWER HELP",
+        "",
+        "ESC : EXIT THIS HELP",
+        "SPACE: NEXT IMAGE",
+        "SHIFT+SPACE: PREV IMAGE",
+        "UP/DOWN: SCROLL",
+    )
+
+    def config_scene(block: Block) -> None:
+        CALL(block, INITXT)
+        set_screen_colors_macro(block, 15, 4, 4, current_screen_mode=0)
+
+        for y, line in enumerate(help_lines):
+            write_text_with_cursor_macro(
+                block, line, 0, y, current_screen_mode=0
+            )
+
+        # 入力状態を一度更新してトリガーをリセット
+        update_input_func.call(block)
+
+        WAIT_ESC = unique_label("CONFIG_WAIT_ESC")
+        block.label(WAIT_ESC)
+        HALT(block)
+        update_input_func.call(block)
+
+        LD.A_mn16(block, ADDR.INPUT_TRG)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_ESC)
+        JR_Z(block, WAIT_ESC)
+
+        RET(block)
+
+    return Func("CONFIG_SCENE", config_scene, group=group)
+
+
 SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
+CONFIG_SCENE_FUNC = build_dummy_config_scene_func(
+    update_input_func=UPDATE_INPUT_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
+)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -879,6 +922,18 @@ def build_boot_bank(
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
 
+    def apply_viewer_screen_settings(block: Block) -> None:
+        LD.A_n8(block, 2)
+        CALL(block, CHGMOD)
+        set_msx2_palette_default_macro(block)
+
+        LD.A_n8(block, 0x0F)
+        LD.mn16_A(block, FORCLR)
+        LD.A_n8(block, 0x00)
+        LD.mn16_A(block, BAKCLR)
+        LD.mn16_A(block, BDRCLR)
+        CALL(block, CHGCLR)
+
     set_debug(True)
 
     ensure_funcs_defined(OUTI_FUNCS)
@@ -896,16 +951,19 @@ def build_boot_bank(
 
     TITLE_SCREEN_FUNC.call(b)
 
-    LD.A_n8(b, 2)
-    CALL(b, CHGMOD)
-    set_msx2_palette_default_macro(b)
+    AFTER_TITLE_CONFIG = unique_label("AFTER_TITLE_CONFIG")
+    ENTER_CONFIG_FROM_TITLE = unique_label("ENTER_CONFIG_FROM_TITLE")
 
-    LD.A_n8(b, 0x0F)
-    LD.mn16_A(b, FORCLR)
-    LD.A_n8(b, 0x00)
-    LD.mn16_A(b, BAKCLR)
-    LD.mn16_A(b, BDRCLR)
-    CALL(b, CHGCLR)
+    CP.n8(b, 1)
+    JR_Z(b, ENTER_CONFIG_FROM_TITLE)
+    apply_viewer_screen_settings(b)
+    JR(b, AFTER_TITLE_CONFIG)
+
+    b.label(ENTER_CONFIG_FROM_TITLE)
+    CONFIG_SCENE_FUNC.call(b)
+    apply_viewer_screen_settings(b)
+
+    b.label(AFTER_TITLE_CONFIG)
 
     RESET_NAME_TABLE_FUNC.call(b)
 
@@ -962,6 +1020,25 @@ def build_boot_bank(
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
 
+    # ESC でコンフィグ（ヘルプ）シーンへ遷移
+    LD.A_mn16(b, ADDR.INPUT_TRG)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_ESC)
+    JR_Z(b, "CHECK_UP")
+    CONFIG_SCENE_FUNC.call(b)
+    apply_viewer_screen_settings(b)
+    RESET_NAME_TABLE_FUNC.call(b)
+
+    # 現在のスクロール位置に合わせて名前テーブルを補正
+    LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    LD.DE_label(b, "TABLE_MOD24")
+    ADD.HL_DE(b)
+    LD.A_mHL(b)
+    SCROLL_NAME_TABLE_FUNC.call(b)
+    JP(b, "MAIN_LOOP")
+
+    b.label("CHECK_UP")
     # --- [メインループ内の上下入力処理をここから差し替え] ---
     # 上キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
