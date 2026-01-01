@@ -763,9 +763,14 @@ def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
 
 def build_outi_repeat_func(
-    count: int, *, name: str | None = None, group: str = DEFAULT_FUNC_GROUP_NAME
+    count: int, weight: Literal[0, 4, 8, 12] = 8, name: str | None = None, group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
     """指定回数だけ :func:`OUTI` を連続で発行する ``Func`` を生成する。
+    : param count: OUTI を繰り返す回数
+    : param weight: 関数の重み（デフォルト: 8）4では画面が崩れる事を確認
+        4 の場合 NOP1回 1バイト
+        8 の場合 NOP2回 2バイト
+        12 の場合 JR_n8(block, 0) 2バイト
 
     呼び出し前のレジスタ設定:
         * ``C`` = 出力先 I/O ポート番号
@@ -785,6 +790,12 @@ def build_outi_repeat_func(
     def outi_repeat(block: Block) -> None:
         for _ in range(count):
             OUTI(block)
+            if weight == 4:
+                NOP(block, 1)
+            elif weight == 8:
+                NOP(block, 2)
+            elif weight == 12:
+                JR_n8(block, 0)
 
     return Func(func_name, outi_repeat, group=group)
 
