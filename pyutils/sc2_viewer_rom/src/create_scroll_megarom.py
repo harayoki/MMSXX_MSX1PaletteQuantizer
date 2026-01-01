@@ -777,7 +777,6 @@ def build_sync_scroll_row_func() -> Func:
         # ページ2に高速転送関数が入っているバンクを接続
         LD.A_n8(block, OUTI_FUNCS_BACK_NUM)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
-        loop_infinite_macro(block)  # 安全装置
 
         LD.A_mn16(block, ADDR.TARGET_ROW)
         AND.n8(block, 0x07)  # A = 行オフセット(0-7)
