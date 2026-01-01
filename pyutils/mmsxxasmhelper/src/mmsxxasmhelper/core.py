@@ -572,12 +572,15 @@ class Func:
         self.body = body
         self.no_auto_ret = no_auto_ret
         _created_funcs_by_group.setdefault(group, []).append(self)
+        print(f"Func created: {self.name} (group: {group})")
 
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
 
         b.label(self.name)
         self.body(b)
+
+        print(f"Func defined: {self.name} (no_auto_ret={self.no_auto_ret})")
 
         if not self.no_auto_ret:
             # RET

@@ -151,7 +151,6 @@ IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
 INSERT_BANK_FUNC_GROUP = "insert_bank_funcs"
-OUTI_REPEAT_COUNTS = (128, 256, 512, 1024, 2048)
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -502,11 +501,11 @@ def build_scroll_vram_xfer_func() -> Func:
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
-OUTI_REPEAT_FUNCS = [
-    build_outi_repeat_func(count, group=INSERT_BANK_FUNC_GROUP)
-    for count in OUTI_REPEAT_COUNTS
-]
-
+OUTI_128_FUNC = build_outi_repeat_func(128, group=INSERT_BANK_FUNC_GROUP)
+OUTI_256_FUNC = build_outi_repeat_func(256, group=INSERT_BANK_FUNC_GROUP)
+OUTI_512_FUNC = build_outi_repeat_func(512, group=INSERT_BANK_FUNC_GROUP)
+OUTI_1024_FUNC = build_outi_repeat_func(1024, group=INSERT_BANK_FUNC_GROUP)
+OUTI_2048_FUNC = build_outi_repeat_func(2048, group=INSERT_BANK_FUNC_GROUP)
 
 def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
     """
@@ -1067,7 +1066,7 @@ def build_insert_func_banks(
 
     define_created_funcs(b, group=INSERT_BANK_FUNC_GROUP)
 
-    assembled = b.finalize(origin=ROM_BASE)
+    assembled = b.finalize(origin=ROM_BASE, groups=[INSERT_BANK_FUNC_GROUP])
     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
     total_size = bank_count * PAGE_SIZE
     data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
@@ -1344,6 +1343,7 @@ def ensure_output_writable(path: Path) -> None:
         except Exception as exc:  # pragma: no cover - CLI error path
             raise SystemExit(f"ERROR! failed to open ROM file for writing: {path}: {exc}") from exc
     return
+
 
 def main() -> None:
     args = parse_args()
