@@ -112,7 +112,7 @@ from mmsxxasmhelper.msxutils import (
     set_text_cursor_macro,
     write_text_with_cursor_macro,
 )
-from mmsxxasmhelper.titlescene import build_title_screen_func
+from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
     ldir_macro,
@@ -870,7 +870,7 @@ def build_boot_bank(
     )
     TITLE_SCREEN_FUNC = build_title_screen_func(
         title_wait_seconds,
-        subtitle_text="SCROLL VIEWER",
+        subtitle_text="  Screen 2 Scroll Image Viewer",
         input_trg_addr=ADDR.INPUT_TRG,
         title_seconds_remaining_addr=ADDR.TITLE_SECONDS_REMAINING,
         title_frame_counter_addr=ADDR.TITLE_FRAME_COUNTER,
@@ -1365,7 +1365,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--title-wait-seconds",
         type=int,
-        default=8,
+        default=5,
         help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
     )
     parser.add_argument(

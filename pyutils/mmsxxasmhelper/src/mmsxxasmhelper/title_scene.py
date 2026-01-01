@@ -8,13 +8,17 @@ from mmsxxasmhelper.core import (
     HALT,
     INC,
     JP,
+    JP_NZ,
+    JP_Z,
     JR,
     JR_NZ,
     JR_Z,
+    JR_C,
     LD,
     OR,
     RET,
     SUB,
+    DEC,
     XOR,
     Block,
     Func,
@@ -57,7 +61,7 @@ def build_title_screen_func(
     title_logo_width = max(len(line) for line in title_logo_text.split("\n"))
     title_logo_x = (40 - title_logo_width) // 2
     title_logo_y = 2
-    title_subtext = "SPACE to start. ESC to settings."
+    title_subtext = "SPACE to start. ESC to settings. "
     title_subtext_x = (40 - len(title_subtext)) // 2
     title_subtext_y = title_logo_y + len(title_logo_text.split("\n")) + 1
     title_countdown_text = "Starting in    sec."
@@ -172,12 +176,12 @@ def build_title_screen_func(
         JR_Z(block, "TITLE_SKIP_KBD")
         CALL(block, chget)
         CP.n8(block, esc_code)
-        JR_Z(block, EXIT_ESC)
+        JP_Z(block, EXIT_ESC)
         block.label("TITLE_SKIP_KBD")
 
         LD.A_mn16(block, input_trg_addr)
         BIT.n8_A(block, INPUT_KEY_BIT.L_BTN_A)
-        JR_NZ(block, EXIT_START)
+        JP_NZ(block, EXIT_START)
 
         if countdown_seconds > 0:
             LD.A_mn16(block, title_seconds_remaining_addr)
@@ -199,7 +203,7 @@ def build_title_screen_func(
             LD.mn16_A(block, title_seconds_remaining_addr)
             write_countdown_digits(block)
             OR.A(block)
-            JR_Z(block, EXIT_START)
+            JP_Z(block, EXIT_START)
 
         JP(block, LOOP_LABEL)
 
