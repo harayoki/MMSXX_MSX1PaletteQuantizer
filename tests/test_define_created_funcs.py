@@ -23,7 +23,7 @@ def test_define_created_funcs_excludes_by_name_and_reference(monkeypatch):
 
     block = core.Block()
 
-    core.define_created_funcs(block, core._DEFAULT_FUNC_GROUP, "FUNC_SKIP", func_a)
+    core.define_created_funcs(block, core.DEFAULT_FUNC_GROUP_NAME, "FUNC_SKIP", func_a)
 
     assert "FUNC_A" not in block.labels
     assert "FUNC_SKIP" not in block.labels

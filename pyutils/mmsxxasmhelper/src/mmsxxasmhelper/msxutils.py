@@ -516,6 +516,8 @@ class INPUT_KEY_BIT:
 def build_update_input_func(
         input_hold: int = 0xC100,
         input_trg: int = 0xC101,
+        *,
+        group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> Func:
     SNSMAT = 0x0141
     GTSTCK = 0x00D5
@@ -629,7 +631,7 @@ def build_update_input_func(
         POP.IX(block)
         RET(block)
 
-    return Func("update_input", update_input, no_auto_ret=True)
+    return Func("update_input", update_input, no_auto_ret=True, group=group)
 
 
 """
@@ -669,6 +671,8 @@ def build_beep_control_utils(
     beep_active_addr: int = 0xC111,
     tone_period: int = 60,  # 0-4095
     duration_frames: int = 1,  # 1/60秒単位
+    *,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
 ):
     PSG_REG = 0xA0
     PSG_DAT = 0xA1
@@ -679,7 +683,7 @@ def build_beep_control_utils(
         OUT(block, PSG_DAT)
         RET(block)
 
-    BEEP_WRITE_FUNC = Func("BEEP_WRITE", psg_write)
+    BEEP_WRITE_FUNC = Func("BEEP_WRITE", psg_write, group=group)
 
     def simple_beep(block: Block) -> None:
         """
@@ -735,10 +739,14 @@ def build_beep_control_utils(
         BEEP_WRITE_FUNC.call(block)
         RET(block)
 
-    return BEEP_WRITE_FUNC, Func("SIMPLE_BEEP", simple_beep), Func("UPDATE_BEEP", update_beep)
+    return (
+        BEEP_WRITE_FUNC,
+        Func("SIMPLE_BEEP", simple_beep, group=group),
+        Func("UPDATE_BEEP", update_beep, group=group),
+    )
 
 
-def build_set_vram_write_func() -> Func:
+def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def set_vram_write(block: Block) -> None:
         # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
         # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
@@ -750,10 +758,12 @@ def build_set_vram_write_func() -> Func:
         OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
         OUT(block, 0x99)  # 上位8bit
 
-    return Func("SET_VRAM_WRITE", set_vram_write)
+    return Func("SET_VRAM_WRITE", set_vram_write, group=group)
 
 
-def build_scroll_name_table_func(SET_VRAM_WRITE_FUNC: Func) -> Func:
+def build_scroll_name_table_func(
+    SET_VRAM_WRITE_FUNC: Func, *, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
     def scroll_name_table(block: Block) -> None:
         # 入力: A = CURRENT_SCROLL_ROW (0-23)
         # ※ 24行を超えると表示がループ（0に戻る）します
@@ -792,6 +802,6 @@ def build_scroll_name_table_func(SET_VRAM_WRITE_FUNC: Func) -> Func:
         JR_NZ(block, LINE_LOOP)
         RET(block)
 
-    return Func("SCROLL_NAME_TABLE", scroll_name_table)
+    return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
 
 
