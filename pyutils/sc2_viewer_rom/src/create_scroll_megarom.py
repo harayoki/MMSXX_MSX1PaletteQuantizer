@@ -112,6 +112,7 @@ from mmsxxasmhelper.msxutils import (
     build_beep_control_utils,
     build_set_vram_write_func,
     build_scroll_name_table_func,
+    build_outi_repeat_func,
 )
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -149,6 +150,8 @@ SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 6
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
+INSERT_BANK_FUNC_GROUP = "insert_bank_funcs"
+OUTI_REPEAT_COUNTS = (128, 256, 512, 1024, 2048)
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -499,6 +502,10 @@ def build_scroll_vram_xfer_func() -> Func:
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
+OUTI_REPEAT_FUNCS = [
+    build_outi_repeat_func(count, group=INSERT_BANK_FUNC_GROUP)
+    for count in OUTI_REPEAT_COUNTS
+]
 
 
 def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
@@ -1053,6 +1060,28 @@ def build_boot_bank(
     return data
 
 
+def build_insert_func_banks(
+    fill_byte: int, log_lines: list[str] | None = None
+) -> list[bytes]:
+    b = Block()
+
+    define_created_funcs(b, group=INSERT_BANK_FUNC_GROUP)
+
+    assembled = b.finalize(origin=ROM_BASE)
+    bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
+    total_size = bank_count * PAGE_SIZE
+    data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
+    used_percent = len(assembled) / PAGE_SIZE * 100
+    log_and_store(
+        "Insert func bank usage: "
+        f"{len(assembled)} bytes across {bank_count} bank(s) "
+        f"({used_percent:.2f}% of first bank)",
+        log_lines,
+    )
+
+    return [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
+
+
 def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
     if image.tile_rows <= 0 or image.tile_rows > 0xFFFF:
         raise ValueError("tile_rows must fit in 2 bytes and be positive")
@@ -1092,7 +1121,8 @@ def build(
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    next_bank = 1
+    insert_func_banks = build_insert_func_banks(fill_byte, log_lines=log_lines)
+    next_bank = 1 + len(insert_func_banks)
     header_bytes: list[int] = []
 
     for i, image in enumerate(images):
@@ -1159,6 +1189,7 @@ def build(
         raise AssertionError("header_bytes length mismatch")
 
     banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
+    banks.extend(insert_func_banks)
     banks.extend(data_banks)
     return b"".join(banks)
 
