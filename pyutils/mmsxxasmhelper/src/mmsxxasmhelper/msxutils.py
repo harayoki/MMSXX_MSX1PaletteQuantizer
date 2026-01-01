@@ -32,6 +32,7 @@ __all__ = [
     "INPUT_KEY_BIT",
     "build_beep_control_utils",
     "build_set_vram_write_func",
+    "build_outi_repeat_func",
     "build_scroll_name_table_func",
     "INITXT",
     "VDP_CTRL",
@@ -759,6 +760,33 @@ def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         OUT(block, 0x99)  # 上位8bit
 
     return Func("SET_VRAM_WRITE", set_vram_write, group=group)
+
+
+def build_outi_repeat_func(
+    count: int, *, name: str | None = None, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """指定回数だけ :func:`OUTI` を連続で発行する ``Func`` を生成する。
+
+    呼び出し前のレジスタ設定:
+        * ``C`` = 出力先 I/O ポート番号
+        * ``HL`` = 転送元アドレス（OUTI のたびに ``(HL)`` が読み出され、``HL`` はインクリメントされる）
+
+    呼び出し後に変化するレジスタ:
+        * ``B`` は OUTI 実行ごとにデクリメントされる
+        * ``HL`` は OUTI 実行ごとにインクリメントされる
+        * フラグレジスタは OUTI の仕様に従って更新される
+    """
+
+    if count <= 0:
+        raise ValueError("count must be positive")
+
+    func_name = name or f"OUTI_REPEAT_{count}"
+
+    def outi_repeat(block: Block) -> None:
+        for _ in range(count):
+            OUTI(block)
+
+    return Func(func_name, outi_repeat, group=group)
 
 
 def build_scroll_name_table_func(
