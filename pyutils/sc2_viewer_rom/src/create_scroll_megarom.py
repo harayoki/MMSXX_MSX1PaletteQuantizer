@@ -1086,7 +1086,7 @@ def build_outi_funcs_bank(
     return banks
 
 
-def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
+def validate_image_data(image: ImageData) -> None:
     if image.tile_rows <= 0 or image.tile_rows > 0xFFFF:
         raise ValueError("tile_rows must fit in 2 bytes and be positive")
 
@@ -1095,6 +1095,36 @@ def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes]
         raise ValueError("pattern data length mismatch")
     if len(image.color) != expected_length:
         raise ValueError("color data length mismatch")
+
+
+def concatenate_image_data_vertically(
+    images: Sequence[ImageData],
+) -> ImageData:
+    if not images:
+        raise ValueError("images must not be empty")
+
+    pattern_parts: list[bytes] = []
+    color_parts: list[bytes] = []
+    total_rows = 0
+
+    for image in images:
+        validate_image_data(image)
+        pattern_parts.append(image.pattern)
+        color_parts.append(image.color)
+        total_rows += image.tile_rows
+
+    if total_rows > 0xFFFF:
+        raise ValueError("Total tile rows exceed 65535")
+
+    return ImageData(
+        pattern=b"".join(pattern_parts),
+        color=b"".join(color_parts),
+        tile_rows=total_rows,
+    )
+
+
+def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
+    validate_image_data(image)
 
     payload = bytearray()
     payload.extend(image.pattern)
@@ -1370,9 +1400,10 @@ def main() -> None:
     total_input_images = 0
 
     input_groups: list[list[Path]] = [list(group) for group in args.input]
-    prepared_images: list[tuple[str, Image.Image, float]] = []
+    prepared_groups: list[tuple[str, list[tuple[str, Image.Image, float]]]] = []
     image_data_list: list[ImageData] = []
     rom: bytes
+    quantized_image_counter = 0
 
     if args.use_debug_image:
         image_data_list = create_debug_image_data_list(args.debug_image_index)
@@ -1384,22 +1415,19 @@ def main() -> None:
             if not group:
                 raise SystemExit("Empty input group is not allowed")
 
-            loaded_images: list[Image.Image] = []
-            newest_input_mtime = 0.0
+            group_segments: list[tuple[str, Image.Image, float]] = []
             for path in group:
                 if not path.is_file():
                     raise SystemExit(f"not found: {path}")
-                path_mtime = path.stat().st_mtime
-                newest_input_mtime = max(newest_input_mtime, path_mtime)
                 with Image.open(path) as src:
                     image_format = src.format or path.suffix.lstrip(".").upper() or "UNKNOWN"
                     input_format_counter[image_format] += 1
                     total_input_images += 1
-                    loaded_images.append(prepare_image(src, background))
+                    prepared = prepare_image(src, background)
+                    group_segments.append((path.stem, prepared, path.stat().st_mtime))
 
-            merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
             group_name = "-".join(path.stem for path in group)
-            prepared_images.append((group_name, merged, newest_input_mtime))
+            prepared_groups.append((group_name, group_segments))
 
         format_summary = ", ".join(
             f"{fmt}={count}" for fmt, count in sorted(input_format_counter.items())
@@ -1411,28 +1439,37 @@ def main() -> None:
         )
 
         with open_workdir(args.workdir) as workdir:
-            for idx, (group_name, image, newest_input_mtime) in enumerate(prepared_images):
-                prepared_path = workdir / f"{idx:02d}_{group_name}_prepared.png"
-                quantized_path = quantized_output_path(prepared_path, workdir)
-
-                if not args.no_cache and is_cached_image_valid(
-                    quantized_path, image.size, newest_input_mtime
-                ):
-                    log_and_store(f"REUSE image: {quantized_path}", log_lines)
-                    image_data = load_quantized_image(
-                        idx, quantized_path, "reused", log_lines
+            for group_idx, (group_name, segments) in enumerate(prepared_groups):
+                segment_image_data: list[ImageData] = []
+                for segment_idx, (segment_name, image, src_mtime) in enumerate(segments):
+                    prepared_path = (
+                        workdir
+                        / f"{group_idx:02d}_{segment_idx:02d}_{group_name}_{segment_name}_prepared.png"
                     )
-                    image_data_list.append(image_data)
-                    continue
+                    quantized_path = quantized_output_path(prepared_path, workdir)
 
-                image.save(prepared_path)
-                quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
-                os.unlink(prepared_path)
+                    if not args.no_cache and is_cached_image_valid(
+                        quantized_path, image.size, src_mtime
+                    ):
+                        log_and_store(f"REUSE image: {quantized_path}", log_lines)
+                        image_data = load_quantized_image(
+                            quantized_image_counter, quantized_path, "reused", log_lines
+                        )
+                        quantized_image_counter += 1
+                        segment_image_data.append(image_data)
+                        continue
 
-                image_data = load_quantized_image(
-                    idx, quantized_path, "created", log_lines
-                )
-                image_data_list.append(image_data)
+                    image.save(prepared_path)
+                    quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
+                    os.unlink(prepared_path)
+
+                    image_data = load_quantized_image(
+                        quantized_image_counter, quantized_path, "created", log_lines
+                    )
+                    quantized_image_counter += 1
+                    segment_image_data.append(image_data)
+
+                image_data_list.append(concatenate_image_data_vertically(segment_image_data))
 
     if not image_data_list:
         raise SystemExit("No images were prepared")
@@ -1441,10 +1478,10 @@ def main() -> None:
 
     out = args.output
     if out is None:
-        if len(prepared_images) == 1:
-            name = f"{prepared_images[0][0]}_scroll[{image_data_list[0].tile_rows * 8}px][ASCII16]"
-        elif prepared_images:
-            name = f"{prepared_images[0][0]}_scroll{len(prepared_images)}imgs[ASCII16]"
+        if len(prepared_groups) == 1:
+            name = f"{prepared_groups[0][0]}_scroll[{image_data_list[0].tile_rows * 8}px][ASCII16]"
+        elif prepared_groups:
+            name = f"{prepared_groups[0][0]}_scroll{len(prepared_groups)}imgs[ASCII16]"
         else:
             name = f"debug_scroll{args.debug_image_index}[ASCII16]"
         out = Path.cwd() / f"{name}.rom"
