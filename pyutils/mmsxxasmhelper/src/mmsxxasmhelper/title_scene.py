@@ -39,6 +39,8 @@ def build_title_screen_func(
     countdown_seconds: int,
     *,
     subtitle_text: str,
+    title_logo_text: str | None = None,
+    logo_insert_text: str | None = None,
     input_trg_addr: int,
     title_seconds_remaining_addr: int,
     title_frame_counter_addr: int,
@@ -48,22 +50,27 @@ def build_title_screen_func(
 ) -> Func:
     countdown_seconds = max(0, min(countdown_seconds, 255))
 
-    title_logo_text_template = (
+    default_logo_text = (
         r" __  __ __  __  ______  ____  __" + "\n"
         r"|  \/  |  \/  |/ ___\ \/ /\ \/ /" + "\n"
         r"| |\/| | |\/| |\___  \  /  \  / " + "\n"
         r"| |  | | |  | |___/  /  \  /  \ " + "\n"
-        r"|_|  |_|_|  |_|_____/_/\_\/_/\_\ " + "\n"
-        "\n"
-        "{subtitle}"
+        r"|_|  |_|_|  |_|_____/_/\_\/_/\_\ "
     )
-    title_logo_text = title_logo_text_template.format(subtitle=subtitle_text)
-    title_logo_width = max(len(line) for line in title_logo_text.split("\n"))
-    title_logo_x = (40 - title_logo_width) // 2
-    title_logo_y = 2
+    logo_insert_text = (
+        logo_insert_text if logo_insert_text is not None else subtitle_text
+    )
+    logo_body_text = (title_logo_text or default_logo_text).rstrip("\n")
+    logo_full_text = (
+        f"{logo_body_text}\n{logo_insert_text}" if logo_body_text else logo_insert_text
+    )
+    logo_lines = logo_full_text.rstrip("\n").split("\n") if logo_full_text else []
+    title_logo_width = max((len(line) for line in logo_lines), default=0)
+    title_logo_x = (40 - title_logo_width) // 2 if logo_lines else 0
+    title_logo_y = 2 if logo_lines else 0
     title_subtext = "SPACE to start. ESC to settings. "
     title_subtext_x = (40 - len(title_subtext)) // 2
-    title_subtext_y = title_logo_y + len(title_logo_text.split("\n")) + 1
+    title_subtext_y = title_logo_y + len(logo_lines) + 1 if logo_lines else 2
     title_countdown_text = "Starting in    sec."
     title_countdown_x = (40 - len(title_countdown_text)) // 2
     title_countdown_y = title_subtext_y + 1
@@ -149,7 +156,10 @@ def build_title_screen_func(
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
 
-        write_text_with_cursor_macro(block, title_logo_text, title_logo_x, title_logo_y)
+        if logo_lines:
+            write_text_with_cursor_macro(
+                block, "\n".join(logo_lines), title_logo_x, title_logo_y
+            )
         write_text_with_cursor_macro(block, title_subtext, title_subtext_x, title_subtext_y)
         write_text_with_cursor_macro(
             block, title_countdown_text, title_countdown_x, title_countdown_y
