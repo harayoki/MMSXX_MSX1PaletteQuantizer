@@ -799,7 +799,8 @@ def build_sync_scroll_row_func() -> Func:
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
             OUTI_256_FUNC.call(block)
-
+            # for _ in range(256):
+            #     OUTI(block)
 
         # カラー転送 (0x20, 0x28, 0x30)
         for base_h in [0x20, 0x28, 0x30]:
@@ -812,6 +813,8 @@ def build_sync_scroll_row_func() -> Func:
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
             OUTI_256_FUNC.call(block)
+            # for _ in range(256):
+            #     OUTI(block)
 
         # 最後にページ2をメインバンク(0)に戻しておく
         XOR.A(block)
