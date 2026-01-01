@@ -85,6 +85,8 @@ from mmsxxasmhelper.core import (
     set_funcs_bank,
 )
 from mmsxxasmhelper.msxutils import (
+    CHPUT,
+    INITXT,
     CHGCLR,
     CHGMOD,
     FORCLR,
@@ -95,6 +97,9 @@ from mmsxxasmhelper.msxutils import (
     place_msx_rom_header_macro,
     restore_stack_pointer_macro,
     set_msx2_palette_default_macro,
+    set_screen_colors_macro,
+    set_text_cursor_macro,
+    write_text_with_cursor_macro,
     store_stack_pointer_macro,
     init_stack_pointer_macro,
     ldirvm_macro,
@@ -144,6 +149,26 @@ QUANTIZED_SUFFIX = "_quantized"
 OUTI_FUNCS_GROUP = "outi_funcs"
 
 OUTI_FUNCS_BACK_NUM:int = 1
+CHSNS = 0x009C
+CHGET = 0x009F
+
+COUNTDOWN_PREFIX = "Starting in "
+COUNTDOWN_SUFFIX = " seconds"
+TITLE_ART = (
+    "__  __ __  __ ______  ____  __\n"
+    " |  \\/  |  \\/  / ___\\ \\/ /\\ \\/ /\n"
+    " | |\\/| | |\\/| \\___ \\  /  \\  / \n"
+    " | |  | | |  | |___) /  \\  /  \\ \\\n"
+    " |_|  |_|_|  |_|____/_/\\_/\\_/\\_\\"
+)
+TITLE_LINES = TITLE_ART.split("\n")
+TITLE_WIDTH = max(len(line) for line in TITLE_LINES)
+TITLE_X = (40 - TITLE_WIDTH) // 2
+TITLE_Y = 2
+
+TITLE_INSTRUCTION = "Press SPACE to start / ESC for settings"
+TITLE_INSTRUCTION_X = (40 - len(TITLE_INSTRUCTION)) // 2
+TITLE_INSTRUCTION_Y = TITLE_Y + len(TITLE_LINES) + 1
 
 
 # 状況を保存するメモリアドレス
@@ -167,6 +192,10 @@ class ADDR:
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
+    TITLE_REMAIN_SECONDS = madd(
+        "TITLE_REMAIN_SECONDS", 1, description="タイトル画面の残り秒数")
+    TITLE_FRAME_COUNTER = madd(
+        "TITLE_FRAME_COUNTER", 1, description="タイトル画面の1秒カウンタ")
 
     PG_BUFFER = madd("PG_BUFFER", 256)
     CT_BUFFER = madd("CT_BUFFER", 256)
@@ -632,6 +661,118 @@ def build_update_image_display_func(image_entries_count: int, start_at: str) -> 
     return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
 
 
+def build_title_screen_func(wait_seconds: int, update_input_func: Func) -> Func:
+    if wait_seconds < 0:
+        raise ValueError("wait_seconds must not be negative")
+
+    initial_seconds = min(wait_seconds, 99)
+    countdown_message = f"{COUNTDOWN_PREFIX}{initial_seconds:02d}{COUNTDOWN_SUFFIX}"
+    countdown_x = (40 - len(countdown_message)) // 2
+    countdown_y = TITLE_INSTRUCTION_Y + 2
+    countdown_number_x = countdown_x + len(COUNTDOWN_PREFIX)
+
+    def write_seconds(block: Block) -> None:
+        set_text_cursor_macro(block, countdown_number_x, countdown_y)
+
+        LD.A_mn16(block, ADDR.TITLE_REMAIN_SECONDS)
+        LD.D_A(block)
+        LD.B_n8(block, 0)  # tens
+
+        divide_loop = unique_label("__TITLE_DIV__")
+        divide_end = unique_label("__TITLE_DIV_END__")
+
+        block.label(divide_loop)
+        LD.A_D(block)
+        CP.n8(block, 10)
+        JR_C(block, divide_end)
+        LD.A_D(block)
+        SUB.A_n8(block, 10)
+        LD.D_A(block)
+        INC.B(block)
+        JR(block, divide_loop)
+
+        block.label(divide_end)
+        LD.A_B(block)
+        ADD.A_n8(block, ord("0"))
+        CALL(block, CHPUT)
+
+        LD.A_D(block)
+        ADD.A_n8(block, ord("0"))
+        CALL(block, CHPUT)
+
+    WRITE_SECONDS_FUNC = Func("TITLE_WRITE_SECONDS", write_seconds)
+
+    def title_screen(block: Block) -> None:
+        CALL(block, INITXT)
+        set_screen_colors_macro(block, foreground=15, background=0, border=0, current_screen_mode=0)
+
+        write_text_with_cursor_macro(block, TITLE_ART, TITLE_X, TITLE_Y)
+        write_text_with_cursor_macro(block, TITLE_INSTRUCTION, TITLE_INSTRUCTION_X, TITLE_INSTRUCTION_Y)
+        write_text_with_cursor_macro(block, countdown_message, countdown_x, countdown_y)
+
+        LD.A_n8(block, initial_seconds & 0xFF)
+        LD.mn16_A(block, ADDR.TITLE_REMAIN_SECONDS)
+
+        if initial_seconds > 0:
+            LD.A_n8(block, 60)
+            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+        else:
+            LD.A_n8(block, 0)
+            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+
+        block.label("TITLE_SCREEN_LOOP")
+        HALT(block)
+        update_input_func.call(block)
+
+        LD.A_mn16(block, ADDR.INPUT_TRG)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_BTN_A)
+        JR_NZ(block, "TITLE_SCREEN_START")
+
+        CALL(block, CHSNS)
+        OR.A(block)
+        JR_Z(block, "__TITLE_CHECK_COUNTDOWN__")
+        CALL(block, CHGET)
+        CP.n8(block, 0x1B)
+        JR_Z(block, "TITLE_SCREEN_ESC")
+
+        block.label("__TITLE_CHECK_COUNTDOWN__")
+        if initial_seconds > 0:
+            LD.A_mn16(block, ADDR.TITLE_REMAIN_SECONDS)
+            OR.A(block)
+            JR_Z(block, "TITLE_SCREEN_LOOP")
+
+            LD.A_mn16(block, ADDR.TITLE_FRAME_COUNTER)
+            DEC.A(block)
+            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+            JR_NZ(block, "TITLE_SCREEN_LOOP")
+
+            LD.A_n8(block, 60)
+            LD.mn16_A(block, ADDR.TITLE_FRAME_COUNTER)
+
+            LD.A_mn16(block, ADDR.TITLE_REMAIN_SECONDS)
+            DEC.A(block)
+            LD.mn16_A(block, ADDR.TITLE_REMAIN_SECONDS)
+
+            WRITE_SECONDS_FUNC.call(block)
+            JR_Z(block, "TITLE_SCREEN_START")
+
+        JR(block, "TITLE_SCREEN_LOOP")
+
+        block.label("TITLE_SCREEN_ESC")
+        LD.A_n8(block, 0)
+        LD.mn16_A(block, ADDR.INPUT_TRG)
+        LD.A_n8(block, 1)
+        RET(block)
+
+        block.label("TITLE_SCREEN_START")
+        LD.A_n8(block, 0)
+        LD.mn16_A(block, ADDR.INPUT_TRG)
+        XOR.A(block)
+        RET(block)
+
+    return Func("TITLE_SCREEN", title_screen)
+
+
 UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
 
 BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE)
@@ -823,6 +964,7 @@ def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
     start_at: str,
+    title_wait_seconds: int,
     fill_byte: int,
     log_lines: List[str] | None = None,
 ) -> bytes:
@@ -830,6 +972,7 @@ def build_boot_bank(
         raise ValueError("image_entries must not be empty")
 
     UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries), start_at)
+    TITLE_SCREEN_FUNC = build_title_screen_func(title_wait_seconds, UPDATE_INPUT_FUNC)
 
     set_debug(True)
 
@@ -845,6 +988,8 @@ def build_boot_bank(
     b.label("start")
     init_stack_pointer_macro(b)
     enaslt_macro(b)
+
+    TITLE_SCREEN_FUNC.call(b)
 
     LD.A_n8(b, 2)
     CALL(b, CHGMOD)
@@ -1115,6 +1260,7 @@ def log_and_store(message: str, log_lines: list[str] | None) -> None:
 def build(
     images: Sequence[ImageData],
     start_at: str = "bottom",
+    title_wait_seconds: int = 5,
     fill_byte: int = 0xFF,
     log_lines: list[str] | None = None,
 ) -> bytes:
@@ -1198,7 +1344,15 @@ def build(
     if len(header_bytes) != expected_header_length:
         raise AssertionError("header_bytes length mismatch")
 
-    banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
+    banks = [
+        build_boot_bank(
+            image_entries,
+            header_bytes,
+            start_at,
+            title_wait_seconds,
+            fill_byte,
+        )
+    ]
     banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
@@ -1273,6 +1427,12 @@ def parse_args() -> argparse.Namespace:
         choices=["top", "bottom"],
         default="bottom",
         help="初期表示位置 (default: bottom)",
+    )
+    parser.add_argument(
+        "--title-wait",
+        type=int,
+        default=5,
+        help="タイトル画面を自動で進むまでの秒数。0 なら自動遷移なし",
     )
     return parser.parse_args()
 
@@ -1437,7 +1597,13 @@ def main() -> None:
     if not image_data_list:
         raise SystemExit("No images were prepared")
 
-    rom = build(image_data_list, start_at=args.start_at, fill_byte=args.fill_byte, log_lines=log_lines)
+    rom = build(
+        image_data_list,
+        start_at=args.start_at,
+        title_wait_seconds=args.title_wait,
+        fill_byte=args.fill_byte,
+        log_lines=log_lines,
+    )
 
     out = args.output
     if out is None:
