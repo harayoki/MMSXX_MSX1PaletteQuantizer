@@ -63,6 +63,7 @@ from mmsxxasmhelper.core import (
     Func,
     INC,
     JP,
+    JP_NZ,
     JR,
     JR_C,
     JR_NC,
@@ -92,6 +93,8 @@ from mmsxxasmhelper.core import (
     HALT,
     unique_label,
     define_created_funcs,
+    define_all_created_funcs_label_only,
+    DEFAULT_FUNC_GROUP_NAME,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -442,7 +445,8 @@ def build_scroll_vram_xfer_func() -> Func:
         LD.B_n8(block, 0)  # 1ページ(256byte)転送用
         LD.C_n8(block, 0x98)  # VDPデータポート
 
-        # --- 1ページ(256byte) 転送ループ (展開版) ---
+        # --- 1ページ(256byte) 転送ループ (64展開版) ---
+        # OUTI_256はバンクが一緒なので使えない RAMコピーするとむしろ重くなる
         block.label("VRAM_BYTE_LOOP")
         for _ in range(16):
             # 1バイト転送 (18T)
@@ -451,8 +455,7 @@ def build_scroll_vram_xfer_func() -> Func:
             # ウェイト無しでは画面が崩れた
             # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
             NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
-
-        JR_NZ(block, "VRAM_BYTE_LOOP")
+        JP_NZ(block, "VRAM_BYTE_LOOP")
 
         # --- バンク境界チェック ---
         LD.A_H(block)
@@ -469,7 +472,7 @@ def build_scroll_vram_xfer_func() -> Func:
         block.label("NOT_NEXT_BANK")
         POP.DE(block)  # 行数(D) と バンク(E) を復帰
         DEC.D(block)  # 行数カウンタを減らす
-        JR_NZ(block, "VRAM_PAGE_LOOP")
+        JP_NZ(block, "VRAM_PAGE_LOOP")
 
     """
     呼び出し方のイメージ
@@ -998,7 +1001,8 @@ def build_boot_bank(
     # JR(b, "MAIN_LOOP")  #相対限界超える
     JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
-    define_created_funcs(b)
+    define_created_funcs(b, group=DEFAULT_FUNC_GROUP_NAME)
+    define_all_created_funcs_label_only(b, group=OUTI_FUNCS_GROUP)
 
     # --- [事前計算テーブル群] ---
     # 1. バンクオフセットテーブル (行数 0-255 -> 0-3 バンク)

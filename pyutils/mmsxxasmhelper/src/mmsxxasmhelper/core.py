@@ -66,7 +66,7 @@ __all__ = [
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
-    "Func", "define_created_funcs",
+    "Func", "define_created_funcs", "define_all_created_funcs_label_only",
     "DB", "DW",
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
@@ -577,7 +577,7 @@ class Func:
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
 
-        b.label(self.name)
+        self.define_label_only(b)
         self.body(b)
 
         print(f"Func defined: {self.name} (no_auto_ret={self.no_auto_ret})")
@@ -585,6 +585,11 @@ class Func:
         if not self.no_auto_ret:
             # RET
             b.emit(0xC9)
+
+    def define_label_only(self, b: Block) -> None:
+        """関数のラベルだけを配置する。"""
+
+        b.label(self.name)
 
     def call(self, b: Block) -> None:
         """CALL命令を発行。"""
@@ -615,6 +620,30 @@ def define_created_funcs(
             continue
         func.define(b)
         defined_names.add(func.name)
+
+
+def define_all_created_funcs_label_only(
+    b: Block, group: str = DEFAULT_FUNC_GROUP_NAME, *except_funcs: str | Func
+) -> None:
+    """Func で作られた関数のラベルだけをまとめて define するヘルパー。
+
+    Func の生成時に内部で登録される一覧から、作成順に ``define_label_only`` を
+    行う。 ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
+    渡すことができる。
+    """
+    funcs = _created_funcs_by_group.get(group, [])
+    excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
+    excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
+    defined_names: set[str] = set()
+
+    for func in funcs:
+        if func in excluded_by_ref or func.name in excluded_by_name:
+            continue
+        if func.name in defined_names:
+            continue
+        func.define_label_only(b)
+        defined_names.add(func.name)
+
 
 
 # ---------------------------------------------------------------------------
