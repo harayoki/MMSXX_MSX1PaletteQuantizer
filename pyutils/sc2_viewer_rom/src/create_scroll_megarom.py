@@ -89,6 +89,7 @@ from mmsxxasmhelper.core import (
     OUTI,
     RET,
     RET_NC,
+    RLCA,
     BIT,
     HALT,
     unique_label,
@@ -648,14 +649,10 @@ def build_sync_scroll_row_func() -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
         LD.A_mn16(block, ADDR.TARGET_ROW)
-        LD.L_A(block)
-        LD.H_n8(block, 0)
-        PUSH.HL(block)
-
-        # バンク切り替え
-        LD.DE_label(block, "TABLE_DIV64")
-        ADD.HL_DE(block)
-        LD.A_mHL(block)
+        # バンク切り替え: 行数 / 64
+        RLCA(block)
+        RLCA(block)
+        AND.n8(block, 0x03)
         LD.C_A(block)
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
         ADD.A_C(block)
@@ -663,11 +660,8 @@ def build_sync_scroll_row_func() -> Func:
         LD.B_A(block)  # 現在のバンクをBに保持
 
         # ROM内アドレス計算
-        POP.HL(block)
-        PUSH.HL(block)
-        LD.DE_label(block, "TABLE_MOD64")
-        ADD.HL_DE(block)
-        LD.A_mHL(block)
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        AND.n8(block, 0x3F)
         ADD.A_n8(block, 0x80)
         LD.H_A(block)
         LD.L_n8(block, 0)  # HL = $8000 + MOD64*256
@@ -704,8 +698,9 @@ def build_sync_scroll_row_func() -> Func:
             INC.HL(block)
 
         # --- ② カラー (CT) 転送準備 (バンク跨ぎ対応) ---
-        POP.HL(block)  # 行番号 L 復帰
-        PUSH.HL(block)  # VRAM転送用に再度保存
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)
         ADD.A_L(block)
         LD.H_A(block)
@@ -763,10 +758,8 @@ def build_sync_scroll_row_func() -> Func:
         XOR.A(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)  # メインバンクに戻す
 
-        POP.HL(block)  # TARGET_ROW
-        LD.DE_label(block, "TABLE_MOD8")
-        ADD.HL_DE(block)
-        LD.A_mHL(block)  # A = 行オフセット(0-7)
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        AND.n8(block, 0x07)  # A = 行オフセット(0-7)
         LD.B_A(block)
 
         # パターン転送 (0x00, 0x08, 0x10)
@@ -1005,28 +998,7 @@ def build_boot_bank(
     define_all_created_funcs_label_only(b, group=OUTI_FUNCS_GROUP)
 
     # --- [事前計算テーブル群] ---
-    # 1. バンクオフセットテーブル (行数 0-255 -> 0-3 バンク)
-    # 1バンク16KB = 64行分。行数を64で割った商。
-    b.label("TABLE_DIV64")
-    TABLE_DIV64 = [i // 64 for i in range(256)]
-    print_bytes(TABLE_DIV64, title="TABLE_DIV64")
-    DB(b, *TABLE_DIV64)
-
-    # 2. バンク内アドレス Hオフセットテーブル (行数 0-255 -> 0x00-0x3F)
-    # 1行256バイトなので、行数 % 64 がそのまま 0x8000 からの Hレジスタ加算分になる。
-    b.label("TABLE_MOD64")
-    TABLE_MOD64 = [i % 64 for i in range(256)]
-    print_bytes(TABLE_MOD64, title="TABLE_MOD64")
-    DB(b, *TABLE_MOD64)
-
-    # 3. VRAMブロック内 行番号テーブル (行数 0-255 -> 0-7)
-    # SCREEN 2 は 8行(256タイル)単位でブロック化されているため、その中での相対行。
-    b.label("TABLE_MOD8")
-    TABLE_MOD8 = [i % 8 for i in range(256)]
-    print_bytes(TABLE_MOD8, title="TABLE_MOD8")
-    DB(b, *TABLE_MOD8)
-
-    # 4. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
+    # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
     # タイル番号のオフセット計算用。
     b.label("TABLE_MOD24")
     TABLE_MOD24 = [i % 24 for i in range(256)]
