@@ -12,8 +12,10 @@ from mmsxxasmhelper.msxutils import (
     LDIRVM,
     enaslt_macro,
     place_msx_rom_header_macro,
+    set_text_cursor_macro,
     set_msx2_palette_default_macro,
     store_stack_pointer_macro,
+    write_text_with_cursor_macro,
 )
 from mmsxxasmhelper.utils import JIFFY_ADDR, pad_bytes
 
@@ -79,26 +81,32 @@ TRIGGER_PORT2_PRIMARY = 0x02
 TRIGGER_PORT1_SECONDARY = 0x03
 TRIGGER_PORT2_SECONDARY = 0x04
 
-INSTRUCTION_TEXT_STATIC = (
-    "MMSXX SC2 VIEWER\r\n"
-    "\r\n"
-    "SPACE: NEXT + PAUSE\r\n"
-    "SHIFT+SPACE: PREV\r\n"
-    "DOWN: NEXT\r\n"
-    "UP: PREV\r\n"
-    "PAD UP or SHIFT+UP: FASTER\r\n"
-    "PAD DOWN or SHIFT+DOWN: SLOWER\r\n"
-    "A BUTTON: NEXT\r\n"
-    "B BUTTON: PREV\r\n"
-    "ESC: FIRST\r\n"
-    "\r\n"
+INSTRUCTION_TITLE_TEXT = (
+    """\
+  __  __ __  __ ______  ____  __
+ |  \/  |  \/  / ___\/ /\ \/ /
+ | |\/| | |\/| \___ \  /  \  / 
+ | |  | | |  | |___) /  \  /  \ \
+ |_|  |_|_|  |_|____/_/\_/\_/\_\\
+"""
+).rstrip("\n")
+
+INSTRUCTION_PROMPT_TEXT = "PRESS SPACE TO START\nESC FOR SETTINGS"
+INSTRUCTION_COUNTDOWN_TEMPLATE = "STARTING IN 00 SECONDS"
+INSTRUCTION_NO_AUTO_TEXT = "WAITING FOR SPACE / ESC"
+INSTRUCTION_AUTO_DIGIT_OFFSET = INSTRUCTION_COUNTDOWN_TEMPLATE.index("00")
+INSTRUCTION_COUNTDOWN_LENGTH = len(INSTRUCTION_COUNTDOWN_TEMPLATE) + 1
+INSTRUCTION_NO_AUTO_LENGTH = len(INSTRUCTION_NO_AUTO_TEXT) + 1
+INSTRUCTION_LINE_LENGTH = max(
+    INSTRUCTION_COUNTDOWN_LENGTH, INSTRUCTION_NO_AUTO_LENGTH
 )
 
-INSTRUCTION_TEXT_WAIT = "PRESS ANY KEY\r\n"
-
-INSTRUCTION_AUTO_LINE_TEMPLATE = "AUTO START IN 00 Sec."
-INSTRUCTION_AUTO_DIGIT_OFFSET = 14
-INSTRUCTION_LINE_LENGTH = len(INSTRUCTION_AUTO_LINE_TEMPLATE) + 1
+INSTRUCTION_TITLE_POS_X = 3
+INSTRUCTION_TITLE_POS_Y = 2
+INSTRUCTION_PROMPT_POS_X = 9
+INSTRUCTION_PROMPT_POS_Y = 8
+INSTRUCTION_COUNTDOWN_POS_X = 9
+INSTRUCTION_COUNTDOWN_POS_Y = 12
 
 INSTRUCTION_BG_COLOR = 0x04
 
@@ -270,6 +278,26 @@ def build_boot_bank(
 
     PRINT_STRING = Func("print_string", print_string)
 
+    def draw_instruction_title(block: Block) -> None:
+        write_text_with_cursor_macro(
+            block,
+            INSTRUCTION_TITLE_TEXT,
+            INSTRUCTION_TITLE_POS_X,
+            INSTRUCTION_TITLE_POS_Y,
+        )
+
+    DRAW_INSTRUCTION_TITLE = Func("draw_instruction_title", draw_instruction_title)
+
+    def draw_instruction_prompt(block: Block) -> None:
+        write_text_with_cursor_macro(
+            block,
+            INSTRUCTION_PROMPT_TEXT,
+            INSTRUCTION_PROMPT_POS_X,
+            INSTRUCTION_PROMPT_POS_Y,
+        )
+
+    DRAW_INSTRUCTION_PROMPT = Func("draw_instruction_prompt", draw_instruction_prompt)
+
     def update_instruction_countdown(block: Block) -> None:
         LD.HL_mn16(block, INSTRUCTION_TICK_TOTAL_ADDR)
         LD.BC_n16(block, JIFFY_PER_SECOND)
@@ -303,8 +331,9 @@ def build_boot_bank(
     UPDATE_INSTRUCTION_COUNTDOWN = Func("update_instruction_countdown", update_instruction_countdown)
 
     def print_instruction_line(block: Block) -> None:
-        LD.A_n8(block, 0x0D)
-        CALL(block, CHPUT)
+        set_text_cursor_macro(
+            block, INSTRUCTION_COUNTDOWN_POS_X, INSTRUCTION_COUNTDOWN_POS_Y
+        )
         LD.HL_n16(block, INSTRUCTION_LINE_BUFFER_ADDR)
         PRINT_STRING.call(block)
 
@@ -780,8 +809,8 @@ def build_boot_bank(
         LD.mn16_A(b, BDRCLR)
         CALL(b, CHGCLR)
 
-        LD.HL_label(b, "INSTR_TEXT_STATIC")
-        PRINT_STRING.call(b)
+        DRAW_INSTRUCTION_TITLE.call(b)
+        DRAW_INSTRUCTION_PROMPT.call(b)
 
         if instruction_autostart_seconds > 0:
             LD.HL_n16(b, instruction_autostart_seconds * JIFFY_PER_SECOND)
@@ -791,7 +820,7 @@ def build_boot_bank(
 
             LD.HL_label(b, "INSTR_AUTO_TEMPLATE")
             LD.DE_n16(b, INSTRUCTION_LINE_BUFFER_ADDR)
-            LD.BC_n16(b, INSTRUCTION_LINE_LENGTH)
+            LD.BC_n16(b, INSTRUCTION_COUNTDOWN_LENGTH)
             b.emit(0xED, 0xB0)  # LDIR
 
             UPDATE_INSTRUCTION_COUNTDOWN.call(b)
@@ -842,14 +871,37 @@ def build_boot_bank(
 
             b.label("instruction_wait_key")
             CALL(b, CHGET)
-            JR(b, "instruction_end")
+            CP.n8(b, KEY_SPACE)
+            JR_Z(b, "instruction_end")
+            CP.n8(b, KEY_ESC)
+            JR_Z(b, "instruction_open_settings")
+            JR(b, "instruction_wait_loop")
 
             b.label("instruction_start_auto")
-            b.label("instruction_end")
+            LD.HL_n16(b, 0)
+            LD.mn16_HL(b, INSTRUCTION_TICK_TOTAL_ADDR)
+            UPDATE_INSTRUCTION_COUNTDOWN.call(b)
+            PRINT_INSTRUCTION_LINE.call(b)
+            JR(b, "instruction_end")
         else:
-            LD.HL_label(b, "INSTR_TEXT_WAIT")
-            PRINT_STRING.call(b)
+            LD.HL_label(b, "INSTR_NO_AUTO_TEXT")
+            LD.DE_n16(b, INSTRUCTION_LINE_BUFFER_ADDR)
+            LD.BC_n16(b, INSTRUCTION_NO_AUTO_LENGTH)
+            b.emit(0xED, 0xB0)  # LDIR
+            PRINT_INSTRUCTION_LINE.call(b)
+
+            b.label("instruction_wait_key")
             CALL(b, CHGET)
+            CP.n8(b, KEY_SPACE)
+            JR_Z(b, "instruction_end")
+            CP.n8(b, KEY_ESC)
+            JR_Z(b, "instruction_open_settings")
+            JR(b, "instruction_wait_key")
+
+        b.label("instruction_open_settings")
+        JR(b, "instruction_end")
+
+        b.label("instruction_end")
 
     LD.A_n8(b, 2)
     CALL(b, CHGMOD)
@@ -978,6 +1030,8 @@ def build_boot_bank(
 
     LOAD_AND_SHOW.define(b)
     PRINT_STRING.define(b)
+    DRAW_INSTRUCTION_TITLE.define(b)
+    DRAW_INSTRUCTION_PROMPT.define(b)
     UPDATE_SPEED_INDICATOR.define(b)
     LOAD_SPEED_PATTERN.define(b)
     RESET_AUTO_TIMER.define(b)
@@ -998,12 +1052,10 @@ def build_boot_bank(
     UPDATE_INSTRUCTION_COUNTDOWN.define(b)
     PRINT_INSTRUCTION_LINE.define(b)
 
-    b.label("INSTR_TEXT_STATIC")
-    DB(b, *INSTRUCTION_TEXT_STATIC.encode("ascii"), 0x00)
-    b.label("INSTR_TEXT_WAIT")
-    DB(b, *INSTRUCTION_TEXT_WAIT.encode("ascii"), 0x00)
     b.label("INSTR_AUTO_TEMPLATE")
-    DB(b, *INSTRUCTION_AUTO_LINE_TEMPLATE.encode("ascii"), 0x00)
+    DB(b, *INSTRUCTION_COUNTDOWN_TEMPLATE.encode("ascii"), 0x00)
+    b.label("INSTR_NO_AUTO_TEXT")
+    DB(b, *INSTRUCTION_NO_AUTO_TEXT.encode("ascii"), 0x00)
     b.label("INSTR_SECONDS_TABLE")
     DB(b, *"".join(INSTRUCTION_SECONDS_TEXT).encode("ascii"))
 
@@ -1159,7 +1211,7 @@ def parse_args() -> argparse.Namespace:
         "--instruction-autostart",
         type=int,
         default=5,
-        help="Seconds before auto-starting from the instruction screen (0 waits for key, max 30, default: 3).",
+        help="Seconds before auto-starting from the instruction screen (0 waits for key, max 30, default: 5).",
     )
     parser.add_argument(
         "--instruction-wait-key",
