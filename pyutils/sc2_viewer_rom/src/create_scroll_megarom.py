@@ -156,6 +156,9 @@ IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
 OUTI_FUNCS_GROUP = "outi_funcs"
 
+OUTI_FUNCS_BACK_NUM:int = 1
+
+
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
 madd = mem_addr_allocator.add
@@ -1102,12 +1105,12 @@ def build(
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
     outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines)
-    outi_funcs_bank_num = 1
+    OUTI_FUNCS_BACK_NUM = 1
     log_and_store(
-        f"OUTI funcs bank number: {outi_funcs_bank_num}",
+        f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
         log_lines,
     )
-    next_bank = outi_funcs_bank_num + len(outi_funcs_banks)
+    next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     header_bytes: list[int] = []
 
     for i, image in enumerate(images):
