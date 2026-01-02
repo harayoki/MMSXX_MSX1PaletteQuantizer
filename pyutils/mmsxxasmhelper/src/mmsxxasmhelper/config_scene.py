@@ -113,7 +113,7 @@ def build_screen0_config_menu(
 
     entry_count = len(config_entries)
     option_field_widths = [
-        (max(len(opt) for opt in entry.options) + 2) + (option_field_padding * 2)
+        (max(len(opt) for opt in entry.options)) + (option_field_padding * 2)
         for entry in config_entries
     ]
 
@@ -209,10 +209,6 @@ def build_screen0_config_menu(
         fill_loop = unique_label("__OPT_FILL_LOOP__")
         print_done = unique_label("__OPT_PRINT_DONE__")
 
-        LD.A_n8(block, ord("<"))
-        CALL(block, CHPUT)
-        DEC.B(block)
-
         if option_field_padding:
             LD.D_n8(block, option_field_padding)
             block.label(left_pad_loop)
@@ -242,10 +238,6 @@ def build_screen0_config_menu(
             DEC.D(block)
             DEC.B(block)
             JR_NZ(block, right_pad_loop_inner)
-
-        LD.A_n8(block, ord(">"))
-        CALL(block, CHPUT)
-        DEC.B(block)
 
         block.label(fill_loop)
         LD.A_B(block)
@@ -303,33 +295,30 @@ def build_screen0_config_menu(
 
     def update_triangle_sprites(block: Block) -> None:
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
-        LD.E_A(block)
-        LD.D_n8(block, 0)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
 
-        LD.HL_label(block, ENTRY_OPTION_COUNT_LABEL)
+        LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)
         ADD.HL_DE(block)
         LD.B_mHL(block)
 
-        LD.A_E(block)
-        ADD.A_A(block)
-        LD.E_A(block)
-        LD.HL_label(block, ENTRY_VALUE_ADDR_LABEL)
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, ENTRY_VALUE_ADDR_LABEL)
         ADD.HL_DE(block)
         LD.E_mHL(block)
         INC.HL(block)
         LD.D_mHL(block)
         PUSH.DE(block)
         POP.HL(block)
-
         LD.A_mHL(block)
         LD.C_A(block)
 
-        LD.HL_n16(block, sprite_attribute_addr)
-        SET_VRAM_WRITE_FUNC.call(block)
-        LD.C_n8(block, 0x98)
-
-        PUSH.DE(block)
-        POP.HL(block)
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
         ADD.HL_HL(block)
         ADD.HL_HL(block)
         ADD.HL_HL(block)
@@ -346,12 +335,18 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         LD.E_A(block)
 
+        LD.L_C(block)
+
+        LD.HL_n16(block, sprite_attribute_addr)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.C_n8(block, 0x98)
+
         LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
         RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
 
-        LD.A_C(block)
+        LD.A_L(block)
         block.label(LEFT_VISIBLE)
         OR.A(block)
         JR_Z(block, LEFT_HIDDEN)
