@@ -133,8 +133,13 @@ def build_screen0_config_menu(
             top_row = title_bottom_row + 2
 
     entry_row_base = top_row + 1
+    if entry_row_base + entry_count > 24:
+        raise ValueError(
+            "表示行が SCREEN 0 の 24 行を超えています。top_row や項目数を調整してください"
+        )
 
     CURRENT_ENTRY_ADDR = work_base_addr
+    BLINK_STATE_ADDR = work_base_addr + 1
     DRAW_OPT_JT_LABEL = unique_label("__DRAW_OPT_JT__")
     ENTRY_VALUE_ADDR_LABEL = unique_label("__ENTRY_VALUE_ADDR__")
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
@@ -350,6 +355,9 @@ def build_screen0_config_menu(
         block.label(LEFT_VISIBLE)
         OR.A(block)
         JR_Z(block, LEFT_HIDDEN)
+        LD.A_mn16(block, BLINK_STATE_ADDR)
+        BIT.n8_A(block, 0)
+        JR_NZ(block, LEFT_HIDDEN)
         LD.A_D(block)
         OUT_C.A(block)
         LD.A_n8(block, (option_col - 1) * 8)
@@ -376,10 +384,13 @@ def build_screen0_config_menu(
         CP.C(block)
         JR_Z(block, RIGHT_HIDDEN)
         JP_M(block, RIGHT_HIDDEN)
+        LD.A_mn16(block, BLINK_STATE_ADDR)
+        BIT.n8_A(block, 0)
+        JR_Z(block, RIGHT_HIDDEN)
         LD.A_D(block)
         OUT_C.A(block)
         LD.A_E(block)
-        ADD.A_n8(block, option_col)
+        ADD.A_n8(block, option_col - 1)
         ADD.A_A(block)
         ADD.A_A(block)
         ADD.A_A(block)
@@ -504,6 +515,7 @@ def build_screen0_config_menu(
 
         LD.A_n8(block, 0)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+        LD.mn16_A(block, BLINK_STATE_ADDR)
         UPDATE_TRIANGLE_FUNC.call(block)
         RET(block)
 
@@ -554,6 +566,12 @@ def build_screen0_config_menu(
         JR_Z(block, skip_right)
         ADJUST_OPTION_PLUS.call(block)
         block.label(skip_right)
+
+        LD.A_mn16(block, BLINK_STATE_ADDR)
+        LD.B_n8(block, 1)
+        XOR.B(block)
+        LD.mn16_A(block, BLINK_STATE_ADDR)
+        UPDATE_TRIANGLE_FUNC.call(block)
 
         JP(block, loop_label)
 
