@@ -70,7 +70,7 @@ def build_screen0_config_menu(
     work_base_addr: int = 0xC110,
     screen0_name_base: int = 0x1800,
     sprite_pattern_addr: int = 0x3800,
-    sprite_attribute_addr: int = 0x1B00,
+    sprite_attribute_addr: int | None = None,
     title_lines: Sequence[str] | None = None,
     title_row: int = 0,
     title_centered: bool = True,
@@ -110,6 +110,20 @@ def build_screen0_config_menu(
     config_entries = _normalize_entries(entries)
     if not config_entries:
         raise ValueError("entries が空です")
+
+    name_table_bytes = 40 * 24
+    name_table_end = screen0_name_base + name_table_bytes
+    if sprite_attribute_addr is None:
+        sprite_attribute_addr = (name_table_end + 0x7F) & ~0x7F  # 次の 0x80 境界にアライン
+    attribute_table_size = 0x80  # 32 sprites × 4 bytes
+    overlaps_name_table = not (
+        sprite_attribute_addr + attribute_table_size <= screen0_name_base
+        or sprite_attribute_addr >= name_table_end
+    )
+    if overlaps_name_table:
+        raise ValueError(
+            "sprite_attribute_addr が SCREEN 0 のネームテーブル領域と重なっています"
+        )
 
     entry_count = len(config_entries)
     option_field_widths = [

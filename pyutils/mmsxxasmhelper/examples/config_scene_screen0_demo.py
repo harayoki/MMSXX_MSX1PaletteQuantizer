@@ -50,7 +50,6 @@ def build_config_scene_rom() -> bytes:
         work_base_addr=0xC220,
         screen0_name_base=0x1800,
         sprite_pattern_addr=0x3800,
-        sprite_attribute_addr=0x1B00,
     )
 
     # 0x00 終端文字列を CHPUT で描画
