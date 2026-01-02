@@ -38,7 +38,12 @@ from typing import Sequence
 from mmsxxasmhelper.core import *
 from mmsxxasmhelper.utils import *
 
-from .msxutils import build_set_vram_write_func, INPUT_KEY_BIT, set_screen_colors_macro, set_screen_mode_macro
+from .msxutils import (
+    INITXT,
+    INPUT_KEY_BIT,
+    build_set_vram_write_func,
+    set_screen_colors_macro,
+)
 
 __all__ = ["Screen0ConfigEntry", "build_screen0_config_menu"]
 
@@ -370,15 +375,8 @@ def build_screen0_config_menu(
     )
 
     def init_config_screen(block: Block) -> None:
-        set_screen_mode_macro(block, 0)
-
-        # 1. 表示アドレス(R#2)を $1800 に設定
-        LD.A_n8(block, 0x06)
-        OUT(block, 0x99)
-        LD.A_n8(block, 0x82)
-        OUT(block, 0x99)
-
-        set_screen_colors_macro(block, 15, 4, 4, current_screen_mode=0)
+        CALL(block, INITXT)
+        set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
 
         # ネームテーブル（$1800〜$1BFF）をスペース（0x20）で埋める
         # （文字描画前に必ず初期化しておく）
