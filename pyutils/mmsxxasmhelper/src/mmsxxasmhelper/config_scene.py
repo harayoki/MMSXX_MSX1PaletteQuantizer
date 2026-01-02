@@ -56,12 +56,16 @@ def build_screen0_config_menu(
     entries: Sequence[Screen0ConfigEntry] | dict[str, dict[str, object]],
     *,
     update_input_func: Func,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
     input_hold_addr: int = 0xC100,
     input_trg_addr: int = 0xC101,
     work_base_addr: int = 0xC110,
     screen0_name_base: int = 0x1800,
     sprite_pattern_addr: int = 0x3800,
     sprite_attribute_addr: int = 0x1B00,
+    header_lines: Sequence[str] | None = None,
+    header_row: int = 0,
+    header_col: int = 2,
     top_row: int = 4,
     label_col: int = 2,
     option_col: int = 12,
@@ -128,7 +132,7 @@ def build_screen0_config_menu(
         0b00001100,
     ]
 
-    SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
+    SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
 
     def _emit_write_text(block: Block, addr: int, data: Sequence[int]) -> None:
         LD.HL_n16(block, addr)
@@ -200,7 +204,11 @@ def build_screen0_config_menu(
     draw_option_funcs: list[Func] = []
     for idx, entry in enumerate(config_entries):
         draw_option_funcs.append(
-            Func(f"DRAW_OPTION_{idx}", lambda b, e=entry, i=idx: _emit_draw_option(b, e, i))
+            Func(
+                f"DRAW_OPTION_{idx}",
+                lambda b, e=entry, i=idx: _emit_draw_option(b, e, i),
+                group=group,
+            )
         )
 
     def draw_option_dispatch(block: Block) -> None:
@@ -217,7 +225,9 @@ def build_screen0_config_menu(
         POP.HL(block)
         JP_mHL(block)
 
-    DRAW_OPTION_DISPATCH = Func("DRAW_OPTION_FOR_CURRENT", draw_option_dispatch)
+    DRAW_OPTION_DISPATCH = Func(
+        "DRAW_OPTION_FOR_CURRENT", draw_option_dispatch, group=group
+    )
 
     def update_triangle_sprites(block: Block) -> None:
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
@@ -311,7 +321,9 @@ def build_screen0_config_menu(
         OUT_C.A(block)
         RET(block)
 
-    UPDATE_TRIANGLE_FUNC = Func("UPDATE_TRIANGLE_SPRITES", update_triangle_sprites)
+    UPDATE_TRIANGLE_FUNC = Func(
+        "UPDATE_TRIANGLE_SPRITES", update_triangle_sprites, group=group
+    )
 
     def adjust_option(block: Block, delta: int) -> None:
         adjust_end = unique_label("__ADJUST_END__")
@@ -350,8 +362,12 @@ def build_screen0_config_menu(
         block.label(adjust_end)
         RET(block)
 
-    ADJUST_OPTION_PLUS = Func("ADJUST_OPTION_PLUS", lambda b: adjust_option(b, +1))
-    ADJUST_OPTION_MINUS = Func("ADJUST_OPTION_MINUS", lambda b: adjust_option(b, -1))
+    ADJUST_OPTION_PLUS = Func(
+        "ADJUST_OPTION_PLUS", lambda b: adjust_option(b, +1), group=group
+    )
+    ADJUST_OPTION_MINUS = Func(
+        "ADJUST_OPTION_MINUS", lambda b: adjust_option(b, -1), group=group
+    )
 
     def init_config_screen(block: Block) -> None:
         set_screen_mode_macro(block, 0)
@@ -405,6 +421,11 @@ def build_screen0_config_menu(
             OUT_C.A(block)
             LD.A_n8(block, 0)
             OUT_C.A(block)
+
+        for idx, line in enumerate(header_lines or []):
+            text_bytes = [ord(ch) & 0x7F for ch in line]
+            line_addr = screen0_name_base + (header_row + idx) * 40 + header_col
+            _emit_write_text(block, line_addr, text_bytes)
 
         for idx, entry in enumerate(config_entries):
             label_bytes = [ord(ch) & 0x7F for ch in entry.name]
@@ -483,8 +504,13 @@ def build_screen0_config_menu(
         for idx, entry in enumerate(config_entries):
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
 
-    INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen)
-    RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop)
-    TABLE_FUNC = Func("CONFIG_SCREEN0_TABLES", emit_tables, no_auto_ret=True)
+    INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen, group=group)
+    RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop, group=group)
+    TABLE_FUNC = Func(
+        "CONFIG_SCREEN0_TABLES",
+        emit_tables,
+        no_auto_ret=True,
+        group=group,
+    )
 
     return INIT_FUNC, RUN_LOOP_FUNC, TABLE_FUNC
