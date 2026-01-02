@@ -71,8 +71,11 @@ def build_screen0_config_menu(
     screen0_name_base: int = 0x1800,
     sprite_pattern_addr: int = 0x3800,
     sprite_attribute_addr: int = 0x1B00,
+    title_lines: Sequence[str] | None = None,
+    title_row: int = 0,
+    title_centered: bool = True,
     header_lines: Sequence[str] | None = None,
-    header_row: int = 0,
+    header_row: int | None = None,
     header_col: int = 2,
     top_row: int = 4,
     label_col: int = 2,
@@ -109,16 +112,25 @@ def build_screen0_config_menu(
         raise ValueError("entries が空です")
 
     entry_count = len(config_entries)
-    option_field_width = max(
-        len(opt) + 2 for entry in config_entries for opt in entry.options
-    )
-    option_field_width += option_field_padding * 2
+    option_field_widths = [
+        (max(len(opt) for opt in entry.options) + 2) + (option_field_padding * 2)
+        for entry in config_entries
+    ]
+
+    title_lines = title_lines or ["", "HELP & SETTING", ""]
+    title_height = len(title_lines)
+    if header_row is None:
+        header_row = title_row + title_height
 
     header_height = len(header_lines or [])
     if header_height:
         header_bottom_row = header_row + header_height - 1
         if top_row <= header_bottom_row:
             top_row = header_bottom_row + 2  # 1 行空けて <SETTING> を表示
+    elif title_height:
+        title_bottom_row = title_row + title_height - 1
+        if top_row <= title_bottom_row:
+            top_row = title_bottom_row + 2
 
     entry_row_base = top_row + 1
 
@@ -126,6 +138,7 @@ def build_screen0_config_menu(
     DRAW_OPT_JT_LABEL = unique_label("__DRAW_OPT_JT__")
     ENTRY_VALUE_ADDR_LABEL = unique_label("__ENTRY_VALUE_ADDR__")
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
+    ENTRY_OPTION_WIDTH_LABEL = unique_label("__ENTRY_OPTION_WIDTH__")
     OPT_PTR_TABLE_LABEL = unique_label("__OPT_PTR_TABLE__")
     OPTION_POINTER_LABELS = [unique_label("__OPT_PTR__") for _ in config_entries]
 
@@ -155,7 +168,9 @@ def build_screen0_config_menu(
     def _emit_write_text(block: Block, col: int, row: int, text: str) -> None:
         write_text_with_cursor_macro(block, text, col, row)
 
-    def _emit_draw_option(block: Block, entry: Screen0ConfigEntry, entry_index: int) -> None:
+    def _emit_draw_option(
+        block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
+    ) -> None:
         LD.A_n8(block, ord(" "))
         LD.HL_n16(block, sprite_attribute_addr)
         SET_VRAM_WRITE_FUNC.call(block)
@@ -181,7 +196,7 @@ def build_screen0_config_menu(
         LD.D_mHL(block)
         PUSH.DE(block)
         POP.HL(block)
-        LD.B_n8(block, option_field_width)
+        LD.B_n8(block, option_width)
 
         print_loop = unique_label("__OPT_PRINT_LOOP__")
         left_pad_loop = unique_label("__OPT_LEFT_PAD__")
@@ -252,10 +267,13 @@ def build_screen0_config_menu(
 
     draw_option_funcs: list[Func] = []
     for idx, entry in enumerate(config_entries):
+        option_width = option_field_widths[idx]
         draw_option_funcs.append(
             Func(
                 f"DRAW_OPTION_{idx}",
-                lambda b, e=entry, i=idx: _emit_draw_option(b, e, i),
+                lambda b, e=entry, i=idx, w=option_width: _emit_draw_option(
+                    b, e, i, w
+                ),
                 group=group,
             )
         )
@@ -315,11 +333,20 @@ def build_screen0_config_menu(
         LD.A_L(block)
         LD.D_A(block)
 
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, ENTRY_OPTION_WIDTH_LABEL)
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        LD.E_A(block)
+
         LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
         RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
 
+        LD.A_C(block)
         block.label(LEFT_VISIBLE)
         OR.A(block)
         JR_Z(block, LEFT_HIDDEN)
@@ -351,7 +378,11 @@ def build_screen0_config_menu(
         JP_M(block, RIGHT_HIDDEN)
         LD.A_D(block)
         OUT_C.A(block)
-        LD.A_n8(block, (option_col + option_field_width) * 8)
+        LD.A_E(block)
+        ADD.A_n8(block, option_col)
+        ADD.A_A(block)
+        ADD.A_A(block)
+        ADD.A_A(block)
         OUT_C.A(block)
         LD.A_n8(block, 1)
         OUT_C.A(block)
@@ -452,6 +483,16 @@ def build_screen0_config_menu(
             LD.A_n8(block, 0)
             OUT_C.A(block)
 
+        if title_lines:
+            for idx, line in enumerate(title_lines):
+                if not line:
+                    continue
+                if title_centered:
+                    col = max((40 - len(line)) // 2, 0)
+                else:
+                    col = header_col
+                _emit_write_text(block, col, title_row + idx, line)
+
         for idx, line in enumerate(header_lines or []):
             _emit_write_text(block, header_col, header_row + idx, line)
 
@@ -527,6 +568,9 @@ def build_screen0_config_menu(
         block.label(ENTRY_OPTION_COUNT_LABEL)
         for entry in config_entries:
             DB(block, len(entry.options) & 0xFF)
+        block.label(ENTRY_OPTION_WIDTH_LABEL)
+        for width in option_field_widths:
+            DB(block, width & 0xFF)
         block.label(OPT_PTR_TABLE_LABEL)
         for idx, entry in enumerate(config_entries):
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
