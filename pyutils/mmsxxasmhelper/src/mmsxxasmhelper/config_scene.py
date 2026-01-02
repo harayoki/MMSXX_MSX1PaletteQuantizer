@@ -132,7 +132,7 @@ def build_screen0_config_menu(
         if top_row <= title_bottom_row:
             top_row = title_bottom_row + 2
 
-    entry_row_base = top_row + 1
+    entry_row_base = top_row + 2
     if entry_row_base + entry_count > 24:
         raise ValueError(
             "表示行が SCREEN 0 の 24 行を超えています。top_row や項目数を調整してください"
@@ -459,6 +459,12 @@ def build_screen0_config_menu(
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
 
+        # スプライトのテーブルアドレスを明示的に設定する
+        OUT_A(block, 0x99, (sprite_attribute_addr >> 7) & 0xFF)  # R#5
+        OUT_A(block, 0x99, 0x80 + 5)
+        OUT_A(block, 0x99, (sprite_pattern_addr >> 11) & 0xFF)  # R#6
+        OUT_A(block, 0x99, 0x80 + 6)
+
         # ネームテーブル（$1800〜$1BFF）をスペース（0x20）で埋める
         # （文字描画前に必ず初期化しておく）
         LD.HL_n16(block, screen0_name_base)
@@ -533,6 +539,7 @@ def build_screen0_config_menu(
         JR_Z(block, skip_up)
         DEC.A(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+        DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(skip_up)
 
@@ -545,6 +552,7 @@ def build_screen0_config_menu(
         CP.n8(block, entry_count)
         JR_NC(block, skip_down)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+        DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(skip_down)
 
