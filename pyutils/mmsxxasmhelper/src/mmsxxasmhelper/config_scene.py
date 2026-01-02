@@ -355,7 +355,40 @@ def build_screen0_config_menu(
 
     def init_config_screen(block: Block) -> None:
         set_screen_mode_macro(block, 0)
+
+        # 1. 表示アドレス(R#2)を $1800 に設定
+        LD.A_n8(block, 0x06)
+        OUT(block, 0x99)
+        LD.A_n8(block, 0x82)
+        OUT(block, 0x99)
+
+        # 2. 画面全体をクリア ($1800〜$1BBF)
+        LD.HL_n16(block, screen0_name_base)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.BC_n16(block, 40 * 24)  # 960文字分
+        LD.A_n8(block, 0x20)  # スペースのキャラコード
+        clear_loop = unique_label("__CLEAR_LOOP__")
+        block.label(clear_loop)
+        OUT(block, 0x98)
+        DEC.BC(block)
+        LD.A_B(block)
+        OR.C(block)
+        JR_NZ(block, clear_loop)
+
         set_screen_colors_macro(block, 15, 4, 4, current_screen_mode=0)
+
+        # ネームテーブル（$1800〜$1BFF）をスペース（0x20）で埋める
+        LD.HL_n16(block, screen0_name_base)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.BC_n16(block, 40 * 24)  # SCREEN 0 全体
+        LD.A_n8(block, 0x20)  # スペース
+        fill_loop = unique_label("__FILL_SCREEN__")
+        block.label(fill_loop)
+        OUT(block, 0x98)
+        DEC.BC(block)
+        LD.A_B(block)
+        OR.C(block)
+        JR_NZ(block, fill_loop)
 
         LD.HL_n16(block, sprite_pattern_addr)
         SET_VRAM_WRITE_FUNC.call(block)
@@ -367,7 +400,7 @@ def build_screen0_config_menu(
         LD.HL_n16(block, sprite_attribute_addr)
         SET_VRAM_WRITE_FUNC.call(block)
         LD.C_n8(block, 0x98)
-        for _ in range(8):
+        for _ in range(32):
             LD.A_n8(block, 0xD0)
             OUT_C.A(block)
             LD.A_n8(block, 0)

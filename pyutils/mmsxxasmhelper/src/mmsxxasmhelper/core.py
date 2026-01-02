@@ -104,7 +104,7 @@ def unique_label(prefix: str = "__L") -> str:
     呼ぶたびにユニークな名前を得るために利用する。
     """
 
-    return f"{prefix}{next(_label_counter)}"
+    return f"{prefix}-{next(_label_counter)}"
 
 FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 

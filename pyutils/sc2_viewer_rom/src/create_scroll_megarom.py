@@ -11,12 +11,14 @@ MSX1 SCREEN2 の縦スクロール ROM ビルダー。
   あれば再利用し、--no-cache 指定時のみ再生成する。
 - 量子化済み画像を 256 バイト × tile_rows のパターン／カラーデータに変換し、ASCII16
   MegaROM のデータバンクへバンク境界をまたぎながら隙間なく配置する。
-- ブートバンクにスクロールビューアーを配置し、プログラム直後に各画像 6 バイトのヘッダー
-  （開始バンク、行数、カラーデータのバンクとアドレス）を並べ、末尾に 0xFF × 4 の終端情報
+- ブートバンクにスクロールビューアーを配置し、プログラム直後に各画像 7 バイトのヘッダー
+  （開始バンク、行数、初期スクロール方向、カラーデータのバンクとアドレス）を並べ、末尾
+  に 0xFF × 4 の終端情報
   を付与する。
-- ビューアーは SCREEN 2 を初期化し、start_at オプションに応じて初期スクロール位置を設定。
-  上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送する。スペースで次の画像、
-  SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易 Beep を鳴らす。
+- ビューアーは SCREEN 2 を初期化し、画像ヘッダーに埋め込まれた初期スクロール方向に応じて
+  初期スクロール位置を設定。上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送
+  する。スペースで次の画像、SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易
+  Beep を鳴らす。
 - `--use-debug-image` を指定するとテスト用パターンを生成し、それ以外ではビルド結果を
   ROM として出力、必要に応じてログを rominfo に書き出す。
 
@@ -27,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -47,6 +50,7 @@ from mmsxxasmhelper.core import (
     INC,
     JP,
     JP_NZ,
+    JP_Z,
     JR,
     JR_C,
     JR_NC,
@@ -90,6 +94,7 @@ from mmsxxasmhelper.msxutils import (
     FORCLR,
     BAKCLR,
     BDRCLR,
+    INITXT,
     LDIRVM,
     enaslt_macro,
     place_msx_rom_header_macro,
@@ -104,7 +109,11 @@ from mmsxxasmhelper.msxutils import (
     build_set_vram_write_func,
     build_scroll_name_table_func,
     build_outi_repeat_func,
+    set_screen_colors_macro,
+    set_text_cursor_macro,
+    write_text_with_cursor_macro,
 )
+from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
     ldir_macro,
@@ -138,12 +147,13 @@ PATTERN_RAM_SIZE = 0x1800
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
-IMAGE_HEADER_ENTRY_SIZE = 6
+IMAGE_HEADER_ENTRY_SIZE = 7
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
 OUTI_FUNCS_GROUP = "outi_funcs"
 
 OUTI_FUNCS_BACK_NUM:int = 1
+SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
 
 # 状況を保存するメモリアドレス
@@ -156,6 +166,8 @@ class ADDR:
         madd("CURRENT_IMAGE_START_BANK_ADDR", 1, description="画像データを格納しているバンク番号"))
     CURRENT_IMAGE_ROW_COUNT_ADDR = (
         madd("CURRENT_IMAGE_ROW_COUNT_ADDR", 2, description="画像の行数（タイル行数）を保存"))
+    CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION = (
+        madd("CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION", 1, description="0=上から,255=下から"))
     CURRENT_IMAGE_COLOR_BANK_ADDR = (
         madd("CURRENT_IMAGE_COLOR_BANK_ADDR", 1,description="カラーパターンが置かれているバンク番号"))
     CURRENT_IMAGE_COLOR_ADDRESS_ADDR = (
@@ -167,6 +179,12 @@ class ADDR:
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
+    TITLE_SECONDS_REMAINING = madd(
+        "TITLE_SECONDS_REMAINING", 1, description="タイトル画面の残り秒数")
+    TITLE_FRAME_COUNTER = madd(
+        "TITLE_FRAME_COUNTER", 1, description="1秒あたりのフレームカウンタ")
+    TITLE_COUNTDOWN_DIGITS = madd(
+        "TITLE_COUNTDOWN_DIGITS", 3, description="タイトルの残り秒数文字列")
 
     PG_BUFFER = madd("PG_BUFFER", 256)
     CT_BUFFER = madd("CT_BUFFER", 256)
@@ -379,7 +397,7 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
     return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
 
 
-def build_reset_name_table_func() -> Func:
+def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def reset_name_table_call(block: Block) -> None:
         # VRAMアドレスセット (NAME_BASE = 0x1800)
         # 0x1800 を書き込みモードでセット
@@ -410,13 +428,13 @@ def build_reset_name_table_func() -> Func:
         DEC.D(block)             # 残りブロック数を減らす
         JR_NZ(block, OUTER_LOOP)
 
-    return Func("init_name_table_call", reset_name_table_call)
+    return Func("init_name_table_call", reset_name_table_call, group=group)
 
 
-RESET_NAME_TABLE_FUNC = build_reset_name_table_func()
+RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
-def build_scroll_vram_xfer_func() -> Func:
+def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def scroll_vram_xfer(block: Block) -> None:
         # --- 入力規定 ---
         # HL: 計算済みのROM開始アドレス (0x8000 - 0xBFFF)
@@ -489,12 +507,14 @@ def build_scroll_vram_xfer_func() -> Func:
     CALL scroll_vram_xfer
     """
 
-    return Func("scroll_vram_xfer", scroll_vram_xfer)
+    return Func("scroll_vram_xfer", scroll_vram_xfer, group=group)
 
 
-SET_VRAM_WRITE_FUNC = build_set_vram_write_func()
-SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(SET_VRAM_WRITE_FUNC)
-SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func()
+SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
+SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
+    SET_VRAM_WRITE_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
 OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
 OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
@@ -503,7 +523,9 @@ OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
 OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
 set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
-def build_update_image_display_func(image_entries_count: int, start_at: str) -> Func:
+def build_update_image_display_func(
+    image_entries_count: int, *, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
     """
     縦2028ドットを超える画像にも対応したかもしれない実装（未検証）
     """
@@ -516,47 +538,53 @@ def build_update_image_display_func(image_entries_count: int, start_at: str) -> 
         # 1. 画像番号の保存
         LD.mn16_A(block, ADDR.CURRENT_IMAGE_ADDR)
 
-        # 2. ヘッダテーブル(6bytes/entry)から情報をワークRAMにロード
+        # 2. ヘッダテーブル(7bytes/entry)から情報をワークRAMにロード
         LD.L_A(block)
         LD.H_n8(block, 0)
         PUSH.HL(block)
         POP.DE(block)
         ADD.HL_HL(block)  # *2
-        ADD.HL_DE(block)  # *3
-        ADD.HL_HL(block)  # *6
+        ADD.HL_HL(block)  # *4
+        ADD.HL_DE(block)  # *5
+        ADD.HL_DE(block)  # *6
+        ADD.HL_DE(block)  # *7
         LD.DE_label(block, "IMAGE_HEADER_TABLE")
         ADD.HL_DE(block)
 
-        # CURRENT_IMAGE_START_BANK_ADDR から 6バイト分コピー
+        # CURRENT_IMAGE_START_BANK_ADDR から 7バイト分コピー
         LD.DE_n16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-        for _ in range(6):
+        for _ in range(7):
             LD.A_mHL(block)
             LD.mDE_A(block)
             INC.HL(block)
             INC.DE(block)
 
         # --- [16bit対応: スクロール位置のリセット] ---
-        # start_at の設定に基づき CURRENT_SCROLL_ROW を初期化する
+        # 画像ヘッダの設定に基づき CURRENT_SCROLL_ROW を初期化する
         INIT_POS_OK = unique_label("_INIT_POS_OK")
-        if start_at == "bottom":
-            # HL = 総行数 (16bit)
-            LD.HL_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+        INIT_FROM_TOP = unique_label("_INIT_FROM_TOP")
 
-            # HL = HL - 24 (1画面分)
-            LD.BC_n16(block, 24)
-            OR.A(block)  # キャリークリア
-            SBC.HL_BC(block)  # HL = HL - 24
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION)
+        CP.n8(block, 0xFF)
+        JR_NZ(block, INIT_FROM_TOP)
 
-            # 結果が負（24未満）なら 0 にクランプ
-            JR_NC(block, INIT_POS_OK)
-            LD.HL_n16(block, 0)
+        # 下端開始: (総行数 - 24) をクランプして設定
+        LD.HL_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+        LD.BC_n16(block, 24)
+        OR.A(block)  # キャリークリア
+        SBC.HL_BC(block)
+        JR_NC(block, INIT_POS_OK)
+        LD.HL_n16(block, 0)
+        block.label(INIT_POS_OK)
+        LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+        JR(block, "_INIT_POS_DONE")
 
-            block.label(INIT_POS_OK)
-            LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
-        else:
-            # top の場合は常に 0
-            LD.HL_n16(block, 0)
-            LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+        # 上端開始: 常に 0
+        block.label(INIT_FROM_TOP)
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+
+        block.label("_INIT_POS_DONE")
 
         # --- [VRAM転送の動的アドレス計算ルーチン] ---
         # 入力: なし (ADDRの値を参照), 出力: HL=ROMアドレス, E=バンク
@@ -629,15 +657,21 @@ def build_update_image_display_func(image_entries_count: int, start_at: str) -> 
 
         RET(block)
 
-    return Func("UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True)
+    return Func(
+        "UPDATE_IMAGE_DISPLAY", update_image_display, no_auto_ret=True, group=group
+    )
 
 
-UPDATE_INPUT_FUNC = build_update_input_func(ADDR.INPUT_HOLD, ADDR.INPUT_TRG)
+UPDATE_INPUT_FUNC = build_update_input_func(
+    ADDR.INPUT_HOLD, ADDR.INPUT_TRG, group=SCROLL_VIEWER_FUNC_GROUP
+)
 
-BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE)
+BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
+    ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE, group=SCROLL_VIEWER_FUNC_GROUP
+)
 
 
-def build_sync_scroll_row_func() -> Func:
+def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
         # (バンク切り替えと初期アドレス計算はそのまま)
@@ -782,7 +816,8 @@ def build_sync_scroll_row_func() -> Func:
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
             OUTI_256_FUNC.call(block)
-
+            # for _ in range(256):
+            #     OUTI(block)
 
         # カラー転送 (0x20, 0x28, 0x30)
         for base_h in [0x20, 0x28, 0x30]:
@@ -795,16 +830,61 @@ def build_sync_scroll_row_func() -> Func:
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
             OUTI_256_FUNC.call(block)
+            # for _ in range(256):
+            #     OUTI(block)
 
         # 最後にページ2をメインバンク(0)に戻しておく
         XOR.A(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
         RET(block)
-    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True)
+    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
 
 
-SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func()
+def build_dummy_config_scene_func(
+    *, update_input_func: Func, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """簡易ヘルプを表示するダミーのコンフィグシーンを作成する。"""
+
+    help_lines = (
+        "SCROLL VIEWER HELP",
+        "",
+        "ESC : EXIT THIS HELP",
+        "SPACE: NEXT IMAGE",
+        "SHIFT+SPACE: PREV IMAGE",
+        "UP/DOWN: SCROLL",
+    )
+
+    def config_scene(block: Block) -> None:
+        CALL(block, INITXT)
+        set_screen_colors_macro(block, 15, 4, 4, current_screen_mode=0)
+
+        for y, line in enumerate(help_lines):
+            write_text_with_cursor_macro(
+                block, line, 1, y
+            )
+
+        # 入力状態を一度更新してトリガーをリセット
+        update_input_func.call(block)
+
+        WAIT_ESC = unique_label("CONFIG_WAIT_ESC")
+        block.label(WAIT_ESC)
+        HALT(block)
+        update_input_func.call(block)
+
+        LD.A_mn16(block, ADDR.INPUT_TRG)
+        BIT.n8_A(block, INPUT_KEY_BIT.L_ESC)
+        JR_Z(block, WAIT_ESC)
+
+        RET(block)
+
+    return Func("CONFIG_SCENE", config_scene, group=group)
+
+
+SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
+CONFIG_SCENE_FUNC = build_dummy_config_scene_func(
+    update_input_func=UPDATE_INPUT_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
+)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -822,14 +902,38 @@ def calc_line_num_for_reg_a_macro(b: Block) -> None:
 def build_boot_bank(
     image_entries: Sequence[ImageEntry],
     header_bytes: Sequence[int],
-    start_at: str,
     fill_byte: int,
+    title_wait_seconds: int,
     log_lines: List[str] | None = None,
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
 
-    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(len(image_entries), start_at)
+    UPDATE_IMAGE_DISPLAY_FUNC = build_update_image_display_func(
+        len(image_entries), group=SCROLL_VIEWER_FUNC_GROUP
+    )
+    TITLE_SCREEN_FUNC = build_title_screen_func(
+        title_wait_seconds,
+        subtitle_text="  Screen 2 Scroll Image Viewer",
+        input_trg_addr=ADDR.INPUT_TRG,
+        title_seconds_remaining_addr=ADDR.TITLE_SECONDS_REMAINING,
+        title_frame_counter_addr=ADDR.TITLE_FRAME_COUNTER,
+        title_countdown_digits_addr=ADDR.TITLE_COUNTDOWN_DIGITS,
+        update_input_func=UPDATE_INPUT_FUNC,
+        group=SCROLL_VIEWER_FUNC_GROUP,
+    )
+
+    def apply_viewer_screen_settings(block: Block) -> None:
+        LD.A_n8(block, 2)
+        CALL(block, CHGMOD)
+        set_msx2_palette_default_macro(block)
+
+        LD.A_n8(block, 0x0F)
+        LD.mn16_A(block, FORCLR)
+        LD.A_n8(block, 0x00)
+        LD.mn16_A(block, BAKCLR)
+        LD.mn16_A(block, BDRCLR)
+        CALL(block, CHGCLR)
 
     set_debug(True)
 
@@ -846,16 +950,21 @@ def build_boot_bank(
     init_stack_pointer_macro(b)
     enaslt_macro(b)
 
-    LD.A_n8(b, 2)
-    CALL(b, CHGMOD)
-    set_msx2_palette_default_macro(b)
+    TITLE_SCREEN_FUNC.call(b)
 
-    LD.A_n8(b, 0x0F)
-    LD.mn16_A(b, FORCLR)
-    LD.A_n8(b, 0x00)
-    LD.mn16_A(b, BAKCLR)
-    LD.mn16_A(b, BDRCLR)
-    CALL(b, CHGCLR)
+    AFTER_TITLE_CONFIG = unique_label("AFTER_TITLE_CONFIG")
+    ENTER_CONFIG_FROM_TITLE = unique_label("ENTER_CONFIG_FROM_TITLE")
+
+    CP.n8(b, 1)
+    JR_Z(b, ENTER_CONFIG_FROM_TITLE)
+    apply_viewer_screen_settings(b)
+    JR(b, AFTER_TITLE_CONFIG)
+
+    b.label(ENTER_CONFIG_FROM_TITLE)
+    CONFIG_SCENE_FUNC.call(b)
+    apply_viewer_screen_settings(b)
+
+    b.label(AFTER_TITLE_CONFIG)
 
     RESET_NAME_TABLE_FUNC.call(b)
 
@@ -882,6 +991,11 @@ def build_boot_bank(
     LD.mHL_D(b)
     POP.HL(b)
 
+    # INITIAL SCROLL DIRECTION
+    INC.HL(b)
+    LD.A_mHL(b)
+    LD.mn16_A(b, ADDR.CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION)
+
     # CURRENT_IMAGE_COLOR_BANK_ADDR = COLOR TABLE BANK
     INC.HL(b)
     LD.A_mHL(b)
@@ -907,6 +1021,17 @@ def build_boot_bank(
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
 
+    # ESC でコンフィグ（ヘルプ）シーンへ遷移
+    LD.A_mn16(b, ADDR.INPUT_TRG)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_ESC)
+    JR_Z(b, "CHECK_UP")
+    CONFIG_SCENE_FUNC.call(b)
+    apply_viewer_screen_settings(b)
+    LD.A_mn16(b, ADDR.CURRENT_IMAGE_ADDR)
+    UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+    JP(b, "MAIN_LOOP")
+
+    b.label("CHECK_UP")
     # --- [メインループ内の上下入力処理をここから差し替え] ---
     # 上キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -975,7 +1100,7 @@ def build_boot_bank(
     b.label("CHECK_SPACE")
     LD.A_mn16(b, ADDR.INPUT_TRG)
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
-    JR_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
+    JP_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
 
     # SPACEが押された場合のみここに来る
     # 次に SHIFT (L_BTN_B) の状態を確認
@@ -1009,7 +1134,7 @@ def build_boot_bank(
     # JR(b, "MAIN_LOOP")  #相対限界超える
     JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
-    define_created_funcs(b, group=DEFAULT_FUNC_GROUP_NAME)
+    define_created_funcs(b, group=SCROLL_VIEWER_FUNC_GROUP)
 
     # --- [事前計算テーブル群] ---
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
@@ -1086,7 +1211,7 @@ def build_outi_funcs_bank(
     return banks
 
 
-def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
+def validate_image_data(image: ImageData) -> None:
     if image.tile_rows <= 0 or image.tile_rows > 0xFFFF:
         raise ValueError("tile_rows must fit in 2 bytes and be positive")
 
@@ -1095,6 +1220,36 @@ def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes]
         raise ValueError("pattern data length mismatch")
     if len(image.color) != expected_length:
         raise ValueError("color data length mismatch")
+
+
+def concatenate_image_data_vertically(
+    images: Sequence[ImageData],
+) -> ImageData:
+    if not images:
+        raise ValueError("images must not be empty")
+
+    pattern_parts: list[bytes] = []
+    color_parts: list[bytes] = []
+    total_rows = 0
+
+    for image in images:
+        validate_image_data(image)
+        pattern_parts.append(image.pattern)
+        color_parts.append(image.color)
+        total_rows += image.tile_rows
+
+    if total_rows > 0xFFFF:
+        raise ValueError("Total tile rows exceed 65535")
+
+    return ImageData(
+        pattern=b"".join(pattern_parts),
+        color=b"".join(color_parts),
+        tile_rows=total_rows,
+    )
+
+
+def pack_image_into_banks(image: ImageData, fill_byte: int) -> tuple[list[bytes], int]:
+    validate_image_data(image)
 
     payload = bytearray()
     payload.extend(image.pattern)
@@ -1114,14 +1269,19 @@ def log_and_store(message: str, log_lines: list[str] | None) -> None:
 
 def build(
     images: Sequence[ImageData],
-    start_at: str = "bottom",
+    start_positions: Sequence[str] | None = None,
     fill_byte: int = 0xFF,
+    title_wait_seconds: int = 3,
     log_lines: list[str] | None = None,
 ) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
     if not images:
         raise ValueError("images must not be empty")
+
+    title_wait_seconds = max(0, min(title_wait_seconds, 255))
+
+    log_and_store(f"Title wait seconds: {title_wait_seconds}", log_lines)
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
@@ -1134,6 +1294,11 @@ def build(
     set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
     next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     header_bytes: list[int] = []
+
+    if start_positions is None:
+        start_positions = ["top"] * len(images)
+    elif len(start_positions) != len(images):
+        raise ValueError("start_positions length must match images length")
 
     for i, image in enumerate(images):
         log_and_store(f"* packing image #{i} tiles:{image.tile_rows}", log_lines)
@@ -1172,18 +1337,19 @@ def build(
         )
         next_bank += len(banks)
 
+        start_at_flag = 0xFF if start_positions[i] == "bottom" else 0
         header_byte = [
-                start_bank,
-                image.tile_rows & 0xFF,
-                (image.tile_rows >> 8) & 0xFF,
-                # カラーテーブルのバンク＆アドレス情報は パターンジェネレータ側から計算できるが
-                # デバッグなどのやりやすさを考え、埋め込んでおく。将来的になくしてもいい。
-                # 255 枚 * 6 byte =　1.494.. k Bytes : 現状
-                # 255 枚 * 3 byte =　0.747.. k Bytes : 省けるバイト数 1kない 現状のブートバンクは余裕があるので許容
-                color_bank & 0xFF,
-                color_address & 0xFF,
-                (color_address >> 8) & 0xFF,
-            ]
+            start_bank,
+            image.tile_rows & 0xFF,
+            (image.tile_rows >> 8) & 0xFF,
+            start_at_flag,
+            # カラーテーブルのバンク＆アドレス情報は パターンジェネレータ側から計算できるが
+            # デバッグなどのやりやすさを考え、埋め込んでおく。将来的になくしてもいい。
+            # 255 枚 * 7 byte =　1.746.. k Bytes : 現状
+            color_bank & 0xFF,
+            color_address & 0xFF,
+            (color_address >> 8) & 0xFF,
+        ]
         print(f"header #{i} {header_byte}")
         header_bytes.extend(header_byte)
 
@@ -1198,7 +1364,11 @@ def build(
     if len(header_bytes) != expected_header_length:
         raise AssertionError("header_bytes length mismatch")
 
-    banks = [build_boot_bank(image_entries, header_bytes, start_at, fill_byte)]
+    banks = [
+        build_boot_bank(
+            image_entries, header_bytes, fill_byte, title_wait_seconds, log_lines
+        )
+    ]
     banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
@@ -1263,6 +1433,12 @@ def parse_args() -> argparse.Namespace:
         help="未使用領域の埋め値 (default: 0xFF)",
     )
     parser.add_argument(
+        "--title-wait-seconds",
+        type=int,
+        default=5,
+        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
+    )
+    parser.add_argument(
         "--rom-info",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -1271,8 +1447,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--start-at",
         choices=["top", "bottom"],
-        default="bottom",
-        help="初期表示位置 (default: bottom)",
+        default="top",
+        help="全画像の初期表示位置デフォルト (default: top)",
+    )
+    parser.add_argument(
+        "--start-at-override",
+        nargs="+",
+        choices=["top", "bottom"],
+        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
+    )
+    parser.add_argument(
+        "--start-at-random",
+        action="store_true",
+        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
     )
     return parser.parse_args()
 
@@ -1370,9 +1557,10 @@ def main() -> None:
     total_input_images = 0
 
     input_groups: list[list[Path]] = [list(group) for group in args.input]
-    prepared_images: list[tuple[str, Image.Image, float]] = []
+    prepared_groups: list[tuple[str, list[tuple[str, Image.Image, float]]]] = []
     image_data_list: list[ImageData] = []
     rom: bytes
+    quantized_image_counter = 0
 
     if args.use_debug_image:
         image_data_list = create_debug_image_data_list(args.debug_image_index)
@@ -1384,22 +1572,19 @@ def main() -> None:
             if not group:
                 raise SystemExit("Empty input group is not allowed")
 
-            loaded_images: list[Image.Image] = []
-            newest_input_mtime = 0.0
+            group_segments: list[tuple[str, Image.Image, float]] = []
             for path in group:
                 if not path.is_file():
                     raise SystemExit(f"not found: {path}")
-                path_mtime = path.stat().st_mtime
-                newest_input_mtime = max(newest_input_mtime, path_mtime)
                 with Image.open(path) as src:
                     image_format = src.format or path.suffix.lstrip(".").upper() or "UNKNOWN"
                     input_format_counter[image_format] += 1
                     total_input_images += 1
-                    loaded_images.append(prepare_image(src, background))
+                    prepared = prepare_image(src, background)
+                    group_segments.append((path.stem, prepared, path.stat().st_mtime))
 
-            merged = loaded_images[0] if len(loaded_images) == 1 else concatenate_images_vertically(loaded_images)
             group_name = "-".join(path.stem for path in group)
-            prepared_images.append((group_name, merged, newest_input_mtime))
+            prepared_groups.append((group_name, group_segments))
 
         format_summary = ", ".join(
             f"{fmt}={count}" for fmt, count in sorted(input_format_counter.items())
@@ -1411,40 +1596,67 @@ def main() -> None:
         )
 
         with open_workdir(args.workdir) as workdir:
-            for idx, (group_name, image, newest_input_mtime) in enumerate(prepared_images):
-                prepared_path = workdir / f"{idx:02d}_{group_name}_prepared.png"
-                quantized_path = quantized_output_path(prepared_path, workdir)
-
-                if not args.no_cache and is_cached_image_valid(
-                    quantized_path, image.size, newest_input_mtime
-                ):
-                    log_and_store(f"REUSE image: {quantized_path}", log_lines)
-                    image_data = load_quantized_image(
-                        idx, quantized_path, "reused", log_lines
+            for group_idx, (group_name, segments) in enumerate(prepared_groups):
+                segment_image_data: list[ImageData] = []
+                for segment_idx, (segment_name, image, src_mtime) in enumerate(segments):
+                    prepared_path = (
+                        workdir
+                        / f"{group_idx:02d}_{segment_idx:02d}_{group_name}_{segment_name}_prepared.png"
                     )
-                    image_data_list.append(image_data)
-                    continue
+                    quantized_path = quantized_output_path(prepared_path, workdir)
 
-                image.save(prepared_path)
-                quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
-                os.unlink(prepared_path)
+                    if not args.no_cache and is_cached_image_valid(
+                        quantized_path, image.size, src_mtime
+                    ):
+                        log_and_store(f"REUSE image: {quantized_path}", log_lines)
+                        image_data = load_quantized_image(
+                            quantized_image_counter, quantized_path, "reused", log_lines
+                        )
+                        quantized_image_counter += 1
+                        segment_image_data.append(image_data)
+                        continue
 
-                image_data = load_quantized_image(
-                    idx, quantized_path, "created", log_lines
-                )
-                image_data_list.append(image_data)
+                    image.save(prepared_path)
+                    quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
+                    os.unlink(prepared_path)
+
+                    image_data = load_quantized_image(
+                        quantized_image_counter, quantized_path, "created", log_lines
+                    )
+                    quantized_image_counter += 1
+                    segment_image_data.append(image_data)
+
+                image_data_list.append(concatenate_image_data_vertically(segment_image_data))
 
     if not image_data_list:
         raise SystemExit("No images were prepared")
 
-    rom = build(image_data_list, start_at=args.start_at, fill_byte=args.fill_byte, log_lines=log_lines)
+    if args.start_at_random and args.start_at_override:
+        raise SystemExit("--start-at-random と --start-at-override は同時に指定できません")
+
+    if args.start_at_random:
+        start_positions = [random.choice(["top", "bottom"]) for _ in image_data_list]
+    elif args.start_at_override:
+        if len(args.start_at_override) != len(image_data_list):
+            raise SystemExit("--start-at-override の数は画像数と一致させてください")
+        start_positions = args.start_at_override
+    else:
+        start_positions = [args.start_at] * len(image_data_list)
+
+    rom = build(
+        image_data_list,
+        start_positions=start_positions,
+        fill_byte=args.fill_byte,
+        title_wait_seconds=args.title_wait_seconds,
+        log_lines=log_lines,
+    )
 
     out = args.output
     if out is None:
-        if len(prepared_images) == 1:
-            name = f"{prepared_images[0][0]}_scroll[{image_data_list[0].tile_rows * 8}px][ASCII16]"
-        elif prepared_images:
-            name = f"{prepared_images[0][0]}_scroll{len(prepared_images)}imgs[ASCII16]"
+        if len(prepared_groups) == 1:
+            name = f"{prepared_groups[0][0]}_scroll[{image_data_list[0].tile_rows * 8}px][ASCII16]"
+        elif prepared_groups:
+            name = f"{prepared_groups[0][0]}_scroll{len(prepared_groups)}imgs[ASCII16]"
         else:
             name = f"debug_scroll{args.debug_image_index}[ASCII16]"
         out = Path.cwd() / f"{name}.rom"
