@@ -885,6 +885,7 @@ def build_config_scene_func(
         input_trg_addr=ADDR.INPUT_TRG,
         work_base_addr=ADDR.CONFIG_WORK_BASE,
         header_lines=[
+            "<HELP>",
             "ESC : EXIT THIS HELP",
             "SPACE: NEXT IMAGE",
             "SHIFT+SPACE: PREV IMAGE",

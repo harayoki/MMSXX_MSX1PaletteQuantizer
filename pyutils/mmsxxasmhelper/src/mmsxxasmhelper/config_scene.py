@@ -109,8 +109,18 @@ def build_screen0_config_menu(
         raise ValueError("entries が空です")
 
     entry_count = len(config_entries)
-    option_field_width = max(len(opt) for entry in config_entries for opt in entry.options)
+    option_field_width = max(
+        len(opt) + 2 for entry in config_entries for opt in entry.options
+    )
     option_field_width += option_field_padding * 2
+
+    header_height = len(header_lines or [])
+    if header_height:
+        header_bottom_row = header_row + header_height - 1
+        if top_row <= header_bottom_row:
+            top_row = header_bottom_row + 2  # 1 行空けて <SETTING> を表示
+
+    entry_row_base = top_row + 1
 
     CURRENT_ENTRY_ADDR = work_base_addr
     DRAW_OPT_JT_LABEL = unique_label("__DRAW_OPT_JT__")
@@ -157,7 +167,7 @@ def build_screen0_config_menu(
         LD.A_n8(block, entry_index)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
-        set_text_cursor_macro(block, option_col, top_row + entry_index)
+        set_text_cursor_macro(block, option_col, entry_row_base + entry_index)
 
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
@@ -174,24 +184,57 @@ def build_screen0_config_menu(
         LD.B_n8(block, option_field_width)
 
         print_loop = unique_label("__OPT_PRINT_LOOP__")
+        left_pad_loop = unique_label("__OPT_LEFT_PAD__")
+        right_pad_loop = unique_label("__OPT_RIGHT_PAD__")
         fill_loop = unique_label("__OPT_FILL_LOOP__")
         print_done = unique_label("__OPT_PRINT_DONE__")
+
+        LD.A_n8(block, ord("<"))
+        CALL(block, CHPUT)
+        DEC.B(block)
+
+        if option_field_padding:
+            LD.D_n8(block, option_field_padding)
+            block.label(left_pad_loop)
+            LD.A_n8(block, ord(" "))
+            CALL(block, CHPUT)
+            DEC.D(block)
+            DEC.B(block)
+            JR_NZ(block, left_pad_loop)
 
         block.label(print_loop)
         LD.A_mHL(block)
         INC.HL(block)
         OR.A(block)
-        JR_Z(block, fill_loop)
+        JR_Z(block, right_pad_loop)
         CALL(block, CHPUT)
         DEC.B(block)
         JR_Z(block, print_done)
         JR(block, print_loop)
 
+        block.label(right_pad_loop)
+        if option_field_padding:
+            LD.D_n8(block, option_field_padding)
+            right_pad_loop_inner = unique_label("__OPT_RIGHT_PAD_INNER__")
+            block.label(right_pad_loop_inner)
+            LD.A_n8(block, ord(" "))
+            CALL(block, CHPUT)
+            DEC.D(block)
+            DEC.B(block)
+            JR_NZ(block, right_pad_loop_inner)
+
+        LD.A_n8(block, ord(">"))
+        CALL(block, CHPUT)
+        DEC.B(block)
+
         block.label(fill_loop)
+        LD.A_B(block)
+        OR.A(block)
+        JR_Z(block, print_done)
         LD.A_n8(block, ord(" "))
         CALL(block, CHPUT)
         DEC.B(block)
-        JR_NZ(block, fill_loop)
+        JR(block, fill_loop)
 
         block.label(print_done)
         RET(block)
@@ -267,7 +310,7 @@ def build_screen0_config_menu(
         ADD.HL_HL(block)
         ADD.HL_HL(block)
         ADD.HL_HL(block)
-        LD.DE_n16(block, (top_row * 8) + 6)
+        LD.DE_n16(block, (entry_row_base * 8) + 6)
         ADD.HL_DE(block)
         LD.A_L(block)
         LD.D_A(block)
@@ -412,8 +455,10 @@ def build_screen0_config_menu(
         for idx, line in enumerate(header_lines or []):
             _emit_write_text(block, header_col, header_row + idx, line)
 
+        _emit_write_text(block, label_col, top_row, "<SETTING>")
+
         for idx, entry in enumerate(config_entries):
-            _emit_write_text(block, label_col, top_row + idx, f"{entry.name}:")
+            _emit_write_text(block, label_col, entry_row_base + idx, f"{entry.name}:")
             draw_option_funcs[idx].call(block)
 
         LD.A_n8(block, 0)
