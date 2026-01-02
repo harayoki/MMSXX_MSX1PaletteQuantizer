@@ -197,6 +197,9 @@ class ADDR:
     CONFIG_AUTO_SPEED = madd(
         "CONFIG_AUTO_SPEED", 1, description="自動切り替え速度 (0-7)"
     )
+    CONFIG_BEEP_ENABLED = madd(
+        "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
+    )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
     )
@@ -876,6 +879,11 @@ def build_config_scene_func(
             ["0", "1", "2", "3", "4", "5", "6", "7"],
             ADDR.CONFIG_AUTO_SPEED,
         ),
+        Screen0ConfigEntry(
+            "BEEP",
+            ["ON", "OFF"],
+            ADDR.CONFIG_BEEP_ENABLED,
+        ),
     ]
 
     init_func, loop_func, table_func = build_screen0_config_menu(
@@ -926,6 +934,7 @@ def build_boot_bank(
     header_bytes: Sequence[int],
     fill_byte: int,
     title_wait_seconds: int,
+    beep_enabled_default: bool,
     log_lines: List[str] | None = None,
 ) -> bytes:
     if not image_entries:
@@ -977,6 +986,11 @@ def build_boot_bank(
     LD.mn16_A(b, ADDR.CONFIG_AUTO_SPEED)
     LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
     LD.mn16_A(b, ADDR.CONFIG_WORK_BASE)
+    if beep_enabled_default:
+        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
+    else:
+        LD.A_n8(b, 1)
+        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
 
     TITLE_SCREEN_FUNC.call(b)
 
@@ -1180,8 +1194,13 @@ def build_boot_bank(
 
     b.label("__GO_UPDATE__")
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+    LD.A_mn16(b, ADDR.CONFIG_BEEP_ENABLED)
+    OR.A(b)
+    JR_NZ(b, "__SKIP_BEEP__")
     SIMPLE_BEEP_FUNC.call(b)
-    # JR(b, "MAIN_LOOP")  #相対限界超える
+    JP(b, "MAIN_LOOP")
+
+    b.label("__SKIP_BEEP__")
     JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
     define_created_funcs(b, group=SCROLL_VIEWER_FUNC_GROUP)
@@ -1326,6 +1345,7 @@ def build(
     start_positions: Sequence[str] | None = None,
     fill_byte: int = 0xFF,
     title_wait_seconds: int = 3,
+    beep_enabled_default: bool = True,
     log_lines: list[str] | None = None,
 ) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
@@ -1336,6 +1356,10 @@ def build(
     title_wait_seconds = max(0, min(title_wait_seconds, 255))
 
     log_and_store(f"Title wait seconds: {title_wait_seconds}", log_lines)
+    log_and_store(
+        f"BEEP default: {'ON' if beep_enabled_default else 'OFF'}",
+        log_lines,
+    )
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
@@ -1420,7 +1444,12 @@ def build(
 
     banks = [
         build_boot_bank(
-            image_entries, header_bytes, fill_byte, title_wait_seconds, log_lines
+            image_entries,
+            header_bytes,
+            fill_byte,
+            title_wait_seconds,
+            beep_enabled_default,
+            log_lines,
         )
     ]
     banks.extend(outi_funcs_banks)
@@ -1497,6 +1526,12 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="ROM情報テキストを出力するかどうか (default: ON)",
+    )
+    parser.add_argument(
+        "--beep",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="起動時のBEEP設定 (default: ON)",
     )
     parser.add_argument(
         "--start-at",
@@ -1702,6 +1737,7 @@ def main() -> None:
         start_positions=start_positions,
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
+        beep_enabled_default=args.beep,
         log_lines=log_lines,
     )
 
