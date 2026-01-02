@@ -39,10 +39,13 @@ from mmsxxasmhelper.core import *
 from mmsxxasmhelper.utils import *
 
 from .msxutils import (
+    CHPUT,
     INITXT,
     INPUT_KEY_BIT,
     build_set_vram_write_func,
     set_screen_colors_macro,
+    set_text_cursor_macro,
+    write_text_with_cursor_macro,
 )
 
 __all__ = ["Screen0ConfigEntry", "build_screen0_config_menu"]
@@ -139,13 +142,8 @@ def build_screen0_config_menu(
 
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
 
-    def _emit_write_text(block: Block, addr: int, data: Sequence[int]) -> None:
-        LD.HL_n16(block, addr)
-        LD.C_n8(block, 0x98)
-        SET_VRAM_WRITE_FUNC.call(block)
-        for ch in data:
-            LD.A_n8(block, ch & 0x7F)
-            OUT_C.A(block)
+    def _emit_write_text(block: Block, col: int, row: int, text: str) -> None:
+        write_text_with_cursor_macro(block, text, col, row)
 
     def _emit_draw_option(block: Block, entry: Screen0ConfigEntry, entry_index: int) -> None:
         LD.A_n8(block, ord(" "))
@@ -159,7 +157,8 @@ def build_screen0_config_menu(
         LD.A_n8(block, entry_index)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
-        option_addr = screen0_name_base + (top_row + entry_index) * 40 + option_col
+        set_text_cursor_macro(block, option_col, top_row + entry_index)
+
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
         LD.L_A(block)
@@ -172,27 +171,29 @@ def build_screen0_config_menu(
         LD.D_mHL(block)
         PUSH.DE(block)
         POP.HL(block)
-        LD.DE_n16(block, option_addr)
         LD.B_n8(block, option_field_width)
 
         print_loop = unique_label("__OPT_PRINT_LOOP__")
         fill_loop = unique_label("__OPT_FILL_LOOP__")
+        print_done = unique_label("__OPT_PRINT_DONE__")
 
         block.label(print_loop)
         LD.A_mHL(block)
         INC.HL(block)
         OR.A(block)
         JR_Z(block, fill_loop)
-        OUT_C.A(block)
+        CALL(block, CHPUT)
         DEC.B(block)
-        JR_NZ(block, print_loop)
-        RET(block)
+        JR_Z(block, print_done)
+        JR(block, print_loop)
 
         block.label(fill_loop)
         LD.A_n8(block, ord(" "))
-        OUT_C.A(block)
+        CALL(block, CHPUT)
         DEC.B(block)
         JR_NZ(block, fill_loop)
+
+        block.label(print_done)
         RET(block)
 
     def _emit_option_pointer_table(
@@ -409,15 +410,10 @@ def build_screen0_config_menu(
             OUT_C.A(block)
 
         for idx, line in enumerate(header_lines or []):
-            text_bytes = [ord(ch) & 0x7F for ch in line]
-            line_addr = screen0_name_base + (header_row + idx) * 40 + header_col
-            _emit_write_text(block, line_addr, text_bytes)
+            _emit_write_text(block, header_col, header_row + idx, line)
 
         for idx, entry in enumerate(config_entries):
-            label_bytes = [ord(ch) & 0x7F for ch in entry.name]
-            label_bytes.append(ord(":"))
-            label_addr = screen0_name_base + (top_row + idx) * 40 + label_col
-            _emit_write_text(block, label_addr, label_bytes)
+            _emit_write_text(block, label_col, top_row + idx, f"{entry.name}:")
             draw_option_funcs[idx].call(block)
 
         LD.A_n8(block, 0)
