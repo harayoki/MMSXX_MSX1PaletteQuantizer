@@ -176,14 +176,6 @@ def build_screen0_config_menu(
     def _emit_draw_option(
         block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
     ) -> None:
-        LD.A_n8(block, ord(" "))
-        LD.HL_n16(block, sprite_attribute_addr)
-        SET_VRAM_WRITE_FUNC.call(block)
-        LD.C_n8(block, 0x98)
-        for _ in range(8):
-            OUT_C.A(block)
-            OUT_C.A(block)
-
         LD.A_n8(block, entry_index)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
