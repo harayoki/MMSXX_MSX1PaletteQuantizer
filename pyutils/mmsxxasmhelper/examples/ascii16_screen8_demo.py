@@ -95,6 +95,10 @@ def build_boot_bank() -> bytes:
     # ENASLOT を呼び出してバンクアクセスを有効化
     enaslt_macro(b)
 
+    # コードを配置している page1 を確実に bank0 に固定しておく
+    LD.A_n8(b, 0)
+    LD.mn16_A(b, ASCII16_PAGE1_REG)
+
     # SCREEN 8 初期化
     LD.A_n8(b, 8)
     CALL(b, CHGMOD)
