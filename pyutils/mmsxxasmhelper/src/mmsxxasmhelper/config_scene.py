@@ -67,7 +67,7 @@ def build_screen0_config_menu(
     input_hold_addr: int = 0xC100,
     input_trg_addr: int = 0xC101,
     work_base_addr: int = 0xC110,
-    screen0_name_base: int = 0x0000,
+    screen0_name_base: int = 0x0400,
     title_lines: Sequence[str] | None = None,
     title_row: int = 0,
     title_centered: bool = True,
@@ -247,7 +247,7 @@ def build_screen0_config_menu(
         "DRAW_OPTION_FOR_CURRENT", draw_option_dispatch, group=group
     )
 
-    def update_triangle_sprites(block: Block) -> None:
+    def update_triangles(block: Block) -> None:
         # 現在選択中の項目とそのオプション数
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
@@ -358,7 +358,7 @@ def build_screen0_config_menu(
         RET(block)
 
     UPDATE_TRIANGLE_FUNC = Func(
-        "UPDATE_TRIANGLE_SPRITES", update_triangle_sprites, group=group
+        "UPDATE_TRIANGLES", update_triangles, group=group
     )
 
     def adjust_option(block: Block, delta: int) -> None:
@@ -413,20 +413,6 @@ def build_screen0_config_menu(
     def init_config_screen(block: Block) -> None:
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
-
-        # ネームテーブル（$0000〜$07FF）をスペース（0x20）で埋める
-        # （文字描画前に必ず初期化しておく）
-        LD.HL_n16(block, screen0_name_base)
-        SET_VRAM_WRITE_FUNC.call(block)
-        LD.BC_n16(block, 2048)  # ネームテーブル全域
-        LD.A_n8(block, 0x20)  # スペース
-        fill_loop = unique_label("__FILL_SCREEN__")
-        block.label(fill_loop)
-        OUT(block, 0x98)
-        DEC.BC(block)
-        LD.A_B(block)
-        OR.C(block)
-        JR_NZ(block, fill_loop)
 
         if title_lines:
             for idx, line in enumerate(title_lines):
