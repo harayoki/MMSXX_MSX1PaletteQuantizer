@@ -213,6 +213,7 @@ def build_screen0_config_menu(
 
         POP.HL(block)  # 文字列ポインタを復帰
         LD.B_n8(block, option_width)
+        LD.C_n8(block, 0x98)  # ★ Cレジスタにポート番号を固定しておく
 
         write_loop = unique_label("__OPT_WRITE_LOOP__")
         padding_loop = unique_label("__OPT_PADDING_LOOP__")
@@ -232,7 +233,7 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         OR.A(block)
         JR_Z(block, padding_loop)
-        OUT(block, 0x98)
+        OUT_C.A(block)
         INC.HL(block)
         DJNZ(block, write_loop)
         RET(block)
