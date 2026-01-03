@@ -13,10 +13,14 @@ from __future__ import annotations
 import importlib
 import sys
 import types
+from pathlib import Path
 
 
 def _import_create_scroll_megarom(monkeypatch):
     """Import the ROM builder with minimal stubs for optional dependencies."""
+
+    # Ensure the repository root is importable when tests run from the tests directory.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
 
     # The assembler helper lives in the repository; make it importable.
     monkeypatch.syspath_prepend("pyutils/mmsxxasmhelper/src")
