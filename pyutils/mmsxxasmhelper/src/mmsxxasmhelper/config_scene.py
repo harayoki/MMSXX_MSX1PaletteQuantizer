@@ -301,7 +301,7 @@ def build_screen0_config_menu(
         SET_VRAM_WRITE_FUNC.call(block)
         LD.C_n8(block, 0x98)
 
-        LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
+        # LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         LEFT_END = unique_label("__LEFT_END__")
 
@@ -311,7 +311,7 @@ def build_screen0_config_menu(
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_NZ(block, LEFT_HIDDEN)
-        block.label(LEFT_VISIBLE)
+        # block.label(LEFT_VISIBLE)
         LD.A_n8(block, ord("<"))
         OUT_C.A(block)
         JR(block, LEFT_END)
@@ -333,7 +333,7 @@ def build_screen0_config_menu(
         SET_VRAM_WRITE_FUNC.call(block)
         LD.C_n8(block, 0x98)
 
-        RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
+        # RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
         RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
         RIGHT_END = unique_label("__RIGHT_END__")
 
@@ -345,7 +345,7 @@ def build_screen0_config_menu(
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_Z(block, RIGHT_HIDDEN)
-        block.label(RIGHT_VISIBLE)
+        # block.label(RIGHT_VISIBLE)
         LD.A_n8(block, ord(">"))
         OUT_C.A(block)
         JR(block, RIGHT_END)
