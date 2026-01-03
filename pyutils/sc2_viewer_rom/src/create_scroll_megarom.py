@@ -203,7 +203,7 @@ class ADDR:
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
     )
-    CONFIG_WORK_BASE = madd("CONFIG_WORK_BASE", 1, description="コンフィグ用ワークベース")
+    CONFIG_WORK_BASE = madd("CONFIG_WORK_BASE", 2, description="コンフィグ用ワークベース")
 
 # mem_addr_allocator.debug_print()
 
