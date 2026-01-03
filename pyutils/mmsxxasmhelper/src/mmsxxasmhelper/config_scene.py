@@ -190,9 +190,6 @@ def build_screen0_config_menu(
     def _emit_draw_option(
         block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
     ) -> None:
-        LD.A_n8(block, entry_index)
-        LD.mn16_A(block, CURRENT_ENTRY_ADDR)
-
         row = entry_row_base + entry_index
 
         LD.HL_n16(block, entry.store_addr)
@@ -270,7 +267,6 @@ def build_screen0_config_menu(
         )
 
     def draw_option_dispatch(block: Block) -> None:
-        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
         LD.H_n8(block, 0)
         ADD.HL_HL(block)
@@ -410,6 +406,8 @@ def build_screen0_config_menu(
     def adjust_option(block: Block, delta: int) -> None:
         adjust_end = unique_label("__ADJUST_END__")
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.C_A(block)
+
         LD.E_A(block)
         LD.D_n8(block, 0)
 
@@ -422,7 +420,7 @@ def build_screen0_config_menu(
         INC.HL(block)
         LD.D_mHL(block)
 
-        LD.A_E(block)
+        LD.A_C(block)
         LD.L_A(block)
         LD.H_n8(block, 0)
         LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)
@@ -440,7 +438,7 @@ def build_screen0_config_menu(
             JR_Z(block, adjust_end)
             DEC.A(block)
         LD.mDE_A(block)
-        LD.A_E(block)
+        LD.A_C(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
