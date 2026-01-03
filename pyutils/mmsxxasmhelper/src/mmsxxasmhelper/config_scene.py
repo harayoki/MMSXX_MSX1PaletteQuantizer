@@ -194,9 +194,6 @@ def build_screen0_config_menu(
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
         row = entry_row_base + entry_index
-        vram_addr = screen0_name_base + (row * 40) + option_col
-        LD.HL_n16(block, vram_addr)
-        SET_VRAM_WRITE_FUNC.call(block)
 
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
@@ -211,6 +208,14 @@ def build_screen0_config_menu(
         PUSH.DE(block)
         POP.HL(block)
         LD.B_n8(block, option_width)
+
+        PUSH.HL(block)
+        vram_addr = screen0_name_base + (row * 40) + option_col
+        LD.HL_n16(block, vram_addr)
+        PUSH.BC(block)
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.BC(block)
+        POP.HL(block)
 
         write_loop = unique_label("__OPT_WRITE_LOOP__")
         padding_loop = unique_label("__OPT_PADDING_LOOP__")
@@ -329,7 +334,9 @@ def build_screen0_config_menu(
         LD.L_C(block)
 
         LD.HL_n16(block, sprite_attribute_addr)
+        PUSH.BC(block)
         SET_VRAM_WRITE_FUNC.call(block)
+        POP.BC(block)
         LD.C_n8(block, 0x98)
 
         LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
