@@ -68,7 +68,7 @@ def build_screen0_config_menu(
     input_hold_addr: int = 0xC100,
     input_trg_addr: int = 0xC101,
     work_base_addr: int = 0xC110,
-    screen0_name_base: int = 0x1800,
+    screen0_name_base: int = 0x0000,
     sprite_pattern_addr: int = 0x3800,
     sprite_attribute_addr: int | None = None,
     title_lines: Sequence[str] | None = None,
