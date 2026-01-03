@@ -146,7 +146,7 @@ def build_screen0_config_menu(
         if top_row <= title_bottom_row:
             top_row = title_bottom_row + 2
 
-    entry_row_base = top_row + 2
+    entry_row_base = top_row + 3
     if entry_row_base + entry_count > 24:
         raise ValueError(
             "表示行が SCREEN 0 の 24 行を超えています。top_row や項目数を調整してください"
@@ -500,6 +500,7 @@ def build_screen0_config_menu(
             _emit_write_text(block, header_col, header_row + idx, line)
 
         _emit_write_text(block, label_col, top_row, "<SETTING>")
+        _emit_write_text(block, label_col, top_row + 1, "Up/Down: select  Left/Right: change")
 
         for idx, entry in enumerate(config_entries):
             _emit_write_text(block, label_col, entry_row_base + idx, f"{entry.name}:")
