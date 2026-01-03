@@ -39,7 +39,6 @@ from mmsxxasmhelper.core import *
 from mmsxxasmhelper.utils import *
 
 from .msxutils import (
-    CHPUT,
     INITXT,
     INPUT_KEY_BIT,
     build_set_vram_write_func,
@@ -69,8 +68,6 @@ def build_screen0_config_menu(
     input_trg_addr: int = 0xC101,
     work_base_addr: int = 0xC110,
     screen0_name_base: int = 0x0000,
-    sprite_pattern_addr: int = 0x3800,
-    sprite_attribute_addr: int | None = None,
     title_lines: Sequence[str] | None = None,
     title_row: int = 0,
     title_centered: bool = True,
@@ -81,7 +78,6 @@ def build_screen0_config_menu(
     label_col: int = 2,
     option_col: int = 12,
     option_field_padding: int = 1,
-    triangle_color: int = 15,
 ) -> tuple[Func, Func, Func]:
     """辞書定義から SCREEN 0 のコンフィグ画面を生成する。"""
 
@@ -110,20 +106,6 @@ def build_screen0_config_menu(
     config_entries = _normalize_entries(entries)
     if not config_entries:
         raise ValueError("entries が空です")
-
-    name_table_bytes = 40 * 24
-    name_table_end = screen0_name_base + name_table_bytes
-    if sprite_attribute_addr is None:
-        sprite_attribute_addr = (name_table_end + 0x7F) & ~0x7F  # 次の 0x80 境界にアライン
-    attribute_table_size = 0x80  # 32 sprites × 4 bytes
-    overlaps_name_table = not (
-        sprite_attribute_addr + attribute_table_size <= screen0_name_base
-        or sprite_attribute_addr >= name_table_end
-    )
-    if overlaps_name_table:
-        raise ValueError(
-            "sprite_attribute_addr が SCREEN 0 のネームテーブル領域と重なっています"
-        )
 
     entry_count = len(config_entries)
     option_field_widths = [
@@ -158,29 +140,9 @@ def build_screen0_config_menu(
     ENTRY_VALUE_ADDR_LABEL = unique_label("__ENTRY_VALUE_ADDR__")
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
     ENTRY_OPTION_WIDTH_LABEL = unique_label("__ENTRY_OPTION_WIDTH__")
+    ENTRY_ROW_ADDR_LABEL = unique_label("__ENTRY_ROW_ADDR__")
     OPT_PTR_TABLE_LABEL = unique_label("__OPT_PTR_TABLE__")
     OPTION_POINTER_LABELS = [unique_label("__OPT_PTR__") for _ in config_entries]
-
-    TRIANGLE_PATTERN_LEFT = [
-        0b00011000,
-        0b00011000,
-        0b00011000,
-        0b00011000,
-        0b00011000,
-        0b00011000,
-        0b00011000,
-        0b00011000,
-    ]
-    TRIANGLE_PATTERN_RIGHT = [
-        0b00011000,
-        0b00110000,
-        0b01100000,
-        0b11000000,
-        0b01100000,
-        0b00110000,
-        0b00011000,
-        0b00001100,
-    ]
 
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
 
@@ -284,14 +246,16 @@ def build_screen0_config_menu(
     )
 
     def update_triangle_sprites(block: Block) -> None:
+        # 現在選択中の項目とそのオプション数
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
         LD.H_n8(block, 0)
-
+        ADD.HL_HL(block)
         LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)
         ADD.HL_DE(block)
         LD.B_mHL(block)
 
+        # 現在のオプション値
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -306,17 +270,7 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         LD.C_A(block)
 
-        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
-        LD.L_A(block)
-        LD.H_n8(block, 0)
-        ADD.HL_HL(block)
-        ADD.HL_HL(block)
-        ADD.HL_HL(block)
-        LD.DE_n16(block, (entry_row_base * 8) + 6)
-        ADD.HL_DE(block)
-        LD.A_L(block)
-        LD.D_A(block)
-
+        # 項目のオプション表示幅
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -325,47 +279,62 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         LD.E_A(block)
 
-        LD.L_C(block)
+        # 行アドレスを取得
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, ENTRY_ROW_ADDR_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
 
-        LD.HL_n16(block, sprite_attribute_addr)
-        PUSH.BC(block)
+        # 左側インジケータの描画
+        PUSH.DE(block)
+        POP.HL(block)
+        PUSH.HL(block)
+        LD.BC_n16(block, option_col - 1)
+        ADD.HL_BC(block)
         SET_VRAM_WRITE_FUNC.call(block)
-        POP.BC(block)
         LD.C_n8(block, 0x98)
 
         LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
-        RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
-        RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
+        LEFT_END = unique_label("__LEFT_END__")
 
-        LD.A_L(block)
-        block.label(LEFT_VISIBLE)
+        LD.A_C(block)
         OR.A(block)
         JR_Z(block, LEFT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_NZ(block, LEFT_HIDDEN)
-        LD.A_D(block)
+        block.label(LEFT_VISIBLE)
+        LD.A_n8(block, ord("<"))
         OUT_C.A(block)
-        LD.A_n8(block, (option_col - 1) * 8)
-        OUT_C.A(block)
-        LD.A_n8(block, 0)
-        OUT_C.A(block)
-        LD.A_n8(block, triangle_color & 0x0F)
-        OUT_C.A(block)
-        JR(block, RIGHT_VISIBLE)
+        JR(block, LEFT_END)
 
         block.label(LEFT_HIDDEN)
-        LD.A_n8(block, 0xD0)
-        OUT_C.A(block)
-        LD.A_n8(block, 0)
-        OUT_C.A(block)
-        LD.A_n8(block, 0)
-        OUT_C.A(block)
-        LD.A_n8(block, 0)
+        LD.A_n8(block, 0x20)
         OUT_C.A(block)
 
-        block.label(RIGHT_VISIBLE)
+        block.label(LEFT_END)
+
+        # 右側インジケータの描画
+        POP.HL(block)
+        LD.BC_n16(block, option_col)
+        ADD.HL_BC(block)
+        LD.A_E(block)
+        LD.B_n8(block, 0)
+        LD.C_A(block)
+        ADD.HL_BC(block)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.C_n8(block, 0x98)
+
+        RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
+        RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
+        RIGHT_END = unique_label("__RIGHT_END__")
+
         LD.A_B(block)
         DEC.A(block)
         CP.C(block)
@@ -374,29 +343,16 @@ def build_screen0_config_menu(
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_Z(block, RIGHT_HIDDEN)
-        LD.A_D(block)
+        block.label(RIGHT_VISIBLE)
+        LD.A_n8(block, ord(">"))
         OUT_C.A(block)
-        LD.A_E(block)
-        ADD.A_n8(block, option_col - 1)
-        ADD.A_A(block)
-        ADD.A_A(block)
-        ADD.A_A(block)
-        OUT_C.A(block)
-        LD.A_n8(block, 1)
-        OUT_C.A(block)
-        LD.A_n8(block, triangle_color & 0x0F)
-        OUT_C.A(block)
-        RET(block)
+        JR(block, RIGHT_END)
 
         block.label(RIGHT_HIDDEN)
-        LD.A_n8(block, 0xD0)
+        LD.A_n8(block, 0x20)
         OUT_C.A(block)
-        LD.A_n8(block, 0)
-        OUT_C.A(block)
-        LD.A_n8(block, 0)
-        OUT_C.A(block)
-        LD.A_n8(block, 0)
-        OUT_C.A(block)
+
+        block.label(RIGHT_END)
         RET(block)
 
     UPDATE_TRIANGLE_FUNC = Func(
@@ -456,12 +412,6 @@ def build_screen0_config_menu(
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
 
-        # スプライトのテーブルアドレスを明示的に設定する
-        OUT_A(block, 0x99, (sprite_attribute_addr >> 7) & 0xFF)  # R#5
-        OUT_A(block, 0x99, 0x80 + 5)
-        OUT_A(block, 0x99, (sprite_pattern_addr >> 11) & 0xFF)  # R#6
-        OUT_A(block, 0x99, 0x80 + 6)
-
         # ネームテーブル（$1800〜$1BFF）をスペース（0x20）で埋める
         # （文字描画前に必ず初期化しておく）
         LD.HL_n16(block, screen0_name_base)
@@ -475,22 +425,6 @@ def build_screen0_config_menu(
         LD.A_B(block)
         OR.C(block)
         JR_NZ(block, fill_loop)
-
-        LD.HL_n16(block, sprite_pattern_addr)
-        SET_VRAM_WRITE_FUNC.call(block)
-        LD.C_n8(block, 0x98)
-        for b in TRIANGLE_PATTERN_LEFT + TRIANGLE_PATTERN_RIGHT:
-            LD.A_n8(block, b)
-            OUT_C.A(block)
-
-        LD.HL_n16(block, sprite_attribute_addr)
-        SET_VRAM_WRITE_FUNC.call(block)
-        LD.C_n8(block, 0x98)
-        for _ in range(32):
-            LD.A_n8(block, 0xD0)
-            OUT_C.A(block)
-            LD.A_n8(block, 0)
-            OUT_C.A(block)
 
         if title_lines:
             for idx, line in enumerate(title_lines):
@@ -590,6 +524,10 @@ def build_screen0_config_menu(
         block.label(ENTRY_OPTION_WIDTH_LABEL)
         for width in option_field_widths:
             DB(block, width & 0xFF)
+        block.label(ENTRY_ROW_ADDR_LABEL)
+        for idx in range(entry_count):
+            row_addr = screen0_name_base + ((entry_row_base + idx) * 40)
+            DW(block, row_addr & 0xFFFF)
         block.label(OPT_PTR_TABLE_LABEL)
         for idx, entry in enumerate(config_entries):
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
