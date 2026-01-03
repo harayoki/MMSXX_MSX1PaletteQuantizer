@@ -412,11 +412,11 @@ def build_screen0_config_menu(
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
 
-        # ネームテーブル（$1800〜$1BFF）をスペース（0x20）で埋める
+        # ネームテーブル（$0000〜$07FF）をスペース（0x20）で埋める
         # （文字描画前に必ず初期化しておく）
         LD.HL_n16(block, screen0_name_base)
         SET_VRAM_WRITE_FUNC.call(block)
-        LD.BC_n16(block, 40 * 24)  # SCREEN 0 全体
+        LD.BC_n16(block, 2048)  # ネームテーブル全域
         LD.A_n8(block, 0x20)  # スペース
         fill_loop = unique_label("__FILL_SCREEN__")
         block.label(fill_loop)
