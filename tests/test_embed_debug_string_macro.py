@@ -40,5 +40,5 @@ def test_embed_debug_string_macro_reports_locations(capsys):
     output = capsys.readouterr().out.splitlines()
 
     assert output[0] == "Embedded debug strings:"
-    assert "4004 (+0004): HERE" in output[1]
-    assert "400D (+000D): THERE" in output[2]
+    assert "4004 ~ 4007 (+0004 ~ +0007): HERE" in output[1]
+    assert "400D ~ 4011 (+000D ~ +0011): THERE" in output[2]

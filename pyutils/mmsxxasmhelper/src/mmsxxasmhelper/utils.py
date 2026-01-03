@@ -206,16 +206,16 @@ def embed_debug_string_macro(b: Block, text: str, *, encoding: str = "ascii") ->
     NOP(b)
     b.label(end_label)
 
-    _register_debug_string(b, text, string_pos)
+    _register_debug_string(b, text, string_pos, len(string_bytes))
 
 
-def _register_debug_string(b: Block, text: str, offset: int) -> None:
+def _register_debug_string(b: Block, text: str, offset: int, length: int) -> None:
     entries = getattr(b, "_embedded_debug_strings", None)
     if entries is None:
         entries = []
         setattr(b, "_embedded_debug_strings", entries)
 
-    entries.append((text, offset))
+    entries.append((text, offset, length))
 
     if getattr(b, "_embedded_debug_strings_registered", False):
         return
@@ -229,9 +229,14 @@ def _register_debug_string(b: Block, text: str, offset: int) -> None:
             return
 
         print("Embedded debug strings:")
-        for string, relative_offset in embedded:
-            absolute = origin + relative_offset
-            print(f"  {absolute:04X} (+{relative_offset:04X}): {string}")
+        for string, relative_offset, length in embedded:
+            relative_end = relative_offset + max(length - 1, 0)
+            absolute_start = origin + relative_offset
+            absolute_end = origin + relative_end
+            print(
+                f"  {absolute_start:04X} ~ {absolute_end:04X} "
+                f"(+{relative_offset:04X} ~ +{relative_end:04X}): {string}"
+            )
 
     b._finalize_callbacks.append(_print_debug_strings)
     setattr(b, "_embedded_debug_strings_registered", True)
