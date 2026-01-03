@@ -199,9 +199,11 @@ def embed_debug_string_macro(b: Block, text: str, *, encoding: str = "ascii") ->
 
     end_label = unique_label("debugstr_end")
     JP(b, end_label)
+    NOP(b)
     string_pos = b.pc
     string_bytes = str_bytes(text, encoding)
     DB(b, *string_bytes)
+    NOP(b)
     b.label(end_label)
 
     _register_debug_string(b, text, string_pos)

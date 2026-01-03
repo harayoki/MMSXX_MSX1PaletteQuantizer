@@ -18,13 +18,14 @@ def test_embed_debug_string_macro_skips_embedded_bytes():
 
     # JP should skip past the embedded string
     jump_target = int.from_bytes(rom[1:3], byteorder="little")
-    assert jump_target == 3 + len("HERE")
+    assert jump_target == 3 + 1 + len("HERE") + 1
 
     # The string bytes should be present immediately after the JP
-    assert rom[3:3 + len("HERE")] == b"HERE"
+    assert rom[4:4 + len("HERE")] == b"HERE"
 
     # Execution resumes at the instruction after the embedded string
-    assert rom[jump_target] == 0x00  # NOP opcode
+    assert rom[3] == 0x00  # NOP opcode before the string
+    assert rom[jump_target] == 0x00  # NOP opcode after the string
 
 
 def test_embed_debug_string_macro_reports_locations(capsys):
@@ -39,5 +40,5 @@ def test_embed_debug_string_macro_reports_locations(capsys):
     output = capsys.readouterr().out.splitlines()
 
     assert output[0] == "Embedded debug strings:"
-    assert "4003 (+0003): HERE" in output[1]
-    assert "400A (+000A): THERE" in output[2]
+    assert "4004 (+0004): HERE" in output[1]
+    assert "400D (+000D): THERE" in output[2]
