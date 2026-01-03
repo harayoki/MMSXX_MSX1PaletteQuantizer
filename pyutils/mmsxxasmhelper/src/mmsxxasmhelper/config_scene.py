@@ -193,7 +193,10 @@ def build_screen0_config_menu(
         LD.A_n8(block, entry_index)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
-        set_text_cursor_macro(block, option_col, entry_row_base + entry_index)
+        row = entry_row_base + entry_index
+        vram_addr = screen0_name_base + (row * 40) + option_col
+        LD.HL_n16(block, vram_addr)
+        SET_VRAM_WRITE_FUNC.call(block)
 
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
@@ -209,52 +212,34 @@ def build_screen0_config_menu(
         POP.HL(block)
         LD.B_n8(block, option_width)
 
-        print_loop = unique_label("__OPT_PRINT_LOOP__")
-        left_pad_loop = unique_label("__OPT_LEFT_PAD__")
-        right_pad_loop = unique_label("__OPT_RIGHT_PAD__")
-        fill_loop = unique_label("__OPT_FILL_LOOP__")
-        print_done = unique_label("__OPT_PRINT_DONE__")
+        write_loop = unique_label("__OPT_WRITE_LOOP__")
+        padding_loop = unique_label("__OPT_PADDING_LOOP__")
+        padding_exec_loop = unique_label("__OPT_PADDING_EXEC__")
+        left_padding_loop = unique_label("__OPT_LEFT_PADDING__")
 
         if option_field_padding:
             LD.D_n8(block, option_field_padding)
-            block.label(left_pad_loop)
+            block.label(left_padding_loop)
             LD.A_n8(block, ord(" "))
-            CALL(block, CHPUT)
+            OUT(block, 0x98)
             DEC.D(block)
             DEC.B(block)
-            JR_NZ(block, left_pad_loop)
+            JR_NZ(block, left_padding_loop)
 
-        block.label(print_loop)
+        block.label(write_loop)
         LD.A_mHL(block)
+        OR.A(block)
+        JR_Z(block, padding_loop)
+        OUT(block, 0x98)
         INC.HL(block)
-        OR.A(block)
-        JR_Z(block, right_pad_loop)
-        CALL(block, CHPUT)
-        DEC.B(block)
-        JR_Z(block, print_done)
-        JR(block, print_loop)
+        DJNZ(block, write_loop)
+        RET(block)
 
-        block.label(right_pad_loop)
-        if option_field_padding:
-            LD.D_n8(block, option_field_padding)
-            right_pad_loop_inner = unique_label("__OPT_RIGHT_PAD_INNER__")
-            block.label(right_pad_loop_inner)
-            LD.A_n8(block, ord(" "))
-            CALL(block, CHPUT)
-            DEC.D(block)
-            DEC.B(block)
-            JR_NZ(block, right_pad_loop_inner)
-
-        block.label(fill_loop)
-        LD.A_B(block)
-        OR.A(block)
-        JR_Z(block, print_done)
-        LD.A_n8(block, ord(" "))
-        CALL(block, CHPUT)
-        DEC.B(block)
-        JR(block, fill_loop)
-
-        block.label(print_done)
+        block.label(padding_loop)
+        LD.A_n8(block, 0x20)
+        block.label(padding_exec_loop)
+        OUT(block, 0x98)
+        DJNZ(block, padding_exec_loop)
         RET(block)
 
     def _emit_option_pointer_table(
