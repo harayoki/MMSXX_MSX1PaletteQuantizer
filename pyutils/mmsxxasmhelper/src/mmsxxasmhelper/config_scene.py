@@ -205,17 +205,14 @@ def build_screen0_config_menu(
         LD.E_mHL(block)
         INC.HL(block)
         LD.D_mHL(block)
-        PUSH.DE(block)
-        POP.HL(block)
-        LD.B_n8(block, option_width)
+        PUSH.DE(block)  # 文字列ポインタを退避
 
-        PUSH.HL(block)
         vram_addr = screen0_name_base + (row * 40) + option_col
         LD.HL_n16(block, vram_addr)
-        PUSH.BC(block)
         SET_VRAM_WRITE_FUNC.call(block)
-        POP.BC(block)
-        POP.HL(block)
+
+        POP.HL(block)  # 文字列ポインタを復帰
+        LD.B_n8(block, option_width)
 
         write_loop = unique_label("__OPT_WRITE_LOOP__")
         padding_loop = unique_label("__OPT_PADDING_LOOP__")
@@ -433,6 +430,7 @@ def build_screen0_config_menu(
 
         LD.A_mDE(block)
         if delta > 0:
+            DEC.B(block)  # 最大インデックス
             CP.B(block)
             JR_NC(block, adjust_end)
             INC.A(block)
@@ -441,6 +439,8 @@ def build_screen0_config_menu(
             JR_Z(block, adjust_end)
             DEC.A(block)
         LD.mDE_A(block)
+        LD.A_E(block)
+        LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(adjust_end)
