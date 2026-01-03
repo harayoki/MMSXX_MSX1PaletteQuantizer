@@ -67,7 +67,7 @@ def build_screen0_config_menu(
     input_hold_addr: int = 0xC100,
     input_trg_addr: int = 0xC101,
     work_base_addr: int = 0xC110,
-    screen0_name_base: int = 0x0400,
+    screen0_name_base: int = 0x0000,  # 0 で正しい 替えるとカーソルが消える
     title_lines: Sequence[str] | None = None,
     title_row: int = 0,
     title_centered: bool = True,
