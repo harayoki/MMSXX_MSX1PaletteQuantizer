@@ -17,6 +17,7 @@ __all__ = [
     "set_debug",
     "debug_trap",
     "debug_print_labels",
+    "embed_debug_string_macro",
     "print_bytes",
     "MemAddrAllocator",
     "with_register_preserve",
@@ -182,6 +183,24 @@ def debug_trap(b: Block) -> None:
     if not DEBUG:
         return
     HALT(b)
+
+
+#
+# デバッグ用に任意の文字列を埋め込む
+#
+
+def embed_debug_string_macro(b: Block, text: str, *, encoding: str = "ascii") -> None:
+    """任意の文字列をコードに埋め込むデバッグマクロ。
+
+    文字列の直前に文字列終端へのジャンプを挿入するため、
+    任意の位置に配置しても実行フローへ影響を与えない。
+    デバッグ時のメモリダンプで位置を把握しやすくする用途を想定している。
+    """
+
+    end_label = unique_label("debugstr_end")
+    JP(b, end_label)
+    DB(b, *str_bytes(text, encoding))
+    b.label(end_label)
 
 
 #
