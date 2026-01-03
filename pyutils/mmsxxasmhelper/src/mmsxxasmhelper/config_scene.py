@@ -213,7 +213,9 @@ def build_screen0_config_menu(
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, opt_label)
             block.label(opt_label)
-            DB(block, *(ord(ch) & 0xFF for ch in opt), 0x00)
+            encoded = [ord(ch) & 0xFF for ch in opt]
+            encoded.append(0x00)
+            DB(block, *encoded)
 
     draw_option_funcs: list[Func] = []
     for idx, entry in enumerate(config_entries):
