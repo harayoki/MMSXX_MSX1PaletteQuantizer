@@ -133,6 +133,7 @@ class Block:
         self.pc: int = 0
         self.labels: Dict[str, int] = {}
         self.fixups: List[Fixup] = []
+        self._finalize_callbacks: List[Callable[["Block", int], None]] = []
 
     # --- 基本出力 ---
 
@@ -210,6 +211,9 @@ class Block:
                 self.code[fx.pos] = offset & 0xFF
             else:
                 raise ValueError(f"unknown fixup kind: {fx.kind}")
+
+        for callback in self._finalize_callbacks:
+            callback(self, origin)
 
         return bytes(self.code)
 
