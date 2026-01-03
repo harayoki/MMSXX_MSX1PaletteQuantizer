@@ -199,8 +199,40 @@ def embed_debug_string_macro(b: Block, text: str, *, encoding: str = "ascii") ->
 
     end_label = unique_label("debugstr_end")
     JP(b, end_label)
-    DB(b, *str_bytes(text, encoding))
+    string_pos = b.pc
+    string_bytes = str_bytes(text, encoding)
+    DB(b, *string_bytes)
     b.label(end_label)
+
+    _register_debug_string(b, text, string_pos)
+
+
+def _register_debug_string(b: Block, text: str, offset: int) -> None:
+    entries = getattr(b, "_embedded_debug_strings", None)
+    if entries is None:
+        entries = []
+        setattr(b, "_embedded_debug_strings", entries)
+
+    entries.append((text, offset))
+
+    if getattr(b, "_embedded_debug_strings_registered", False):
+        return
+
+    def _print_debug_strings(block: Block, origin: int) -> None:
+        if not DEBUG:
+            return
+
+        embedded = getattr(block, "_embedded_debug_strings", ())
+        if not embedded:
+            return
+
+        print("Embedded debug strings:")
+        for string, relative_offset in embedded:
+            absolute = origin + relative_offset
+            print(f"  {absolute:04X} (+{relative_offset:04X}): {string}")
+
+    b._finalize_callbacks.append(_print_debug_strings)
+    setattr(b, "_embedded_debug_strings_registered", True)
 
 
 #
