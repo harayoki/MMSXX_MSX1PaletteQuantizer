@@ -85,7 +85,6 @@ __all__ = [
 ]
 
 from dataclasses import dataclass
-from itertools import count
 from typing import Callable, Dict, List, Literal, Optional, TextIO
 
 
@@ -93,7 +92,7 @@ from typing import Callable, Dict, List, Literal, Optional, TextIO
 # Block: コード構築の基本単位
 # ---------------------------------------------------------------------------
 
-_label_counter = count()
+_label_counters: Dict[str, int] = {}
 DEFAULT_FUNC_GROUP_NAME = "default"
 _created_funcs: Dict[str, "Func"] = {}
 _created_funcs_by_group: Dict[str, List["Func"]] = {}
@@ -102,11 +101,14 @@ _created_funcs_by_group: Dict[str, List["Func"]] = {}
 def unique_label(prefix: str = "__L") -> str:
     """衝突しないラベル名を生成するヘルパー。
 
-    マクロ内など同じラベル名を繰り返し使う状況で、
-    呼ぶたびにユニークな名前を得るために利用する。
+    プレフィックスごとにインデックスを持ち、最初の呼び出しでは
+    インデックスなしのラベル名を返す。以降は ``"{prefix}-<n>"``
+    の形式で連番を付与する。
     """
 
-    return f"{prefix}-{next(_label_counter)}"
+    index = _label_counters.get(prefix, 0)
+    _label_counters[prefix] = index + 1
+    return prefix if index == 0 else f"{prefix}-{index}"
 
 FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 
