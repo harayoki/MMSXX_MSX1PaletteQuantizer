@@ -515,6 +515,7 @@ def build_screen0_config_menu(
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
         # 値の描画とカーソル形状を再描画する。
+        LD.A_C(block)
         DRAW_OPTION_DISPATCH.call(block)  # JP DRAW_OPTION_{index=a}
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(LABEL_ADJUST_END)  # __ADJUST_END__
