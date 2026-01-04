@@ -240,16 +240,19 @@ def build_screen0_config_menu(
     # ディスパッチ処理で参照できるようにする。ラムダでエントリ情報を束縛し、
     # 個々の描画コード生成を遅延実行する設計。
     draw_option_funcs: list[Func] = []
+    def _create_draw_option_func(
+        func_name: str, entry: Screen0ConfigEntry, entry_index: int, option_width: int
+    ) -> Func:
+        def draw_option(block: Block) -> None:
+            _emit_draw_option(block, entry, entry_index, option_width)
+
+        return Func(func_name, draw_option, group=group)
+
     for idx, entry in enumerate(config_entries):
         option_width = option_field_widths[idx]
+        func_name = f"DRAW_OPTION_{idx}"
         draw_option_funcs.append(
-            Func(
-                f"DRAW_OPTION_{idx}",
-                lambda b, e=entry, i=idx, w=option_width: _emit_draw_option(
-                    b, e, i, w
-                ),
-                group=group,
-            )
+            _create_draw_option_func(func_name, entry, idx, option_width)
         )
 
     def draw_option_dispatch(block: Block) -> None:
