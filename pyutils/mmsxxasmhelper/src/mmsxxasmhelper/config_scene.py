@@ -152,6 +152,9 @@ def build_screen0_config_menu(
     def _emit_draw_option(
         block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
     ) -> None:
+        # VRAM のオプション欄に現在値を描画する。
+        # 入力: entry.store_addr に選択インデックスが格納されていることを前提に A を介して取得。
+        # 破壊: ポインタ計算と VRAM 書き込みのため A/B/C/D/E/H/L を使用し、戻り時も内容は保証しない。
         row = entry_row_base + entry_index
 
         LD.HL_n16(block, entry.store_addr)
@@ -231,6 +234,9 @@ def build_screen0_config_menu(
         )
 
     def draw_option_dispatch(block: Block) -> None:
+        # 選択中の項目インデックス (A) を元に該当する DRAW_OPTION_xx へ JP する。
+        # 入力: A に項目インデックス、ジャンプテーブルは DRAW_OPT_JT_LABEL を参照。
+        # 破壊: HL/DE/A を使用してエントリを解決し、そのまま JP するためレジスタは復元されない。
         LD.L_A(block)
         LD.H_n8(block, 0)
         ADD.HL_HL(block)
@@ -248,6 +254,9 @@ def build_screen0_config_menu(
     )
 
     def update_triangles(block: Block) -> None:
+        # 選択中項目の左右インジケータ(< >)を描画し点滅状態を更新する。
+        # 入力: CURRENT_ENTRY_ADDR と BLINK_STATE_ADDR に現在の項目と点滅状態が格納されている。
+        # 破壊: A/B/C/D/E/H/L を用いて VRAM アドレス計算と描画を行い、戻り時にこれらは保証されない。
         # 現在選択中の項目とそのオプション数
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
@@ -362,6 +371,9 @@ def build_screen0_config_menu(
     )
 
     def adjust_option(block: Block, delta: int) -> None:
+        # 現在の項目値を +/-1 し、表示とインジケータを更新する。
+        # 入力: CURRENT_ENTRY_ADDR から項目インデックスを取得し、ENTRY_VALUE_ADDR_LABEL の値を書き換える。
+        # 破壊: A/B/C/D/E/H/L を使用して範囲チェック・書き込み・再描画を行うため、戻り時に内容は保持されない。
         adjust_end = unique_label("__ADJUST_END__")
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.C_A(block)
@@ -411,6 +423,9 @@ def build_screen0_config_menu(
     )
 
     def init_config_screen(block: Block) -> None:
+        # SCREEN0 に初期 UI を構築し、内部ワークも初期化する初期化ルーチン。
+        # 入力: 特定のレジスタ前提はなく、定数とエントリ定義を参照する。
+        # 破壊: 描画のため A/B/C/D/E/H/L を広範に使用し、戻り時の内容は保証しない。
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
 
@@ -441,6 +456,9 @@ def build_screen0_config_menu(
         RET(block)
 
     def run_config_loop(block: Block) -> None:
+        # 入力状態をポーリングしてカーソル移動・値変更・終了判定を行うメインループ。
+        # 入力: update_input_func が input_hold_addr/input_trg_addr を更新していることを前提に動作。
+        # 破壊: A/B/C/D/E/H/L を用いて入力判定と描画を行い、ループ継続時も内容は保持されない。
         loop_label = unique_label("__CONFIG_LOOP__")
         block.label(loop_label)
         HALT(block)
@@ -499,6 +517,9 @@ def build_screen0_config_menu(
         JP(block, loop_label)
 
     def emit_tables(block: Block) -> None:
+        # 各種ジャンプテーブルや定数テーブルを ROM/RAM に配置するデータ出力ルーチン。
+        # 入力: レジスタ前提はなく、定義済みのエントリ配列からテーブルを生成する。
+        # 破壊: データ出力のみで CPU レジスタへの影響は想定しない (Block への emit のみ)。
         block.label(DRAW_OPT_JT_LABEL)
         for func in draw_option_funcs:
             pos = block.emit(0, 0)
