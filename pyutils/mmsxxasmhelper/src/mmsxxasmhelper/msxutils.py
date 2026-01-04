@@ -23,6 +23,7 @@ __all__ = [
     "set_screen_mode_macro",
     "set_text_cursor_macro",
     "write_text_with_cursor_macro",
+    "write_text_with_cursor_macro_with_bios",
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
@@ -370,34 +371,42 @@ def set_screen_mode_macro(b: Block, mode: int) -> None:
 
 def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
     """POSIT (#00C6) を呼び出してテキストカーソルを移動するマクロ。
-
     H: X 座標、L: Y 座標を設定してから POSIT を呼び出す。
     レジスタ変更: AF（BIOS 呼び出しにより破壊される）。
+    画面座標は 1 始まりなので、引数の座標に 1 を加算してから設定する。
     """
-
-    LD.H_n8(b, x & 0xFF)
-    LD.L_n8(b, y & 0xFF)
+    LD.H_n8(b, (x + 1) & 0xFF)
+    LD.L_n8(b, (y + 1) & 0xFF)
     CALL(b, POSIT)
 
 
-def write_text_with_cursor_macro(b: Block, text: str, x: int, y: int) -> None:
-    """テキストを任意の座標から書き出すマクロ。
-
-    ``text`` を ``"\n"`` で分割し、各行ごとに ``set_text_cursor_macro`` で
-    カーソルを移動してから CHPUT (#00A2) で 1 文字ずつ出力する。
-
-    SCREEN2 などのグラフィックモードでは CHPUT が期待通りに動かないため
-    （未対応）、SCREEN0/SCREEN1 などのテキスト系スクリーン向けの
-    マクロとして利用する。
-
-    このマクロの動作は未検証。
+def write_text_with_cursor_macro_with_bios(b: Block, text: str, x: int, y: int) -> None:
     """
-
+    ※ このメソッドはV使わずに、RAM直書きをお勧めする。
+    テキストを任意の座標から書き出すマクロ。
+    SCREEN0/SCREEN1 などのテキスト系スクリーン向けのマクロとして利用する。
+    利用を勧めないのは、書き込む位置にスクロール処理が入ったり なぜか少しX座標がずれたりする現象が確認されるため。
+    """
     for row_offset, line in enumerate(text.split("\n")):
         set_text_cursor_macro(b, x, y + row_offset)
         for ch in line:
             LD.A_n8(b, ord(ch) & 0xFF)
             CALL(b, CHPUT)
+
+
+def write_text_with_cursor_macro(b: Block, text: str, x: int, y: int, name_table:int = 0, width: int = 40) -> None:
+    """
+    テキストを任意の座標から書き出すマクロ VRAM直書き版。
+    """
+    for row_offset, line in enumerate(text.split("\n")):
+        address = name_table + (y + row_offset) * width + x
+        LD.HL_n16(b, address & 0xFFFF)
+        _set_vram_write(b)
+
+        for ch in line:
+            LD.A_n8(b, ord(ch) & 0xFF)
+            OUT(b, 0x98)
+            NOP(b, 2)
 
 
 def init_screen2_macro(b: Block) -> None:
@@ -818,23 +827,25 @@ def build_beep_control_utils(
     )
 
 
+def _set_vram_write(block: Block) -> None:
+    # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
+    # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
+    # レジスタ変化:
+    #   * A は処理中に HL の各バイトや 0x40 をロードするために使用・更新される
+    #   * HL は読み取りのみで値は変化しない
+    #   * フラグは OR.n8 により更新される
+
+    LD.A_L(block)
+    OUT(block, 0x99)  # 下位8bit
+
+    LD.A_H(block)
+    OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
+    OUT(block, 0x99)  # 上位8bit
+
+
 def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
-    def set_vram_write(block: Block) -> None:
-        # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
-        # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
-        # レジスタ変化:
-        #   * A は処理中に HL の各バイトや 0x40 をロードするために使用・更新される
-        #   * HL は読み取りのみで値は変化しない
-        #   * フラグは OR.n8 により更新される
 
-        LD.A_L(block)
-        OUT(block, 0x99)  # 下位8bit
-
-        LD.A_H(block)
-        OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
-        OUT(block, 0x99)  # 上位8bit
-
-    return Func("SET_VRAM_WRITE", set_vram_write, group=group)
+    return Func("SET_VRAM_WRITE", _set_vram_write, group=group)
 
 
 def build_outi_repeat_func(

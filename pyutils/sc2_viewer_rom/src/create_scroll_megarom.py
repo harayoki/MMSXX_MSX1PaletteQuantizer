@@ -204,6 +204,9 @@ class ADDR:
     CONFIG_AUTO_SPEED = madd(
         "CONFIG_AUTO_SPEED", 1, description="自動切り替え速度 (0-7)"
     )
+    CONFIG_AUTO_SCROLL = madd(
+        "CONFIG_AUTO_SCROLL", 1, description="自動スクロールの有効/無効"
+    )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
     )
@@ -896,21 +899,25 @@ def build_config_scene_func(
 
     entries = [
         Screen0ConfigEntry(
-            "BEEP    ",
+            "BEEP",
             ["O N", "OFF"],
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(
-            "AUTO SPD",
+            "AUTO PAGE",
             ["0", "1", "2", "3", "4", "5", "6", "7"],
             ADDR.CONFIG_AUTO_SPEED,
+        ),
+        Screen0ConfigEntry(
+            "AUTO SCROLL",
+            ["O N", "OFF"],
+            ADDR.CONFIG_AUTO_SCROLL,
         ),
     ]
 
     init_func, loop_func, table_funcs = build_screen0_config_menu(
         entries,
         update_input_func=update_input_func,
-        # input_hold_addr=ADDR.INPUT_HOLD,
         input_trg_addr=ADDR.INPUT_TRG,
         work_base_addr=ADDR.CONFIG_WORK_BASE,
         header_lines=[

@@ -157,7 +157,6 @@ def build_screen0_config_menu(
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
 
     def _emit_write_text(block: Block, col: int, row: int, text: str) -> None:
-        print("Emitting write text:", repr(text), f"at ({col},{row})")
         write_text_with_cursor_macro(block, text, col, row)
 
     def _emit_draw_option(

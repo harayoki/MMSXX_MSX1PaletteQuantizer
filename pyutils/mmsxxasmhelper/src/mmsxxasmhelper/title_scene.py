@@ -67,7 +67,8 @@ def build_title_screen_func(
     logo_lines = logo_full_text.rstrip("\n").split("\n") if logo_full_text else []
     title_logo_width = max((len(line) for line in logo_lines), default=0)
     title_logo_x = (40 - title_logo_width) // 2 if logo_lines else 0
-    vertical_offset = 4
+    title_logo_x += 1
+    vertical_offset = 3
     title_logo_y = vertical_offset
     title_subtext_lines = [
         "",
