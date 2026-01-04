@@ -32,6 +32,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -223,9 +224,8 @@ def build_screen0_config_menu(
     def _emit_option_pointer_table(
         block: Block, entry: Screen0ConfigEntry, label_name: str
     ) -> None:
-        # オプション文字列へのポインタテーブルを組み立てる。
-        # 入力: レジスタは前段の呼び出し元で自由に使用していてよい（本処理は定数データの配置のみ）。
-        # 破壊: 実行時に参照されるコードを生成しないため、レジスタ内容は変更されない。
+        # オプション文字列へのポインタテーブルを組み立てる。(定数データの配置のみ）
+        # print(f"Emitting option pointer table for entry {entry.name} {label_name}")
         block.label(label_name)  # __OPT_PTR__
         for opt in entry.options:
             LABEL_OPT_STR = unique_label("__OPT_STR__")
@@ -235,9 +235,15 @@ def build_screen0_config_menu(
             encoded = [ord(ch) & 0xFF for ch in opt]
             encoded.append(0x00)
             DB(block, *encoded)
+        """
+        ex) AUTO: 0 ~ 7
+        [48, 0] /[49, 0] / [50, 0] / [51, 0] / [52, 0] / [53, 0] / [54, 0] / [55, 0]
+        ex) BEEP: ON / OFF
+        [79, 78, 0] / [79, 70, 70, 0]
+        """
 
     # 各エントリに対応する描画ルーチンをリスト化し、後続のジャンプテーブルや
-    # ディスパッチ処理で参照できるようにする。ラムダでエントリ情報を束縛し、
+    # ディスパッチ処理で参照できるようにする。エントリ情報を束縛し、
     # 個々の描画コード生成を遅延実行する設計。
     draw_option_funcs: list[Func] = []
     def _create_draw_option_func(
@@ -451,7 +457,7 @@ def build_screen0_config_menu(
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
         # 値の描画とカーソル形状を再描画する。
-        DRAW_OPTION_DISPATCH.call(block)
+        DRAW_OPTION_DISPATCH.call(block)  # JP DRAW_OPTION_{index=a}
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(LABEL_ADJUST_END)  # __ADJUST_END__
         RET(block)
@@ -521,7 +527,7 @@ def build_screen0_config_menu(
         JR_Z(block, LABEL_SKIP_UP)
         DEC.A(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
-        DRAW_OPTION_DISPATCH.call(block)  # 現在項目の再描画 Aレジスタが設定されている事
+        DRAW_OPTION_DISPATCH.call(block)  # JP DRAW_OPTION_{index=a}
         UPDATE_TRIANGLE_FUNC.call(block)  # インジケータ更新
         block.label(LABEL_SKIP_UP)  # __SKIP_UP__
 
@@ -535,7 +541,7 @@ def build_screen0_config_menu(
         CP.n8(block, entry_count)  # 範囲チェック
         JR_NC(block, LABEL_SKIP_DOWN)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
-        DRAW_OPTION_DISPATCH.call(block)  # 現在項目の再描画 Aレジスタが設定されている事
+        DRAW_OPTION_DISPATCH.call(block)  # JP DRAW_OPTION_{index=a}
         UPDATE_TRIANGLE_FUNC.call(block)  # インジケータ更新
         block.label(LABEL_SKIP_DOWN)  # __SKIP_DOWN__
 
@@ -572,37 +578,43 @@ def build_screen0_config_menu(
 
         # 1) オプション描画関数へのジャンプテーブルを生成し、描画ディスパッチ用のエントリ点をまとめる。
         block.label(DRAW_OPT_JT_LABEL)  # __DRAW_OPT_JT__
-        for func in draw_option_funcs:
+        for func in draw_option_funcs:  # 2 x エントリ bytes
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, func.name)
 
         # 2) 各設定項目の現在値が格納されるワードアドレスを並べたテーブルを出力する。
         block.label(ENTRY_VALUE_ADDR_LABEL)  # __ENTRY_VALUE_ADDR__
-        for entry in config_entries:
+        for entry in config_entries:  # 2 x エントリ bytes
             DW(block, entry.store_addr & 0xFFFF)
 
         # 3) 各設定項目に用意されている選択肢の数をバイトで出力し、範囲チェックに利用する。
         block.label(ENTRY_OPTION_COUNT_LABEL)  # __ENTRY_OPTION_COUNT__
-        for entry in config_entries:
+        for entry in config_entries:   # 1 x エントリ bytes
             DB(block, len(entry.options) & 0xFF)
 
         # 4) 表示時に利用するオプション欄の幅 (文字数) を並べておき、描画幅を決定する。
         block.label(ENTRY_OPTION_WIDTH_LABEL)  # __ENTRY_OPTION_WIDTH__
         for width in option_field_widths:
-            DB(block, width & 0xFF)
+            DB(block, width & 0xFF)  # 2 x エントリ bytes
 
         # 5) 各設定項目が配置される画面上の行先頭 VRAM アドレスを計算してテーブル化する。
         block.label(ENTRY_ROW_ADDR_LABEL)  # __ENTRY_ROW_ADDR__
         for idx in range(entry_count):
             row_addr = screen0_name_base + ((entry_row_base + idx) * 40)
-            DW(block, row_addr & 0xFFFF)
+            DW(block, row_addr & 0xFFFF)  # 2 x エントリ bytes
 
         # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
         block.label(OPT_PTR_TABLE_LABEL)  # __OPT_PTR_TABLE__
         for idx, entry in enumerate(config_entries):
+            # アドレス2文字 + 選択肢文字数 + 終端文字(0h)
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
 
-    #
+    # print(f"len(draw_option_funcs) = {len(draw_option_funcs)}")
+    # print(f"len(entries) = {len(config_entries)}")
+    # print(f"len(option_field_widths) = {len(option_field_widths)}")
+    # print(f"len(config_entries) = {len(config_entries)}")
+    # print(f"entry_count = {entry_count}")
+
     # 各 Func の外部からの呼び出し規約と推奨配置順。
     # * INIT_FUNC (CONFIG_SCREEN0_INIT)
     #   - 役割: VRAM へ UI を構築し、ワーク領域を初期化する。
@@ -618,6 +630,7 @@ def build_screen0_config_menu(
     #   - 呼び出し順: INIT_FUNC と RUN_LOOP_FUNC が参照するため、同一 ROM/BANK 内に配置し、
     #                 これらのコードと併せて emit(block) する。配置順は INIT → LOOP → TABLES が目安。
     #   - レジスタ前提: データ出力のみでレジスタへの副作用なし。
+
     INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen, group=group)
     RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop, group=group)
     TABLE_FUNC = Func(
