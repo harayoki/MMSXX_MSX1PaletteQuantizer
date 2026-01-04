@@ -720,6 +720,7 @@ def dump_func_bytes(
     *,
     origin: int = 0,
     groups: Optional[Iterable[str]] = None,
+    funcs: Optional[Iterable[str | "Func"]] = None,
     bytes_per_line: int = 16,
     stream: TextIO | None = None,
 ) -> None:
@@ -727,11 +728,14 @@ def dump_func_bytes(
 
     out = stream or sys.stdout
     group_names = list(groups) if groups is not None else [DEFAULT_FUNC_GROUP_NAME]
+    allowed_funcs = {f.name if isinstance(f, Func) else f for f in funcs} if funcs else None
     seen: set[str] = set()
 
     for group in group_names:
         for func in _created_funcs_by_group.get(group, []):
             if func.name in seen:
+                continue
+            if allowed_funcs is not None and func.name not in allowed_funcs:
                 continue
             if func.defined_pc is None or func.defined_size is None:
                 continue
@@ -767,6 +771,7 @@ def dump_func_bytes_on_finalize(
     b: Block,
     *,
     groups: Optional[Iterable[str]] = None,
+    funcs: Optional[Iterable[str | "Func"]] = None,
     bytes_per_line: int = 16,
     stream: TextIO | None = None,
 ) -> None:
@@ -777,6 +782,7 @@ def dump_func_bytes_on_finalize(
             block,
             origin=origin,
             groups=groups,
+            funcs=funcs,
             bytes_per_line=bytes_per_line,
             stream=stream,
         )
