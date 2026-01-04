@@ -2306,6 +2306,8 @@ def DB(b: Block, *values: int) -> None:
     """1バイト値を順に配置する。"""
 
     for v in values:
+        if not 0 <= v <= 0xFF:
+            raise ValueError(f"DB value out of range (0..255): {v}")
         b.emit(v & 0xFF)
 
 
