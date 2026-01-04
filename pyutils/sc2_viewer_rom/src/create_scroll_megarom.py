@@ -202,10 +202,10 @@ class ADDR:
         "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
     )
     CONFIG_AUTO_SPEED = madd(
-        "CONFIG_AUTO_SPEED", 1, description="自動切り替え速度 (0-7)"
+        "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0x05]), description="自動切り替え速度 (0-7)"
     )
     CONFIG_AUTO_SCROLL = madd(
-        "CONFIG_AUTO_SCROLL", 1, description="自動スクロールの有効/無効"
+        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([0x00]), description="自動スクロールの有効/無効"
     )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
@@ -1020,10 +1020,11 @@ def build_boot_bank(
     enaslt_macro(b)
 
     # コンフィグの初期値を設定
-    XOR.A(b)
-    LD.mn16_A(b, ADDR.CONFIG_AUTO_SPEED)
-    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
-    LD.mn16_A(b, ADDR.CONFIG_WORK_BASE)
+    # XOR.A(b)
+    # LD.mn16_A(b, ADDR.CONFIG_AUTO_SPEED)
+    # LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    # LD.mn16_A(b, ADDR.CONFIG_WORK_BASE)
+    # LD.mn16_A(b, ADDR.CONFIG_AUTO_SCROLL)
     if beep_enabled_default:
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
     else:
