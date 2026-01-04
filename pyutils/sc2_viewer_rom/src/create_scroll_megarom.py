@@ -531,6 +531,88 @@ SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
     SET_VRAM_WRITE_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
+
+
+def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+    def draw_scroll_view(block: Block) -> None:
+        """
+        現在のスクロール位置に基づき 24 行ぶんの PG/CT を VRAM に転送する。
+        """
+
+        def calc_scroll_ptr(b: Block, is_color: bool):
+            if is_color:
+                LD.HL_mn16(b, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+                LD.A_mn16(b, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
+            else:
+                LD.HL_n16(b, DATA_BANK_ADDR)  # PGは常に 0x8000
+                LD.A_mn16(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+
+            LD.E_A(b)  # E = ベースバンク
+
+            # BC = スクロール行数 (16bit)
+            PUSH.HL(b)
+            LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+            LD.B_H(b)
+            LD.C_L(b)
+            POP.HL(b)
+
+            # 1行 = 256(0x0100)バイトなので、行数下位(C)をアドレス上位(H)に足す
+            LD.A_C(b)
+            ADD.A_H(b)
+            LD.H_A(b)
+
+            # 行数上位(B)が 1 増えるごとに 256行 = 65536バイト = 4バンク(ASCII16)進む
+            LD.A_B(b)
+            ADD.A_A(b)  # *2
+            ADD.A_A(b)  # *4
+            ADD.A_E(b)
+            LD.E_A(b)  # 最終的なバンク番号
+
+            # HL が 0xC000 を超えていたらバンクを繰り上げる (正規化)
+            NORM_LOOP = unique_label("_NORM")
+            NORM_DONE = unique_label("_NORM_DONE")
+            b.label(NORM_LOOP)
+            LD.A_H(b)
+            CP.n8(b, 0xC0)
+            JR_C(b, NORM_DONE)
+            SUB.n8(b, 0x40)  # HL -= 0x4000
+            LD.H_A(b)
+            INC.E(b)  # バンクインクリメント
+            JR(b, NORM_LOOP)
+            b.label(NORM_DONE)
+
+        RESET_NAME_TABLE_FUNC.call(block)
+
+        # --- パターンジェネレータ転送 ---
+        calc_scroll_ptr(block, is_color=False)
+        PUSH.HL(block)
+        PUSH.DE(block)
+        LD.HL_n16(block, PATTERN_BASE)  # VRAM 0x0000
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.DE(block)
+        POP.HL(block)
+        LD.D_n8(block, 24)  # 24行分転送
+        SCROLL_VRAM_XFER_FUNC.call(block)
+
+        # --- カラーテーブル転送 ---
+        calc_scroll_ptr(block, is_color=True)
+        PUSH.HL(block)
+        PUSH.DE(block)
+        LD.HL_n16(block, COLOR_BASE)  # VRAM 0x2000
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.DE(block)
+        POP.HL(block)
+        LD.D_n8(block, 24)  # 24行分転送
+        SCROLL_VRAM_XFER_FUNC.call(block)
+
+        RET(block)
+
+    return Func("DRAW_SCROLL_VIEW", draw_scroll_view, no_auto_ret=True, group=group)
+
+
+DRAW_SCROLL_VIEW_FUNC = build_draw_scroll_view_func(group=SCROLL_VIEWER_FUNC_GROUP)
+
+
 OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
 OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
 OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
@@ -606,74 +688,8 @@ def build_update_image_display_func(
 
         block.label("_INIT_POS_DONE")
 
-        # --- [VRAM転送の動的アドレス計算ルーチン] ---
-        # 入力: なし (ADDRの値を参照), 出力: HL=ROMアドレス, E=バンク
-        def calc_scroll_ptr(b: Block, is_color: bool):
-            if is_color:
-                LD.HL_mn16(b, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
-                LD.A_mn16(b, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
-            else:
-                LD.HL_n16(b, DATA_BANK_ADDR)  # PGは常に 0x8000
-                LD.A_mn16(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-
-            LD.E_A(b)  # E = ベースバンク
-
-            # BC = スクロール行数 (16bit)
-            PUSH.HL(b)
-            LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-            LD.B_H(b)
-            LD.C_L(b)
-            POP.HL(b)
-
-            # 1行 = 256(0x0100)バイトなので、行数下位(C)をアドレス上位(H)に足す
-            LD.A_C(b)
-            ADD.A_H(b)
-            LD.H_A(b)
-
-            # 行数上位(B)が 1 増えるごとに 256行 = 65536バイト = 4バンク(ASCII16)進む
-            LD.A_B(b)
-            ADD.A_A(b)  # *2
-            ADD.A_A(b)  # *4
-            ADD.A_E(b)
-            LD.E_A(b)  # 最終的なバンク番号
-
-            # HL が 0xC000 を超えていたらバンクを繰り上げる (正規化)
-            NORM_LOOP = unique_label("_NORM")
-            NORM_DONE = unique_label("_NORM_DONE")
-            b.label(NORM_LOOP)
-            LD.A_H(b)
-            CP.n8(b, 0xC0)
-            JR_C(b, NORM_DONE)
-            SUB.n8(b, 0x40)  # HL -= 0x4000
-            LD.H_A(b)
-            INC.E(b)  # バンクインクリメント
-            JR(b, NORM_LOOP)
-            b.label(NORM_DONE)
-
         # 4. VRAM 描画実行
-        RESET_NAME_TABLE_FUNC.call(block)
-
-        # --- パターンジェネレータ転送 ---
-        calc_scroll_ptr(block, is_color=False)
-        PUSH.HL(block)
-        PUSH.DE(block)
-        LD.HL_n16(block, PATTERN_BASE)  # VRAM 0x0000
-        SET_VRAM_WRITE_FUNC.call(block)
-        POP.DE(block)
-        POP.HL(block)
-        LD.D_n8(block, 24)  # 24行分転送
-        SCROLL_VRAM_XFER_FUNC.call(block)
-
-        # --- カラーテーブル転送 ---
-        calc_scroll_ptr(block, is_color=True)
-        PUSH.HL(block)
-        PUSH.DE(block)
-        LD.HL_n16(block, COLOR_BASE)  # VRAM 0x2000
-        SET_VRAM_WRITE_FUNC.call(block)
-        POP.DE(block)
-        POP.HL(block)
-        LD.D_n8(block, 24)  # 24行分転送
-        SCROLL_VRAM_XFER_FUNC.call(block)
+        DRAW_SCROLL_VIEW_FUNC.call(block)
 
         # 自動切り替え用カウンタを初期化
         LD.A_mn16(block, ADDR.CONFIG_AUTO_SPEED)
@@ -1091,6 +1107,29 @@ def build_boot_bank(
     BIT.n8_A(b, INPUT_KEY_BIT.L_UP)
     JR_Z(b, "CHECK_DOWN")
 
+    # SHIFT 押下時は 8 行スクロールして全体を再描画
+    LD.A_mn16(b, ADDR.INPUT_HOLD)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
+    JR_Z(b, "SCROLL_UP_SINGLE")
+
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "CHECK_DOWN")
+
+    LD.BC_n16(b, 8)
+    OR.A(b)
+    SBC.HL_BC(b)
+    JR_NC(b, "SHIFT_UP_STORE")
+    LD.HL_n16(b, 0)
+
+    b.label("SHIFT_UP_STORE")
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    DRAW_SCROLL_VIEW_FUNC.call(b)
+    JR(b, "CHECK_AUTO")
+
+    b.label("SCROLL_UP_SINGLE")
+
     # 0 より大きければデクリメント
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     LD.A_H(b)
@@ -1109,6 +1148,46 @@ def build_boot_bank(
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
     JR_Z(b, "CHECK_AUTO")
+
+    # SHIFT 押下時は 8 行スクロールして全体を再描画
+    LD.A_mn16(b, ADDR.INPUT_HOLD)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
+    JR_Z(b, "SCROLL_DOWN_SINGLE")
+
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)  # HL = limit
+
+    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    PUSH.HL(b)
+    OR.A(b)
+    SBC.HL_DE(b)
+    POP.HL(b)
+    JR_Z(b, "CHECK_AUTO")  # 下限到達
+    JR_C(b, "CHECK_AUTO")
+
+    EX.DE_HL(b)  # HL = current, DE = limit
+    LD.BC_n16(b, 8)
+    ADD.HL_BC(b)
+
+    PUSH.HL(b)
+    OR.A(b)
+    SBC.HL_DE(b)
+    JR_C(b, "SHIFT_DOWN_USE_CANDIDATE")
+    POP.AF(b)  # 候補を破棄
+    EX.DE_HL(b)  # HL = limit
+    JR(b, "SHIFT_DOWN_STORE")
+
+    b.label("SHIFT_DOWN_USE_CANDIDATE")
+    POP.HL(b)
+
+    b.label("SHIFT_DOWN_STORE")
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    DRAW_SCROLL_VIEW_FUNC.call(b)
+    JR(b, "CHECK_AUTO")
+
+    b.label("SCROLL_DOWN_SINGLE")
 
     # 最大値 (総行数 - 24) チェック
     LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
