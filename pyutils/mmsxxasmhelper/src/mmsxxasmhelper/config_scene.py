@@ -60,14 +60,18 @@ class Screen0ConfigEntry:
     store_addr: int
 
 
+def get_work_byte_length_for_screen0_config_menu() -> int:
+    """SCREEN 0 コンフィグ画面で使用するワークエリアのバイト数を取得する。"""
+    return 5  # CURRENT_ENTRY_ADDR, BLINK_STATE_ADDR, PREV_ENTRY_ADDR
+
+
 def build_screen0_config_menu(
     entries: Sequence[Screen0ConfigEntry] | dict[str, dict[str, object]],
     *,
     update_input_func: Func,
     group: str = DEFAULT_FUNC_GROUP_NAME,
-    input_hold_addr: int = 0xC100,
-    input_trg_addr: int = 0xC101,
-    work_base_addr: int = 0xC110,
+    input_trg_addr: int = 0xC100,
+    work_base_addr: int = 0xC101,
     screen0_name_base: int = 0x0000,  # 0 で正しい 替えるとカーソルが消える
     title_lines: Sequence[str] | None = None,
     title_row: int = 0,
@@ -77,7 +81,7 @@ def build_screen0_config_menu(
     header_col: int = 2,
     top_row: int = 4,
     label_col: int = 2,
-    option_col: int = 12,
+    option_col: int = -1,
     option_field_padding: int = 1,
 ) -> tuple[Func, Func, Sequence[Func]]:
     """辞書定義から SCREEN 0 のコンフィグ画面を生成する。"""
@@ -134,6 +138,11 @@ def build_screen0_config_menu(
         raise ValueError(
             "表示行が SCREEN 0 の 24 行を超えています。top_row や項目数を調整してください"
         )
+
+    if option_col < 0:
+        # ラベル列 + 最大ラベル幅 + 2 文字分の余裕
+        max_label_width = max(len(entry.name) for entry in config_entries)
+        option_col = label_col + max_label_width + 4
 
     CURRENT_ENTRY_ADDR = work_base_addr
     BLINK_STATE_ADDR = work_base_addr + 1
@@ -245,7 +254,7 @@ def build_screen0_config_menu(
             encoded.append(0x00)
             DB(block, *encoded)
         """
-        ex) AUTO: 0 ~ 7
+        ex) AUTO SPD: 0 ~ 7
         [48, 0] /[49, 0] / [50, 0] / [51, 0] / [52, 0] / [53, 0] / [54, 0] / [55, 0]
         ex) BEEP: ON / OFF
         [79, 78, 0] / [79, 70, 70, 0]

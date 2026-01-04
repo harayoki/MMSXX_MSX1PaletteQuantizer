@@ -119,6 +119,7 @@ from mmsxxasmhelper.msxutils import (
 from mmsxxasmhelper.config_scene import (
     Screen0ConfigEntry,
     build_screen0_config_menu,
+    get_work_byte_length_for_screen0_config_menu,
 )
 from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
@@ -206,7 +207,8 @@ class ADDR:
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
     )
-    CONFIG_WORK_BASE = madd("CONFIG_WORK_BASE", 2, description="コンフィグ用ワークベース")
+    CONFIG_WORK_BASE = madd(
+        "CONFIG_WORK_BASE", get_work_byte_length_for_screen0_config_menu(), description="コンフィグ用ワークベース")
 
 # mem_addr_allocator.debug_print()
 
@@ -899,7 +901,7 @@ def build_config_scene_func(
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(
-            "AUTO",
+            "AUTO SPD",
             ["0", "1", "2", "3", "4", "5", "6", "7"],
             ADDR.CONFIG_AUTO_SPEED,
         ),
@@ -908,7 +910,7 @@ def build_config_scene_func(
     init_func, loop_func, table_funcs = build_screen0_config_menu(
         entries,
         update_input_func=update_input_func,
-        input_hold_addr=ADDR.INPUT_HOLD,
+        # input_hold_addr=ADDR.INPUT_HOLD,
         input_trg_addr=ADDR.INPUT_TRG,
         work_base_addr=ADDR.CONFIG_WORK_BASE,
         header_lines=[
