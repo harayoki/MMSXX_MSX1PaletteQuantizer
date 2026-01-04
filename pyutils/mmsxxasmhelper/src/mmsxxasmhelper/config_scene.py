@@ -250,7 +250,7 @@ def build_screen0_config_menu(
         )
 
     def draw_option_dispatch(block: Block) -> None:
-        # 選択中の項目インデックス (A) を元に該当する DRAW_OPTION_xx へ JP する。
+        # 選択中の項目インデックス (A) を元に該当する draw_option_funcs(DRAW_OPTION_xx) へ JP する。
         # JP を使うのは、各描画処理がエントリ固有の幅や VRAM 位置をハードコーディングしているため、
         # 呼び出し先でそのまま返らず単純に処理を委譲したい（CALL/RET のオーバーヘッドを避ける）ため。
         # 入力: A に項目インデックス、ジャンプテーブルは DRAW_OPT_JT_LABEL を参照。
@@ -259,13 +259,13 @@ def build_screen0_config_menu(
         LD.H_n8(block, 0)
         ADD.HL_HL(block)
         LD.DE_label(block, DRAW_OPT_JT_LABEL)
-        ADD.HL_DE(block)
+        ADD.HL_DE(block)  # HL = (index * 2) + DRAW_OPT_JT_LABEL ジャンプ先アドレス計算
         LD.E_mHL(block)
         INC.HL(block)
         LD.D_mHL(block)
         PUSH.DE(block)
-        POP.HL(block)
-        JP_mHL(block)
+        POP.HL(block)  # HL = DE = ジャンプ先アドレス
+        JP_mHL(block)  # 実際にジャンプ
 
     DRAW_OPTION_DISPATCH = Func(
         "DRAW_OPTION_FOR_CURRENT", draw_option_dispatch, group=group
@@ -511,12 +511,12 @@ def build_screen0_config_menu(
         LABEL_SKIP_UP = unique_label("__SKIP_UP__")
         JR_Z(block, LABEL_SKIP_UP)
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
-        OR.A(block)
+        OR.A(block)  # 現在位置が 0 なら移動しない
         JR_Z(block, LABEL_SKIP_UP)
         DEC.A(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
-        DRAW_OPTION_DISPATCH.call(block)
-        UPDATE_TRIANGLE_FUNC.call(block)
+        DRAW_OPTION_DISPATCH.call(block)  # 現在項目の再描画 Aレジスタが設定されている事
+        UPDATE_TRIANGLE_FUNC.call(block)  # インジケータ更新
         block.label(LABEL_SKIP_UP)  # __SKIP_UP__
 
         # 4) DOWN キーで項目をひとつ下に移動し、表示と三角マーカーを更新。
@@ -526,11 +526,11 @@ def build_screen0_config_menu(
         JR_Z(block, LABEL_SKIP_DOWN)
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         INC.A(block)
-        CP.n8(block, entry_count)
+        CP.n8(block, entry_count)  # 範囲チェック
         JR_NC(block, LABEL_SKIP_DOWN)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
-        DRAW_OPTION_DISPATCH.call(block)
-        UPDATE_TRIANGLE_FUNC.call(block)
+        DRAW_OPTION_DISPATCH.call(block)  # 現在項目の再描画 Aレジスタが設定されている事
+        UPDATE_TRIANGLE_FUNC.call(block)  # インジケータ更新
         block.label(LABEL_SKIP_DOWN)  # __SKIP_DOWN__
 
         # 5) LEFT キーで現在項目の値を減少させる。
