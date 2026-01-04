@@ -236,6 +236,9 @@ def build_screen0_config_menu(
             encoded.append(0x00)
             DB(block, *encoded)
 
+    # 各エントリに対応する描画ルーチンをリスト化し、後続のジャンプテーブルや
+    # ディスパッチ処理で参照できるようにする。ラムダでエントリ情報を束縛し、
+    # 個々の描画コード生成を遅延実行する設計。
     draw_option_funcs: list[Func] = []
     for idx, entry in enumerate(config_entries):
         option_width = option_field_widths[idx]
