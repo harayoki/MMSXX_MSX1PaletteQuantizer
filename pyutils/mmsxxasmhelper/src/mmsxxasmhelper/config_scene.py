@@ -602,6 +602,22 @@ def build_screen0_config_menu(
         for idx, entry in enumerate(config_entries):
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
 
+    #
+    # 各 Func の外部からの呼び出し規約と推奨配置順。
+    # * INIT_FUNC (CONFIG_SCREEN0_INIT)
+    #   - 役割: VRAM へ UI を構築し、ワーク領域を初期化する。
+    #   - 呼び出し順: CONFIG 画面を開く直前に 1 度だけ CALL する。
+    #   - レジスタ前提: 事前条件なし。描画のため A/B/C/D/E/H/L を破壊する。
+    # * RUN_LOOP_FUNC (CONFIG_SCREEN0_LOOP)
+    #   - 役割: 入力を監視し、カーソル移動・値変更・ESC 脱出を処理するメインループ。
+    #   - 呼び出し順: INIT_FUNC の後、画面を表示している間はフレーム毎など適宜 CALL する。
+    #   - レジスタ前提: update_input_func が input_hold_addr/input_trg_addr を更新していること。
+    #                     A/B/C/D/E/H/L を破壊する前提で、呼び出し元で必要なら退避する。
+    # * TABLE_FUNC (CONFIG_SCREEN0_TABLES)
+    #   - 役割: ジャンプテーブルやオプション文字列などの定数データを出力する。
+    #   - 呼び出し順: INIT_FUNC と RUN_LOOP_FUNC が参照するため、同一 ROM/BANK 内に配置し、
+    #                 これらのコードと併せて emit(block) する。配置順は INIT → LOOP → TABLES が目安。
+    #   - レジスタ前提: データ出力のみでレジスタへの副作用なし。
     INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen, group=group)
     RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop, group=group)
     TABLE_FUNC = Func(
