@@ -163,6 +163,21 @@ OUTI_FUNCS_GROUP = "outi_funcs"
 OUTI_FUNCS_BACK_NUM:int = 1
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
+AUTO_ADVANCE_INTERVAL_SECONDS = [
+    0,
+    180,
+    150,
+    120,
+    90,
+    60,
+    45,
+    30,
+]
+AUTO_ADVANCE_FRAMES_PER_SECOND = 60
+AUTO_ADVANCE_INTERVAL_FRAMES = [
+    sec * AUTO_ADVANCE_FRAMES_PER_SECOND for sec in AUTO_ADVANCE_INTERVAL_SECONDS
+]
+
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -208,7 +223,7 @@ class ADDR:
         "CONFIG_AUTO_SCROLL", 1, description="自動スクロールの有効/無効"
     )
     AUTO_ADVANCE_COUNTER = madd(
-        "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
+        "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
     )
     CONFIG_WORK_BASE = madd(
         "CONFIG_WORK_BASE", get_work_byte_length_for_screen0_config_menu(), description="コンフィグ用ワークベース")
@@ -701,10 +716,14 @@ def build_update_image_display_func(
         LD.A_mn16(block, ADDR.CONFIG_AUTO_SPEED)
         LD.L_A(block)
         LD.H_n8(block, 0)
-        LD.DE_label(block, "AUTO_ADVANCE_INTERVAL_TABLE")
+        ADD.HL_HL(block)
+        LD.DE_label(block, "AUTO_ADVANCE_INTERVAL_FRAMES_TABLE")
         ADD.HL_DE(block)
-        LD.A_mHL(block)
-        LD.mn16_A(block, ADDR.AUTO_ADVANCE_COUNTER)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        EX.DE_HL(block)
+        LD.mn16_HL(block, ADDR.AUTO_ADVANCE_COUNTER)
 
         RET(block)
 
@@ -1022,7 +1041,8 @@ def build_boot_bank(
     # コンフィグの初期値を設定
     XOR.A(b)
     LD.mn16_A(b, ADDR.CONFIG_AUTO_SPEED)
-    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
     LD.mn16_A(b, ADDR.CONFIG_WORK_BASE)
     if beep_enabled_default:
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
@@ -1244,21 +1264,26 @@ def build_boot_bank(
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
     OR.A(b)
     JR_Z(b, "CHECK_SPACE")
-    LD.A_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
-    OR.A(b)
+    LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
+    LD.A_H(b)
+    OR.L(b)
     JR_Z(b, "AUTO_NEXT_IMAGE")
-    DEC.A(b)
-    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
     JR(b, "CHECK_SPACE")
 
     b.label("AUTO_NEXT_IMAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
     LD.L_A(b)
     LD.H_n8(b, 0)
-    LD.DE_label(b, "AUTO_ADVANCE_INTERVAL_TABLE")
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_ADVANCE_INTERVAL_FRAMES_TABLE")
     ADD.HL_DE(b)
-    LD.A_mHL(b)
-    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
     JR(b, "NEXT_IMAGE")
 
     # --- スペースキー判定 (画像切り替え) ---
@@ -1307,9 +1332,12 @@ def build_boot_bank(
     define_created_funcs(b, group=SCROLL_VIEWER_FUNC_GROUP)
 
     # --- [事前計算テーブル群] ---
-    # 0: 無効, 1-7: 数値が大きいほど高速になる自動切り替えフレーム数
-    b.label("AUTO_ADVANCE_INTERVAL_TABLE")
-    DB(b, 0, 180, 150, 120, 90, 60, 45, 30)
+    # 0: 無効, 1-7: 数値が大きいほど高速になる自動切り替え秒数
+    b.label("AUTO_ADVANCE_INTERVAL_SECONDS_TABLE")
+    DB(b, *AUTO_ADVANCE_INTERVAL_SECONDS)
+
+    b.label("AUTO_ADVANCE_INTERVAL_FRAMES_TABLE")
+    DW(b, *AUTO_ADVANCE_INTERVAL_FRAMES)
 
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
     # タイル番号のオフセット計算用。
