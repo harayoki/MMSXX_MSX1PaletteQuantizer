@@ -896,8 +896,8 @@ def build_config_scene_func(
 
     entries = [
         Screen0ConfigEntry(
-            "BEEP",
-            ["ON ", "OFF"],
+            "BEEP    ",
+            ["O N", "OFF"],
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(

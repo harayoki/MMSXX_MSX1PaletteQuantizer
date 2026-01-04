@@ -161,19 +161,22 @@ def build_screen0_config_menu(
         write_text_with_cursor_macro(block, text, col, row)
 
     def _emit_draw_option(
-        block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
+        block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width_: int
     ) -> None:
 
         # VRAM のオプション欄に現在値を描画する。
         # 前提: entry.store_addr に項目選択インデックスが格納されている事
         # 破壊: ポインタ計算と VRAM 書き込みのため A/B/C/D/E/H/L を使用し、戻り時も内容は保証しない。
         row = entry_row_base + entry_index
+        vram_addr = screen0_name_base + (row * 40) + option_col
 
         print("Emitting draw option for entry"
-              f" {entry.name} index {entry_index} row={row} options={entry.options} width={option_width}")
+              f" {entry.name} index {entry_index} row={row}"
+              f" vram:{vram_addr:04X}h store:{entry.store_addr} options={entry.options} width={option_width_}")
 
-
-        embed_debug_string_macro(block, f"Draw option {entry.name} #{entry_index} row:{row} addr:{entry.store_addr:04X}h")
+        embed_debug_string_macro(
+            block,
+            f"Draw opt '{entry.name}' v:{vram_addr:04X}h s:{entry.store_addr:04X}h",)
 
         # [ブロック1] 選択インデックス取得とポインタ解決。
         #   * entry.store_addr から現在値を A に読み出し
@@ -183,19 +186,17 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         LD.L_A(block)
         LD.H_n8(block, 0)
-        ADD.HL_HL(block)
-        LD.DE_label(block, OPTION_POINTER_LABELS[entry_index])
+        ADD.HL_HL(block)  # selection_index * 2
+        LD.DE_label(block, OPTION_POINTER_LABELS[entry_index])  # オプション文字列のポインタテーブル
         ADD.HL_DE(block)
         LD.E_mHL(block)
         INC.HL(block)
-        LD.D_mHL(block)
-        embed_debug_string_macro(block, f"Option index in A")
+        LD.D_mHL(block)  # DE = ポインタテーブルから取得した文字列先頭アドレス
         PUSH.DE(block)  # 文字列ポインタを退避
 
         # [ブロック2] VRAM 書き込みの準備。
         #   * 行・列位置から VRAM アドレスを算出し HL にセット
         #   * 可変長の文字列 + パディングを書き込むため、事前に set_vram_write を呼んでポート 0x98 を開く
-        vram_addr = screen0_name_base + (row * 40) + option_col
         LD.HL_n16(block, vram_addr)
         SET_VRAM_WRITE_FUNC.call(block)
 
@@ -203,40 +204,41 @@ def build_screen0_config_menu(
         #   * HL を描画対象文字列先頭に戻す
         #   * B に欄幅を設定し、C は VRAM ポート番号を固定して OUT_C 用に備える
         POP.HL(block)  # 文字列ポインタを復帰
-        LD.B_n8(block, option_width)
+        LD.B_n8(block, option_width_)
         LD.C_n8(block, 0x98)  # ★ Cレジスタにポート番号を固定しておく
 
         LABEL_OPT_WRITE_LOOP = unique_label("__OPT_WRITE_LOOP__")
         LABEL_OPT_PADDING_LOOP = unique_label("__OPT_PADDING_LOOP__")
         LABEL_OPT_PADDING_EXEC = unique_label("__OPT_PADDING_EXEC__")
-        LABEL_OPT_LEFT_PADDING = unique_label("__OPT_LEFT_PADDING__")
 
         if option_field_padding:
             # [ブロック4] 左パディング: 指定されたパディング幅だけ空白を吐き、B(残り幅)を減算。
+            LABEL_OPT_LEFT_PADDING = unique_label("__OPT_LEFT_PADDING__")
             LD.D_n8(block, option_field_padding)
             block.label(LABEL_OPT_LEFT_PADDING)  # __OPT_LEFT_PADDING__
             LD.A_n8(block, ord(" "))
             OUT(block, 0x98)
-            DEC.D(block)
             DEC.B(block)
+            DEC.D(block)
             JR_NZ(block, LABEL_OPT_LEFT_PADDING)
 
         # [ブロック5] 文字列出力ループ: 0 終端まで文字を送り、欄幅カウンタ B を減らす。
         #   * OR A で終端判定し、0 に達したらパディング処理へ
         block.label(LABEL_OPT_WRITE_LOOP)  # __OPT_WRITE_LOOP__
         LD.A_mHL(block)
-        OR.A(block)
+        OR.A(block)  # 終端判定
         JR_Z(block, LABEL_OPT_PADDING_LOOP)
         OUT_C.A(block)
         INC.HL(block)
-        DJNZ(block, LABEL_OPT_WRITE_LOOP)
-        RET(block)
+        DJNZ(block, LABEL_OPT_WRITE_LOOP) # b-- > 0 まで繰り返し
+        RET(block)  # 文字列が欄幅を超えた場合はここで終了
 
+        # b に全体の残り欄幅が入っているので、空白で埋める。
         block.label(LABEL_OPT_PADDING_LOOP)  # __OPT_PADDING_LOOP__
-        LD.A_n8(block, 0x20)
+        LD.A_n8(block, ord(" "))
         block.label(LABEL_OPT_PADDING_EXEC)  # __OPT_PADDING_EXEC__
         OUT(block, 0x98)
-        DJNZ(block, LABEL_OPT_PADDING_EXEC)
+        DJNZ(block, LABEL_OPT_PADDING_EXEC)  # b-- > 0 まで繰り返し
         RET(block)
 
     def _emit_option_pointer_table(
