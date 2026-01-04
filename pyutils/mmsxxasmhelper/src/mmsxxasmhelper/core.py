@@ -644,6 +644,7 @@ def define_created_funcs(
             continue
         if func.name in defined_names:
             continue
+        print(f"Defining created func: {func.name}")
         func.define(b)
         defined_names.add(func.name)
 
