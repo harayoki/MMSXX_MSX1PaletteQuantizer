@@ -197,11 +197,11 @@ class ADDR:
     CT_BUFFER = madd("CT_BUFFER", 256)
     TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
-    CONFIG_AUTO_SPEED = madd(
-        "CONFIG_AUTO_SPEED", 1, description="自動切り替え速度 (0-7)"
-    )
     CONFIG_BEEP_ENABLED = madd(
         "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
+    )
+    CONFIG_AUTO_SPEED = madd(
+        "CONFIG_AUTO_SPEED", 1, description="自動切り替え速度 (0-7)"
     )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
@@ -889,7 +889,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
 def build_config_scene_func(
     *, update_input_func: Func, group: str = DEFAULT_FUNC_GROUP_NAME
-) -> tuple[Func, Func]:
+) -> tuple[Func, Sequence[Func]]:
     """設定メニューシーンを生成する。"""
 
     entries = [
@@ -905,7 +905,7 @@ def build_config_scene_func(
         ),
     ]
 
-    init_func, loop_func, table_func = build_screen0_config_menu(
+    init_func, loop_func, table_funcs = build_screen0_config_menu(
         entries,
         update_input_func=update_input_func,
         input_hold_addr=ADDR.INPUT_HOLD,
@@ -929,11 +929,11 @@ def build_config_scene_func(
         loop_func.call(block)
         RET(block)
 
-    return Func("CONFIG_SCENE", config_scene, group=group), table_func
+    return Func("CONFIG_SCENE", config_scene, group=group), table_funcs
 
 
 SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
-CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNC = build_config_scene_func(
+CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNCS = build_config_scene_func(
     update_input_func=UPDATE_INPUT_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
 )
 
@@ -1000,7 +1000,7 @@ def build_boot_bank(
     dump_func_bytes_on_finalize(
         b,
         groups=[SCROLL_VIEWER_FUNC_GROUP],
-        funcs=[CONFIG_TABLE_FUNC],
+        funcs=CONFIG_TABLE_FUNCS,
         stream=config_table_dump,
     )
 

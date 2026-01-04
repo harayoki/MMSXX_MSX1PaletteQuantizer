@@ -79,7 +79,7 @@ def build_screen0_config_menu(
     label_col: int = 2,
     option_col: int = 12,
     option_field_padding: int = 1,
-) -> tuple[Func, Func, Func]:
+) -> tuple[Func, Func, Sequence[Func]]:
     """辞書定義から SCREEN 0 のコンフィグ画面を生成する。"""
 
     def _normalize_entries(
@@ -148,15 +148,23 @@ def build_screen0_config_menu(
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
 
     def _emit_write_text(block: Block, col: int, row: int, text: str) -> None:
+        print("Emitting write text:", repr(text), f"at ({col},{row})")
         write_text_with_cursor_macro(block, text, col, row)
 
     def _emit_draw_option(
         block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
     ) -> None:
+
         # VRAM のオプション欄に現在値を描画する。
-        # 入力: entry.store_addr に選択インデックスが格納されていることを前提に A を介して取得。
+        # 前提: entry.store_addr に項目選択インデックスが格納されている事
         # 破壊: ポインタ計算と VRAM 書き込みのため A/B/C/D/E/H/L を使用し、戻り時も内容は保証しない。
         row = entry_row_base + entry_index
+
+        print("Emitting draw option for entry"
+              f" {entry.name} index {entry_index} row={row} options={entry.options} width={option_width}")
+
+
+        embed_debug_string_macro(block, f"Draw option {entry.name} #{entry_index} row:{row} addr:{entry.store_addr:04X}h")
 
         # [ブロック1] 選択インデックス取得とポインタ解決。
         #   * entry.store_addr から現在値を A に読み出し
@@ -172,6 +180,7 @@ def build_screen0_config_menu(
         LD.E_mHL(block)
         INC.HL(block)
         LD.D_mHL(block)
+        embed_debug_string_macro(block, f"Option index in A")
         PUSH.DE(block)  # 文字列ポインタを退避
 
         # [ブロック2] VRAM 書き込みの準備。
@@ -250,6 +259,7 @@ def build_screen0_config_menu(
         func_name: str, entry: Screen0ConfigEntry, entry_index: int, option_width: int
     ) -> Func:
         def draw_option(block: Block) -> None:
+            # オプション値の描画ルーチン本体
             _emit_draw_option(block, entry, entry_index, option_width)
 
         return Func(func_name, draw_option, group=group)
@@ -460,7 +470,6 @@ def build_screen0_config_menu(
         LD.mn16_A(block, PREV_ENTRY_ADDR)
         RET(block)
 
-
     UPDATE_TRIANGLE_FUNC = Func(
         "UPDATE_TRIANGLES", update_triangles, group=group
     )
@@ -648,7 +657,7 @@ def build_screen0_config_menu(
         # 8) ループの先頭に戻って次の入力を待つ。
         JP(block, LABEL_CONFIG_LOOP)
 
-    def emit_tables(block: Block) -> None:
+    def emit_tables1(block: Block) -> None:
         # 各種ジャンプテーブルや定数テーブルを ROM/RAM に配置するデータ出力ルーチン。
         # 入力: レジスタ前提はなく、定義済みのエントリ配列からテーブルを生成する。
         # 破壊: データ出力のみで CPU レジスタへの影響は想定しない (Block への emit のみ)。
@@ -659,26 +668,37 @@ def build_screen0_config_menu(
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, func.name)
 
+    def emit_tables2(block: Block) -> None:
+
         # 2) 各設定項目の現在値が格納されるワードアドレスを並べたテーブルを出力する。
         block.label(ENTRY_VALUE_ADDR_LABEL)  # __ENTRY_VALUE_ADDR__
         for entry in config_entries:  # 2 x エントリ bytes
             DW(block, entry.store_addr & 0xFFFF)
+
+    def emit_tables3(block: Block) -> None:
 
         # 3) 各設定項目に用意されている選択肢の数をバイトで出力し、範囲チェックに利用する。
         block.label(ENTRY_OPTION_COUNT_LABEL)  # __ENTRY_OPTION_COUNT__
         for entry in config_entries:   # 1 x エントリ bytes
             DB(block, len(entry.options) & 0xFF)
 
+    def emit_tables4(block: Block) -> None:
+
         # 4) 表示時に利用するオプション欄の幅 (文字数) を並べておき、描画幅を決定する。
         block.label(ENTRY_OPTION_WIDTH_LABEL)  # __ENTRY_OPTION_WIDTH__
         for width in option_field_widths:
             DB(block, width & 0xFF)  # 2 x エントリ bytes
+
+    def emit_tables5(block: Block) -> None:
 
         # 5) 各設定項目が配置される画面上の行先頭 VRAM アドレスを計算してテーブル化する。
         block.label(ENTRY_ROW_ADDR_LABEL)  # __ENTRY_ROW_ADDR__
         for idx in range(entry_count):
             row_addr = screen0_name_base + ((entry_row_base + idx) * 40)
             DW(block, row_addr & 0xFFFF)  # 2 x エントリ bytes
+            print(f"Entry {idx} row addr: {row_addr:04X}h")
+
+    def emit_tables6(block: Block) -> None:
 
         # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
         for idx, entry in enumerate(config_entries):
@@ -709,11 +729,41 @@ def build_screen0_config_menu(
 
     INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen, group=group)
     RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop, group=group)
-    TABLE_FUNC = Func(
-        "CONFIG_SCREEN0_TABLES",
-        emit_tables,
+    TABLE_FUNC1 = Func(
+        "OPTION_JP_TABLES",
+        emit_tables1,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC2 = Func(
+        "OPTION_VALUE_ADDR_TABLES",
+        emit_tables2,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC3 = Func(
+        "OPTION_SELECTION_COUNT_TABLES",
+        emit_tables3,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC4 = Func(
+        "OPTION_MAX_WIDTH_TABLES",
+        emit_tables4,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC5 = Func(
+        "OPTION_VRAM_ADDR_TABLES",
+        emit_tables5,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC6 = Func(
+        "OPTION_STRING_POINTER_TABLES",
+        emit_tables6,
         no_auto_ret=True,
         group=group,
     )
 
-    return INIT_FUNC, RUN_LOOP_FUNC, TABLE_FUNC
+    return INIT_FUNC, RUN_LOOP_FUNC, [TABLE_FUNC1, TABLE_FUNC2, TABLE_FUNC3, TABLE_FUNC4, TABLE_FUNC5, TABLE_FUNC6]
