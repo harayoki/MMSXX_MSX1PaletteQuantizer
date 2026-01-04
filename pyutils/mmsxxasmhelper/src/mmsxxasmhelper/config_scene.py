@@ -143,7 +143,6 @@ def build_screen0_config_menu(
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
     ENTRY_OPTION_WIDTH_LABEL = unique_label("__ENTRY_OPTION_WIDTH__")
     ENTRY_ROW_ADDR_LABEL = unique_label("__ENTRY_ROW_ADDR__")
-    OPT_PTR_TABLE_LABEL = unique_label("__OPT_PTR_TABLE__")
     OPTION_POINTER_LABELS = [unique_label("__OPT_PTR__") for _ in config_entries]
 
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
@@ -161,14 +160,14 @@ def build_screen0_config_menu(
 
         # [ブロック1] 選択インデックス取得とポインタ解決。
         #   * entry.store_addr から現在値を A に読み出し
-        #   * オプションポインタテーブル (OPT_PTR_TABLE_LABEL) まで 2byte ポインタオフセットを求める
+        #   * エントリ固有のオプションポインタテーブルまで 2byte ポインタオフセットを求める
         #   * HL をテーブルの該当要素に合わせ、実際の文字列先頭アドレスを DE として退避
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
         LD.L_A(block)
         LD.H_n8(block, 0)
         ADD.HL_HL(block)
-        LD.DE_label(block, OPT_PTR_TABLE_LABEL)
+        LD.DE_label(block, OPTION_POINTER_LABELS[entry_index])
         ADD.HL_DE(block)
         LD.E_mHL(block)
         INC.HL(block)
@@ -681,7 +680,6 @@ def build_screen0_config_menu(
             DW(block, row_addr & 0xFFFF)  # 2 x エントリ bytes
 
         # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
-        block.label(OPT_PTR_TABLE_LABEL)  # __OPT_PTR_TABLE__
         for idx, entry in enumerate(config_entries):
             # アドレス2文字 + 選択肢文字数 + 終端文字(0h)
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
