@@ -52,6 +52,7 @@ from mmsxxasmhelper.core import (
     JP,
     JP_NZ,
     JP_Z,
+    JP_C,
     JR,
     JR_C,
     JR_NC,
@@ -893,14 +894,14 @@ def build_config_scene_func(
 
     entries = [
         Screen0ConfigEntry(
-            "AUTO",
-            ["0", "1", "2", "3", "4", "5", "6", "7"],
-            ADDR.CONFIG_AUTO_SPEED,
-        ),
-        Screen0ConfigEntry(
             "BEEP",
             ["ON", "OFF"],
             ADDR.CONFIG_BEEP_ENABLED,
+        ),
+        Screen0ConfigEntry(
+            "AUTO",
+            ["0", "1", "2", "3", "4", "5", "6", "7"],
+            ADDR.CONFIG_AUTO_SPEED,
         ),
     ]
 
@@ -913,7 +914,7 @@ def build_config_scene_func(
         header_lines=[
             "<HELP>",
             "",
-            "ESC : EXIT THIS HELP",
+            "ESC : ENTER / EXIT THIS HELP",
             "SPACE: NEXT IMAGE",
             "SHIFT+SPACE: PREV IMAGE",
             "UP/DOWN: SCROLL",
@@ -1126,7 +1127,7 @@ def build_boot_bank(
     b.label("SHIFT_UP_STORE")
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
-    JR(b, "CHECK_AUTO")
+    JP(b, "CHECK_AUTO")
 
     b.label("SCROLL_UP_SINGLE")
 
@@ -1147,7 +1148,7 @@ def build_boot_bank(
     # 下キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
-    JR_Z(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO")
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1164,8 +1165,8 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JR_Z(b, "CHECK_AUTO")  # 下限到達
-    JR_C(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO")  # 下限到達
+    JP_C(b, "CHECK_AUTO")
 
     EX.DE_HL(b)  # HL = current, DE = limit
     LD.BC_n16(b, 8)
@@ -1185,7 +1186,7 @@ def build_boot_bank(
     b.label("SHIFT_DOWN_STORE")
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
-    JR(b, "CHECK_AUTO")
+    JP(b, "CHECK_AUTO")
 
     b.label("SCROLL_DOWN_SINGLE")
 
@@ -1200,8 +1201,8 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JR_Z(b, "CHECK_AUTO")  # 下限到達
-    JR_C(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO")  # 下限到達
+    JP_C(b, "CHECK_AUTO")
 
     # 1行下へ移動
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
