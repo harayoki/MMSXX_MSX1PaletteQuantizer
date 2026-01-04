@@ -170,10 +170,11 @@ AUTO_ADVANCE_INTERVAL_FRAMES = [
     30 * 60,
     10 * 60,
     5 * 60,
+    3 * 60,
     1 * 60,
     1,
 ]
-AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 1s", "MAX"]
+AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 3s", " 1s", "MAX"]
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
