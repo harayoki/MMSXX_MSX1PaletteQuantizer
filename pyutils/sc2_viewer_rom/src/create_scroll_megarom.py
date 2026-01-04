@@ -223,7 +223,10 @@ class ADDR:
         "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
     )
     CONFIG_WORK_BASE = madd(
-        "CONFIG_WORK_BASE", get_work_byte_length_for_screen0_config_menu(), description="コンフィグ用ワークベース")
+        "CONFIG_WORK_BASE",
+        get_work_byte_length_for_screen0_config_menu(),
+        description="コンフィグ用ワークベース",
+    )
 
 # mem_addr_allocator.debug_print()
 
@@ -1036,11 +1039,7 @@ def build_boot_bank(
     enaslt_macro(b)
 
     # コンフィグの初期値を設定
-    # XOR.A(b)
-    # LD.mn16_A(b, ADDR.CONFIG_AUTO_SPEED)
-    # LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
-    # LD.mn16_A(b, ADDR.CONFIG_WORK_BASE)
-    # LD.mn16_A(b, ADDR.CONFIG_AUTO_SCROLL)
+    mem_addr_allocator.emit_initial_value_loader(b)
     if beep_enabled_default:
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
     else:

@@ -336,6 +336,7 @@ class MemAddrAllocator:
         self._lookup: dict[str, dict[str, object]] = {}
 
         self._initial_bytes = bytearray()
+        self._initial_value_names: list[str] = []
 
     def _ensure_capacity(self, address: int, size: int) -> int:
         offset = address - self._base_address
@@ -394,18 +395,23 @@ class MemAddrAllocator:
 
         address = self._current_address
         self._allocated.append(name)
+        has_initial_value = initial_value is not None
         raw_initial_value = raw if raw else [0x00] * size
         self._lookup[name] = {
             "address": address,
             "size": size,
             "description": description,
             "initial_value": bytes(raw_initial_value),
+            "has_initial_value": has_initial_value,
         }
         self._current_address += size
 
         offset = self._ensure_capacity(address, size)
         if raw is not None:
             self._initial_bytes[offset : offset + len(raw)] = raw
+
+        if has_initial_value:
+            self._initial_value_names.append(name)
 
         return address
 
@@ -449,6 +455,44 @@ class MemAddrAllocator:
         """割り当て済み領域の全サイズを返す。"""
 
         return self._current_address - self._base_address
+
+    def emit_initial_value_loader(
+        self,
+        block: Block,
+        *,
+        table_label_prefix: str = "ALLOC_INITIAL_BYTES",
+    ) -> None:
+        """初期値をまとめて RAM に書き込むコードとデータを出力する。"""
+
+        if not self._initial_value_names:
+            return
+
+        segments: list[tuple[int, bytearray]] = []
+        for name in self._allocated:
+            entry = self._lookup[name]
+            if not entry["has_initial_value"]:
+                continue
+
+            address = int(entry["address"])
+            data = bytearray(entry["initial_value"])
+            if segments and address == segments[-1][0] + len(segments[-1][1]):
+                segments[-1][1].extend(data)
+            else:
+                segments.append((address, data))
+
+        for index, (address, data) in enumerate(segments):
+            data_label = unique_label(f"{table_label_prefix}_{index}")
+            after_label = unique_label("AFTER_INITIAL_BYTES")
+
+            LD.HL_label(block, data_label)
+            LD.DE_n16(block, address)
+            LD.BC_n16(block, len(data))
+            LDIR(block)
+            JR(block, after_label)
+
+            block.label(data_label)
+            DB(block, *data)
+            block.label(after_label)
 
     def write_initial_values(self, target: bytearray) -> None:
         """保持している初期値を ``target`` に書き込む。"""
