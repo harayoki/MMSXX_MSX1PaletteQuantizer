@@ -28,6 +28,7 @@ MSX1 SCREEN2 の縦スクロール ROM ビルダー。
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import random
 import shutil
@@ -87,6 +88,7 @@ from mmsxxasmhelper.core import (
     ensure_funcs_defined,
     set_funcs_call_offset,
     set_funcs_bank,
+    dump_func_bytes_on_finalize,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -976,6 +978,14 @@ def build_boot_bank(
 
     b = Block()
 
+    config_table_dump = io.StringIO()
+    dump_func_bytes_on_finalize(
+        b,
+        groups=[SCROLL_VIEWER_FUNC_GROUP],
+        funcs=[CONFIG_TABLE_FUNC],
+        stream=config_table_dump,
+    )
+
     place_msx_rom_header_macro(b, entry_point=ROM_BASE + 0x10)
 
     b.label("start")
@@ -1224,6 +1234,10 @@ def build_boot_bank(
     DB(b, *header_bytes)
 
     assembled = b.finalize(origin=ROM_BASE)
+
+    config_table_dump.seek(0)
+    for line in config_table_dump.read().splitlines():
+        log_and_store(line, log_lines)
 
     data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
     log_and_store("---- labels ----", log_lines)
