@@ -551,6 +551,23 @@ def build_screen0_config_menu(
         _emit_write_text(block, label_col, top_row, "<SETTING>")
         _emit_write_text(block, label_col, top_row + 1, "Up/Down: select  Left/Right: change")
 
+        # 入力が届く前に、保持されている設定値が有効範囲内かを確認する。
+        # 想定外の値が入っていると描画や増減が正しく動かないため、
+        # 範囲外なら 0 に初期化してから描画する。
+        for idx, entry in enumerate(config_entries):
+            block.label(unique_label("__SANITIZE_ENTRY__"))
+            LD.HL_n16(block, entry.store_addr)
+            LD.A_mHL(block)
+            CP.n8(block, len(entry.options))
+
+            LABEL_VALUE_VALID = unique_label("__VALUE_VALID__")
+            JR_C(block, LABEL_VALUE_VALID)
+
+            XOR.A(block)
+            LD.mHL_A(block)
+
+            block.label(LABEL_VALUE_VALID)
+
         for idx, entry in enumerate(config_entries):
             _emit_write_text(block, label_col, entry_row_base + idx, f"{entry.name}:")
             draw_option_funcs[idx].call(block)
