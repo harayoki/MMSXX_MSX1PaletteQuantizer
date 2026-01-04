@@ -822,6 +822,10 @@ def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def set_vram_write(block: Block) -> None:
         # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
         # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
+        # レジスタ変化:
+        #   * A は処理中に HL の各バイトや 0x40 をロードするために使用・更新される
+        #   * HL は読み取りのみで値は変化しない
+        #   * フラグは OR.n8 により更新される
 
         LD.A_L(block)
         OUT(block, 0x99)  # 下位8bit
