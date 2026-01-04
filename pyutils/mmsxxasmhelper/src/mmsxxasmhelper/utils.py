@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import sys
 from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
@@ -344,6 +345,8 @@ class MemAddrAllocator:
         return offset
 
     def _normalize_initial_value(self, value: object) -> list[int]:
+        if isinstance(value, Sequence) and all(isinstance(b, int) for b in value):
+            return list(value)
         if isinstance(value, (bytes, bytearray)):
             return list(value)
 
@@ -354,7 +357,7 @@ class MemAddrAllocator:
         self,
         name: str,
         size: int | None = None,
-        initial_value: bytes | bytearray | None = None,
+        initial_value: Sequence[int] | None = None,
         description: str = "",
     ) -> int:
         """名前とサイズを登録し、割り当て先アドレスを返す。
@@ -449,7 +452,6 @@ class MemAddrAllocator:
 
     def write_initial_values(self, target: bytearray) -> None:
         """保持している初期値を ``target`` に書き込む。"""
-
         if len(target) < self.total_size:
             msg = "target buffer is too small to receive initial values"
             raise ValueError(msg)
