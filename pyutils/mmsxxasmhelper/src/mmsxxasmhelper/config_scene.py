@@ -60,14 +60,18 @@ class Screen0ConfigEntry:
     store_addr: int
 
 
+def get_work_byte_length_for_screen0_config_menu() -> int:
+    """SCREEN 0 コンフィグ画面で使用するワークエリアのバイト数を取得する。"""
+    return 5  # CURRENT_ENTRY_ADDR, BLINK_STATE_ADDR, PREV_ENTRY_ADDR
+
+
 def build_screen0_config_menu(
     entries: Sequence[Screen0ConfigEntry] | dict[str, dict[str, object]],
     *,
     update_input_func: Func,
     group: str = DEFAULT_FUNC_GROUP_NAME,
-    input_hold_addr: int = 0xC100,
-    input_trg_addr: int = 0xC101,
-    work_base_addr: int = 0xC110,
+    input_trg_addr: int = 0xC100,
+    work_base_addr: int = 0xC101,
     screen0_name_base: int = 0x0000,  # 0 で正しい 替えるとカーソルが消える
     title_lines: Sequence[str] | None = None,
     title_row: int = 0,
@@ -77,9 +81,10 @@ def build_screen0_config_menu(
     header_col: int = 2,
     top_row: int = 4,
     label_col: int = 2,
-    option_col: int = 12,
+    option_col: int = -1,
     option_field_padding: int = 1,
-) -> tuple[Func, Func, Func]:
+    use_same_width_for_all_options: bool = True,
+) -> tuple[Func, Func, Sequence[Func]]:
     """辞書定義から SCREEN 0 のコンフィグ画面を生成する。"""
 
     def _normalize_entries(
@@ -113,6 +118,10 @@ def build_screen0_config_menu(
         (max(len(opt) for opt in entry.options)) + (option_field_padding * 2)
         for entry in config_entries
     ]
+    # 全部同じ幅にする場合は以下を有効に
+    if use_same_width_for_all_options:
+        max_width = max(option_field_widths)
+        option_field_widths = [max_width for _ in config_entries]
 
     title_lines = title_lines or ["", "HELP & SETTING", ""]
     title_height = len(title_lines)
@@ -135,6 +144,11 @@ def build_screen0_config_menu(
             "表示行が SCREEN 0 の 24 行を超えています。top_row や項目数を調整してください"
         )
 
+    if option_col < 0:
+        # ラベル列 + 最大ラベル幅 + 2 文字分の余裕
+        max_label_width = max(len(entry.name) for entry in config_entries)
+        option_col = label_col + max_label_width + 4
+
     CURRENT_ENTRY_ADDR = work_base_addr
     BLINK_STATE_ADDR = work_base_addr + 1
     PREV_ENTRY_ADDR = work_base_addr + 2
@@ -143,7 +157,6 @@ def build_screen0_config_menu(
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
     ENTRY_OPTION_WIDTH_LABEL = unique_label("__ENTRY_OPTION_WIDTH__")
     ENTRY_ROW_ADDR_LABEL = unique_label("__ENTRY_ROW_ADDR__")
-    OPT_PTR_TABLE_LABEL = unique_label("__OPT_PTR_TABLE__")
     OPTION_POINTER_LABELS = [unique_label("__OPT_PTR__") for _ in config_entries]
 
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
@@ -152,33 +165,42 @@ def build_screen0_config_menu(
         write_text_with_cursor_macro(block, text, col, row)
 
     def _emit_draw_option(
-        block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width: int
+        block: Block, entry: Screen0ConfigEntry, entry_index: int, option_width_: int
     ) -> None:
+
         # VRAM のオプション欄に現在値を描画する。
-        # 入力: entry.store_addr に選択インデックスが格納されていることを前提に A を介して取得。
+        # 前提: entry.store_addr に項目選択インデックスが格納されている事
         # 破壊: ポインタ計算と VRAM 書き込みのため A/B/C/D/E/H/L を使用し、戻り時も内容は保証しない。
         row = entry_row_base + entry_index
+        vram_addr = screen0_name_base + (row * 40) + option_col
+
+        print("Emitting draw option for entry"
+              f" {entry.name} index {entry_index} row={row}"
+              f" vram:{vram_addr:04X}h store:{entry.store_addr} options={entry.options} width={option_width_}")
+
+        embed_debug_string_macro(
+            block,
+            f"Draw opt '{entry.name}' v:{vram_addr:04X}h s:{entry.store_addr:04X}h",)
 
         # [ブロック1] 選択インデックス取得とポインタ解決。
         #   * entry.store_addr から現在値を A に読み出し
-        #   * オプションポインタテーブル (OPT_PTR_TABLE_LABEL) まで 2byte ポインタオフセットを求める
+        #   * エントリ固有のオプションポインタテーブルまで 2byte ポインタオフセットを求める
         #   * HL をテーブルの該当要素に合わせ、実際の文字列先頭アドレスを DE として退避
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
         LD.L_A(block)
         LD.H_n8(block, 0)
-        ADD.HL_HL(block)
-        LD.DE_label(block, OPT_PTR_TABLE_LABEL)
+        ADD.HL_HL(block)  # selection_index * 2
+        LD.DE_label(block, OPTION_POINTER_LABELS[entry_index])  # オプション文字列のポインタテーブル
         ADD.HL_DE(block)
         LD.E_mHL(block)
         INC.HL(block)
-        LD.D_mHL(block)
+        LD.D_mHL(block)  # DE = ポインタテーブルから取得した文字列先頭アドレス
         PUSH.DE(block)  # 文字列ポインタを退避
 
         # [ブロック2] VRAM 書き込みの準備。
         #   * 行・列位置から VRAM アドレスを算出し HL にセット
         #   * 可変長の文字列 + パディングを書き込むため、事前に set_vram_write を呼んでポート 0x98 を開く
-        vram_addr = screen0_name_base + (row * 40) + option_col
         LD.HL_n16(block, vram_addr)
         SET_VRAM_WRITE_FUNC.call(block)
 
@@ -186,40 +208,41 @@ def build_screen0_config_menu(
         #   * HL を描画対象文字列先頭に戻す
         #   * B に欄幅を設定し、C は VRAM ポート番号を固定して OUT_C 用に備える
         POP.HL(block)  # 文字列ポインタを復帰
-        LD.B_n8(block, option_width)
+        LD.B_n8(block, option_width_)
         LD.C_n8(block, 0x98)  # ★ Cレジスタにポート番号を固定しておく
 
         LABEL_OPT_WRITE_LOOP = unique_label("__OPT_WRITE_LOOP__")
         LABEL_OPT_PADDING_LOOP = unique_label("__OPT_PADDING_LOOP__")
         LABEL_OPT_PADDING_EXEC = unique_label("__OPT_PADDING_EXEC__")
-        LABEL_OPT_LEFT_PADDING = unique_label("__OPT_LEFT_PADDING__")
 
         if option_field_padding:
             # [ブロック4] 左パディング: 指定されたパディング幅だけ空白を吐き、B(残り幅)を減算。
+            LABEL_OPT_LEFT_PADDING = unique_label("__OPT_LEFT_PADDING__")
             LD.D_n8(block, option_field_padding)
             block.label(LABEL_OPT_LEFT_PADDING)  # __OPT_LEFT_PADDING__
             LD.A_n8(block, ord(" "))
             OUT(block, 0x98)
-            DEC.D(block)
             DEC.B(block)
+            DEC.D(block)
             JR_NZ(block, LABEL_OPT_LEFT_PADDING)
 
         # [ブロック5] 文字列出力ループ: 0 終端まで文字を送り、欄幅カウンタ B を減らす。
         #   * OR A で終端判定し、0 に達したらパディング処理へ
         block.label(LABEL_OPT_WRITE_LOOP)  # __OPT_WRITE_LOOP__
         LD.A_mHL(block)
-        OR.A(block)
+        OR.A(block)  # 終端判定
         JR_Z(block, LABEL_OPT_PADDING_LOOP)
         OUT_C.A(block)
         INC.HL(block)
-        DJNZ(block, LABEL_OPT_WRITE_LOOP)
-        RET(block)
+        DJNZ(block, LABEL_OPT_WRITE_LOOP) # b-- > 0 まで繰り返し
+        RET(block)  # 文字列が欄幅を超えた場合はここで終了
 
+        # b に全体の残り欄幅が入っているので、空白で埋める。
         block.label(LABEL_OPT_PADDING_LOOP)  # __OPT_PADDING_LOOP__
-        LD.A_n8(block, 0x20)
+        LD.A_n8(block, ord(" "))
         block.label(LABEL_OPT_PADDING_EXEC)  # __OPT_PADDING_EXEC__
         OUT(block, 0x98)
-        DJNZ(block, LABEL_OPT_PADDING_EXEC)
+        DJNZ(block, LABEL_OPT_PADDING_EXEC)  # b-- > 0 まで繰り返し
         RET(block)
 
     def _emit_option_pointer_table(
@@ -237,7 +260,7 @@ def build_screen0_config_menu(
             encoded.append(0x00)
             DB(block, *encoded)
         """
-        ex) AUTO: 0 ~ 7
+        ex) AUTO SPD: 0 ~ 7
         [48, 0] /[49, 0] / [50, 0] / [51, 0] / [52, 0] / [53, 0] / [54, 0] / [55, 0]
         ex) BEEP: ON / OFF
         [79, 78, 0] / [79, 70, 70, 0]
@@ -251,6 +274,7 @@ def build_screen0_config_menu(
         func_name: str, entry: Screen0ConfigEntry, entry_index: int, option_width: int
     ) -> Func:
         def draw_option(block: Block) -> None:
+            # オプション値の描画ルーチン本体
             _emit_draw_option(block, entry, entry_index, option_width)
 
         return Func(func_name, draw_option, group=group)
@@ -370,16 +394,7 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         LD.C_A(block)
 
-        # [ブロック3] オプション欄幅: 文字数を取得し、右側インジケータの列位置計算に使用する。
-        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
-        LD.L_A(block)
-        LD.H_n8(block, 0)
-        LD.DE_label(block, ENTRY_OPTION_WIDTH_LABEL)
-        ADD.HL_DE(block)
-        LD.A_mHL(block)
-        LD.E_A(block)
-
-        # [ブロック4] 描画対象行: VRAM 上の行アドレスを取得し、左右インジケータ描画で共有する。
+        # [ブロック3] 描画対象行: VRAM 上の行アドレスを取得し、左右インジケータ描画で共有する。
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -390,7 +405,7 @@ def build_screen0_config_menu(
         INC.HL(block)
         LD.D_mHL(block)
 
-        # [ブロック5] 左インジケータ描画: 行アドレスを復元し、オプション列の直前にカーソルを置く。
+        # [ブロック4] 左インジケータ描画: 行アドレスを復元し、オプション列の直前にカーソルを置く。
         # 「オプション値が 0 ではない（左に進める）」かつ「点滅フラグが 0」の場合だけ "<" を出し、
         # それ以外は空白で消す。
         PUSH.DE(block)
@@ -404,7 +419,6 @@ def build_screen0_config_menu(
         # LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LABEL_LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         LABEL_LEFT_END = unique_label("__LEFT_END__")
-
         LD.A_C(block)
         OR.A(block)
         JR_Z(block, LABEL_LEFT_HIDDEN)
@@ -417,14 +431,24 @@ def build_screen0_config_menu(
         JR(block, LABEL_LEFT_END)
 
         block.label(LABEL_LEFT_HIDDEN)  # __LEFT_HIDDEN__
-        LD.A_n8(block, 0x20)
+        LD.A_n8(block, ord("{"))
         OUT_C.A(block)
 
         block.label(LABEL_LEFT_END)  # __LEFT_END__
 
+        # [ブロック5] オプション欄幅: 文字数を取得し、右側インジケータの列位置計算に使用する。
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, ENTRY_OPTION_WIDTH_LABEL)
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        LD.E_A(block)
+
         # [ブロック6] 右インジケータ描画: 退避した行アドレスにオプション欄の幅を足し、
         # 「最終オプションではない（まだ右がある）」かつ「点滅フラグが 1」の場合だけ ">" を出す。
         # 右に進めない場合や点滅条件外では空白を出して消す。
+
         POP.HL(block)
         LD.BC_n16(block, option_col)
         ADD.HL_BC(block)
@@ -453,7 +477,7 @@ def build_screen0_config_menu(
         JR(block, LABEL_RIGHT_END)
 
         block.label(LABEL_RIGHT_HIDDEN)  # __RIGHT_HIDDEN__
-        LD.A_n8(block, 0x20)
+        LD.A_n8(block, ord("}"))
         OUT_C.A(block)
 
         block.label(LABEL_RIGHT_END)  # __RIGHT_END__
@@ -648,7 +672,7 @@ def build_screen0_config_menu(
         # 8) ループの先頭に戻って次の入力を待つ。
         JP(block, LABEL_CONFIG_LOOP)
 
-    def emit_tables(block: Block) -> None:
+    def emit_tables1(block: Block) -> None:
         # 各種ジャンプテーブルや定数テーブルを ROM/RAM に配置するデータ出力ルーチン。
         # 入力: レジスタ前提はなく、定義済みのエントリ配列からテーブルを生成する。
         # 破壊: データ出力のみで CPU レジスタへの影響は想定しない (Block への emit のみ)。
@@ -659,29 +683,39 @@ def build_screen0_config_menu(
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, func.name)
 
+    def emit_tables2(block: Block) -> None:
+
         # 2) 各設定項目の現在値が格納されるワードアドレスを並べたテーブルを出力する。
         block.label(ENTRY_VALUE_ADDR_LABEL)  # __ENTRY_VALUE_ADDR__
         for entry in config_entries:  # 2 x エントリ bytes
             DW(block, entry.store_addr & 0xFFFF)
+
+    def emit_tables3(block: Block) -> None:
 
         # 3) 各設定項目に用意されている選択肢の数をバイトで出力し、範囲チェックに利用する。
         block.label(ENTRY_OPTION_COUNT_LABEL)  # __ENTRY_OPTION_COUNT__
         for entry in config_entries:   # 1 x エントリ bytes
             DB(block, len(entry.options) & 0xFF)
 
+    def emit_tables4(block: Block) -> None:
+
         # 4) 表示時に利用するオプション欄の幅 (文字数) を並べておき、描画幅を決定する。
         block.label(ENTRY_OPTION_WIDTH_LABEL)  # __ENTRY_OPTION_WIDTH__
         for width in option_field_widths:
             DB(block, width & 0xFF)  # 2 x エントリ bytes
+
+    def emit_tables5(block: Block) -> None:
 
         # 5) 各設定項目が配置される画面上の行先頭 VRAM アドレスを計算してテーブル化する。
         block.label(ENTRY_ROW_ADDR_LABEL)  # __ENTRY_ROW_ADDR__
         for idx in range(entry_count):
             row_addr = screen0_name_base + ((entry_row_base + idx) * 40)
             DW(block, row_addr & 0xFFFF)  # 2 x エントリ bytes
+            print(f"Entry {idx} row addr: {row_addr:04X}h")
+
+    def emit_tables6(block: Block) -> None:
 
         # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
-        block.label(OPT_PTR_TABLE_LABEL)  # __OPT_PTR_TABLE__
         for idx, entry in enumerate(config_entries):
             # アドレス2文字 + 選択肢文字数 + 終端文字(0h)
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
@@ -710,11 +744,41 @@ def build_screen0_config_menu(
 
     INIT_FUNC = Func("CONFIG_SCREEN0_INIT", init_config_screen, group=group)
     RUN_LOOP_FUNC = Func("CONFIG_SCREEN0_LOOP", run_config_loop, group=group)
-    TABLE_FUNC = Func(
-        "CONFIG_SCREEN0_TABLES",
-        emit_tables,
+    TABLE_FUNC1 = Func(
+        "OPTION_JP_TABLES",
+        emit_tables1,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC2 = Func(
+        "OPTION_VALUE_ADDR_TABLES",
+        emit_tables2,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC3 = Func(
+        "OPTION_SELECTION_COUNT_TABLES",
+        emit_tables3,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC4 = Func(
+        "OPTION_MAX_WIDTH_TABLES",
+        emit_tables4,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC5 = Func(
+        "OPTION_VRAM_ADDR_TABLES",
+        emit_tables5,
+        no_auto_ret=True,
+        group=group,
+    )
+    TABLE_FUNC6 = Func(
+        "OPTION_STRING_POINTER_TABLES",
+        emit_tables6,
         no_auto_ret=True,
         group=group,
     )
 
-    return INIT_FUNC, RUN_LOOP_FUNC, TABLE_FUNC
+    return INIT_FUNC, RUN_LOOP_FUNC, [TABLE_FUNC1, TABLE_FUNC2, TABLE_FUNC3, TABLE_FUNC4, TABLE_FUNC5, TABLE_FUNC6]
