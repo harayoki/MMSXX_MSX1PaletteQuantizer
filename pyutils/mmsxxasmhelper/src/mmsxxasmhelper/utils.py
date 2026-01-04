@@ -18,6 +18,7 @@ __all__ = [
     "debug_trap",
     "debug_print_labels",
     "embed_debug_string_macro",
+    "debug_print_pc",
     "print_bytes",
     "MemAddrAllocator",
     "with_register_preserve",
@@ -244,6 +245,24 @@ def _register_debug_string(b: Block, text: str, break_pos: int, offset: int, len
 
     b._finalize_callbacks.append(_print_debug_strings)
     setattr(b, "_embedded_debug_strings_registered", True)
+
+
+def debug_print_pc(b: Block, name: str) -> None:
+    """finalize 後に呼び出し位置のアドレスを名前付きで表示するデバッグヘルパー。
+
+    ブレークポイント設定の目印として使用することを想定している。
+    """
+
+    pos = b.pc
+
+    def _print_pc(block: Block, origin: int) -> None:
+        if not DEBUG:
+            return
+
+        absolute = origin + pos
+        print(f"BP {name}: {absolute:04X} (+{pos:04X})")
+
+    b._finalize_callbacks.append(_print_pc)
 
 
 #
