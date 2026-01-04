@@ -190,7 +190,7 @@ def debug_trap(b: Block) -> None:
 # デバッグ用に任意の文字列を埋め込む
 #
 
-def embed_debug_string_macro(b: Block, text: str, *, with_nops: bool = False, encoding: str = "ascii") -> None:
+def embed_debug_string_macro(b: Block, text: str, *, with_nops: bool = True, encoding: str = "ascii") -> None:
     """任意の文字列をコードに埋め込むデバッグマクロ。
 
     文字列の直前に文字列終端へのジャンプを挿入するため、

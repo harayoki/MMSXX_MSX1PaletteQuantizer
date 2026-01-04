@@ -178,9 +178,9 @@ def build_screen0_config_menu(
               f" {entry.name} index {entry_index} row={row}"
               f" vram:{vram_addr:04X}h store:{entry.store_addr} options={entry.options} width={option_width_}")
 
-        embed_debug_string_macro(
-            block,
-            f"Draw opt '{entry.name}' v:{vram_addr:04X}h s:{entry.store_addr:04X}h",)
+        # embed_debug_string_macro(
+        #     block,
+        #     f"Draw opt '{entry.name}' v:{vram_addr:04X}h s:{entry.store_addr:04X}h",)
 
         # [ブロック1] 選択インデックス取得とポインタ解決。
         #   * entry.store_addr から現在値を A に読み出し
@@ -508,28 +508,33 @@ def build_screen0_config_menu(
         LD.HL_label(block, ENTRY_VALUE_ADDR_LABEL)
         ADD.HL_DE(block)
 
-        # HL が指す現在値のワードを DE に読み出す。
+        # HL が指すOPTION_VALUE_ADDR_TABLESの該当要素から、実際の値格納アドレスを DE に取得。
         LD.E_mHL(block)
         INC.HL(block)
-        LD.D_mHL(block)
+        LD.D_mHL(block)  # DE = 値格納アドレス
+        PUSH.DE(block)  # 値格納アドレスを退避
 
         # 選択肢数テーブルのアドレスを HL に準備 (インデックスオフセット)。
-        LD.A_C(block)
+        LD.A_C(block)  # 項目インデックス
         LD.L_A(block)
-        LD.H_n8(block, 0)
-        LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)
-        ADD.HL_DE(block)
-        LD.B_mHL(block)
+        LD.H_n8(block, 0)  # HL = index
+        LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)  # 選択肢の数テーブル
+        ADD.HL_DE(block)  # HL = index + ENTRY_OPTION_COUNT_LABEL
+        LD.B_mHL(block)  # B = 選択肢の数
 
         # 現在値 A と上限 B を比較し、増減処理を行う。
-        LD.A_mDE(block)
+        POP.DE(block)  # 値格納アドレスを復帰
+        LD.A_mDE(block)  # A = 現在値 B = 上限
+
         if delta > 0:
             DEC.B(block)  # 最大インデックス
             CP.B(block)
+            debug_print_pc(block," Adjust option plus: A vs B")
             JR_NC(block, LABEL_ADJUST_END)
             INC.A(block)
         else:
             OR.A(block)
+            debug_print_pc(block," Adjust option minus: A vs 0")
             JR_Z(block, LABEL_ADJUST_END)
             DEC.A(block)
 
@@ -651,6 +656,7 @@ def build_screen0_config_menu(
         BIT.n8_A(block, INPUT_KEY_BIT.L_LEFT)
         LABEL_SKIP_LEFT = unique_label("__SKIP_LEFT__")
         JR_Z(block, LABEL_SKIP_LEFT)
+        embed_debug_string_macro(block, "LEFT PRESSED")
         ADJUST_OPTION_MINUS.call(block)
         block.label(LABEL_SKIP_LEFT)  # __SKIP_LEFT__
 
@@ -659,6 +665,7 @@ def build_screen0_config_menu(
         BIT.n8_A(block, INPUT_KEY_BIT.L_RIGHT)
         LABEL_SKIP_RIGHT = unique_label("__SKIP_RIGHT__")
         JR_Z(block, LABEL_SKIP_RIGHT)
+        embed_debug_string_macro(block, "RIGHT PRESSED")
         ADJUST_OPTION_PLUS.call(block)
         block.label(LABEL_SKIP_RIGHT)  # __SKIP_RIGHT__
 
