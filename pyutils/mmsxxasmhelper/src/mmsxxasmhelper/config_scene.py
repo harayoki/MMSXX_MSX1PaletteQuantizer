@@ -137,6 +137,7 @@ def build_screen0_config_menu(
 
     CURRENT_ENTRY_ADDR = work_base_addr
     BLINK_STATE_ADDR = work_base_addr + 1
+    PREV_ENTRY_ADDR = work_base_addr + 2
     DRAW_OPT_JT_LABEL = unique_label("__DRAW_OPT_JT__")
     ENTRY_VALUE_ADDR_LABEL = unique_label("__ENTRY_VALUE_ADDR__")
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
@@ -287,6 +288,61 @@ def build_screen0_config_menu(
         # 選択中項目の左右インジケータ(< >)を描画し点滅状態を更新する。
         # 入力: CURRENT_ENTRY_ADDR と BLINK_STATE_ADDR に現在の項目と点滅状態が格納されている。
         # 破壊: A/B/C/D/E/H/L を用いて VRAM アドレス計算と描画を行い、戻り時にこれらは保証されない。
+        # 追加仕様: 項目が切り替わったときは旧行からインジケータを消してカーソルを移動する。
+
+        # [ブロック0] 現在の項目 (C) と前回描画した項目 (B) を取得し、
+        #            変化があれば旧行のインジケータを消去する。
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.C_A(block)
+        LD.A_mn16(block, PREV_ENTRY_ADDR)
+        LD.B_A(block)
+
+        LABEL_SKIP_CLEAR = unique_label("__SKIP_CLEAR__")
+        CP.C(block)
+        JR_Z(block, LABEL_SKIP_CLEAR)
+
+        # 旧行のオプション幅を取得して退避。
+        LD.L_B(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, ENTRY_OPTION_WIDTH_LABEL)
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        PUSH.AF(block)
+
+        # 旧行の VRAM 行先頭アドレスを解決し、左右のインジケータ位置を空白で上書きする。
+        LD.L_B(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, ENTRY_ROW_ADDR_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+
+        PUSH.DE(block)
+        PUSH.DE(block)
+        POP.HL(block)
+        LD.BC_n16(block, option_col - 1)
+        ADD.HL_BC(block)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.A_n8(block, ord(" "))
+        OUT(block, 0x98)
+
+        POP.DE(block)
+        POP.AF(block)
+        PUSH.DE(block)
+        POP.HL(block)
+        LD.BC_n16(block, option_col)
+        ADD.HL_BC(block)
+        LD.B_n8(block, 0)
+        LD.C_A(block)
+        ADD.HL_BC(block)
+        SET_VRAM_WRITE_FUNC.call(block)
+        LD.A_n8(block, ord(" "))
+        OUT(block, 0x98)
+
+        block.label(LABEL_SKIP_CLEAR)  # __SKIP_CLEAR__
+
         # [ブロック1] 現在の項目メタデータ: 項目インデックスからオプション数を取得し、
         # 左右インジケータを描く際の端判定で使う。
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
@@ -401,6 +457,8 @@ def build_screen0_config_menu(
         OUT_C.A(block)
 
         block.label(LABEL_RIGHT_END)  # __RIGHT_END__
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.mn16_A(block, PREV_ENTRY_ADDR)
         RET(block)
 
     UPDATE_TRIANGLE_FUNC = Func(
@@ -457,6 +515,7 @@ def build_screen0_config_menu(
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
 
         # 値の描画とカーソル形状を再描画する。
+        LD.A_C(block)
         DRAW_OPTION_DISPATCH.call(block)  # JP DRAW_OPTION_{index=a}
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(LABEL_ADJUST_END)  # __ADJUST_END__
@@ -490,7 +549,24 @@ def build_screen0_config_menu(
             _emit_write_text(block, header_col, header_row + idx, line)
 
         _emit_write_text(block, label_col, top_row, "<SETTING>")
-        _emit_write_text(block, label_col, top_row + 1, "Up/Down: select  Left/Right: change")
+        _emit_write_text(block, label_col, top_row + 1, "UP/DOWN/LEFT/RIGHT: CHANGE SETTINGS")
+
+        # 入力が届く前に、保持されている設定値が有効範囲内かを確認する。
+        # 想定外の値が入っていると描画や増減が正しく動かないため、
+        # 範囲外なら 0 に初期化してから描画する。
+        for idx, entry in enumerate(config_entries):
+            block.label(unique_label("__SANITIZE_ENTRY__"))
+            LD.HL_n16(block, entry.store_addr)
+            LD.A_mHL(block)
+            CP.n8(block, len(entry.options))
+
+            LABEL_VALUE_VALID = unique_label("__VALUE_VALID__")
+            JR_C(block, LABEL_VALUE_VALID)
+
+            XOR.A(block)
+            LD.mHL_A(block)
+
+            block.label(LABEL_VALUE_VALID)
 
         for idx, entry in enumerate(config_entries):
             _emit_write_text(block, label_col, entry_row_base + idx, f"{entry.name}:")
@@ -499,6 +575,7 @@ def build_screen0_config_menu(
         LD.A_n8(block, 0)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         LD.mn16_A(block, BLINK_STATE_ADDR)
+        LD.mn16_A(block, PREV_ENTRY_ADDR)
         UPDATE_TRIANGLE_FUNC.call(block)
         RET(block)
 
