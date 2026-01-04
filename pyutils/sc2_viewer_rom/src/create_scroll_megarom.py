@@ -895,7 +895,7 @@ def build_config_scene_func(
     entries = [
         Screen0ConfigEntry(
             "BEEP",
-            ["ON", "OFF"],
+            ["ON ", "OFF"],
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(
@@ -914,10 +914,11 @@ def build_config_scene_func(
         header_lines=[
             "<HELP>",
             "",
-            "ESC : ENTER / EXIT THIS HELP",
+            "ESC : ENTER | EXIT THIS HELP",
             "SPACE: NEXT IMAGE",
             "SHIFT+SPACE: PREV IMAGE",
             "UP/DOWN: SCROLL",
+            "SHIFT+UP/DOWN: FAST SCROLL",
         ],
         header_col=2,
         group=group,

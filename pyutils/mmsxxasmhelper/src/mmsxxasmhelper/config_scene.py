@@ -549,7 +549,7 @@ def build_screen0_config_menu(
             _emit_write_text(block, header_col, header_row + idx, line)
 
         _emit_write_text(block, label_col, top_row, "<SETTING>")
-        _emit_write_text(block, label_col, top_row + 1, "Up/Down: select  Left/Right: change")
+        _emit_write_text(block, label_col, top_row + 1, "UP/DOWN/LEFT/RIGHT: CHANGE SETTINGS")
 
         # 入力が届く前に、保持されている設定値が有効範囲内かを確認する。
         # 想定外の値が入っていると描画や増減が正しく動かないため、
