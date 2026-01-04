@@ -187,37 +187,37 @@ def build_screen0_config_menu(
         LD.B_n8(block, option_width)
         LD.C_n8(block, 0x98)  # ★ Cレジスタにポート番号を固定しておく
 
-        write_loop = unique_label("__OPT_WRITE_LOOP__")
-        padding_loop = unique_label("__OPT_PADDING_LOOP__")
-        padding_exec_loop = unique_label("__OPT_PADDING_EXEC__")
-        left_padding_loop = unique_label("__OPT_LEFT_PADDING__")
+        LABEL_OPT_WRITE_LOOP = unique_label("__OPT_WRITE_LOOP__")
+        LABEL_OPT_PADDING_LOOP = unique_label("__OPT_PADDING_LOOP__")
+        LABEL_OPT_PADDING_EXEC = unique_label("__OPT_PADDING_EXEC__")
+        LABEL_OPT_LEFT_PADDING = unique_label("__OPT_LEFT_PADDING__")
 
         if option_field_padding:
             # [ブロック4] 左パディング: 指定されたパディング幅だけ空白を吐き、B(残り幅)を減算。
             LD.D_n8(block, option_field_padding)
-            block.label(left_padding_loop)
+            block.label(LABEL_OPT_LEFT_PADDING)
             LD.A_n8(block, ord(" "))
             OUT(block, 0x98)
             DEC.D(block)
             DEC.B(block)
-            JR_NZ(block, left_padding_loop)
+            JR_NZ(block, LABEL_OPT_LEFT_PADDING)
 
         # [ブロック5] 文字列出力ループ: 0 終端まで文字を送り、欄幅カウンタ B を減らす。
         #   * OR A で終端判定し、0 に達したらパディング処理へ
-        block.label(write_loop)
+        block.label(LABEL_OPT_WRITE_LOOP)
         LD.A_mHL(block)
         OR.A(block)
-        JR_Z(block, padding_loop)
+        JR_Z(block, LABEL_OPT_PADDING_LOOP)
         OUT_C.A(block)
         INC.HL(block)
-        DJNZ(block, write_loop)
+        DJNZ(block, LABEL_OPT_WRITE_LOOP)
         RET(block)
 
-        block.label(padding_loop)
+        block.label(LABEL_OPT_PADDING_LOOP)
         LD.A_n8(block, 0x20)
-        block.label(padding_exec_loop)
+        block.label(LABEL_OPT_PADDING_EXEC)
         OUT(block, 0x98)
-        DJNZ(block, padding_exec_loop)
+        DJNZ(block, LABEL_OPT_PADDING_EXEC)
         RET(block)
 
     def _emit_option_pointer_table(
@@ -228,10 +228,10 @@ def build_screen0_config_menu(
         # 破壊: 実行時に参照されるコードを生成しないため、レジスタ内容は変更されない。
         block.label(label_name)
         for opt in entry.options:
-            opt_label = unique_label("__OPT_STR__")
+            LABEL_OPT_STR = unique_label("__OPT_STR__")
             pos = block.emit(0, 0)
-            block.add_abs16_fixup(pos, opt_label)
-            block.label(opt_label)
+            block.add_abs16_fixup(pos, LABEL_OPT_STR)
+            block.label(LABEL_OPT_STR)
             encoded = [ord(ch) & 0xFF for ch in opt]
             encoded.append(0x00)
             DB(block, *encoded)
@@ -334,25 +334,25 @@ def build_screen0_config_menu(
         LD.C_n8(block, 0x98)
 
         # LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
-        LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
-        LEFT_END = unique_label("__LEFT_END__")
+        LABEL_LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
+        LABEL_LEFT_END = unique_label("__LEFT_END__")
 
         LD.A_C(block)
         OR.A(block)
-        JR_Z(block, LEFT_HIDDEN)
+        JR_Z(block, LABEL_LEFT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
-        JR_NZ(block, LEFT_HIDDEN)
+        JR_NZ(block, LABEL_LEFT_HIDDEN)
         # block.label(LEFT_VISIBLE)
         LD.A_n8(block, ord("<"))
         OUT_C.A(block)
-        JR(block, LEFT_END)
+        JR(block, LABEL_LEFT_END)
 
-        block.label(LEFT_HIDDEN)
+        block.label(LABEL_LEFT_HIDDEN)
         LD.A_n8(block, 0x20)
         OUT_C.A(block)
 
-        block.label(LEFT_END)
+        block.label(LABEL_LEFT_END)
 
         # [ブロック6] 右インジケータ描画: 退避した行アドレスにオプション欄の幅を足し、
         # 「最終オプションではない（まだ右がある）」かつ「点滅フラグが 1」の場合だけ ">" を出す。
@@ -368,27 +368,27 @@ def build_screen0_config_menu(
         LD.C_n8(block, 0x98)
 
         # RIGHT_VISIBLE = unique_label("__RIGHT_VISIBLE__")
-        RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
-        RIGHT_END = unique_label("__RIGHT_END__")
+        LABEL_RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
+        LABEL_RIGHT_END = unique_label("__RIGHT_END__")
 
         LD.A_B(block)
         DEC.A(block)
         CP.C(block)
-        JR_Z(block, RIGHT_HIDDEN)
-        JP_M(block, RIGHT_HIDDEN)
+        JR_Z(block, LABEL_RIGHT_HIDDEN)
+        JP_M(block, LABEL_RIGHT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
-        JR_Z(block, RIGHT_HIDDEN)
+        JR_Z(block, LABEL_RIGHT_HIDDEN)
         # block.label(RIGHT_VISIBLE)
         LD.A_n8(block, ord(">"))
         OUT_C.A(block)
-        JR(block, RIGHT_END)
+        JR(block, LABEL_RIGHT_END)
 
-        block.label(RIGHT_HIDDEN)
+        block.label(LABEL_RIGHT_HIDDEN)
         LD.A_n8(block, 0x20)
         OUT_C.A(block)
 
-        block.label(RIGHT_END)
+        block.label(LABEL_RIGHT_END)
         RET(block)
 
     UPDATE_TRIANGLE_FUNC = Func(
@@ -399,7 +399,7 @@ def build_screen0_config_menu(
         # 現在の項目値を +/-1 し、表示とインジケータを更新する。
         # 入力: CURRENT_ENTRY_ADDR から項目インデックスを取得し、ENTRY_VALUE_ADDR_LABEL の値を書き換える。
         # 破壊: A/B/C/D/E/H/L を使用して範囲チェック・書き込み・再描画を行うため、戻り時に内容は保持されない。
-        adjust_end = unique_label("__ADJUST_END__")
+        LABEL_ADJUST_END = unique_label("__ADJUST_END__")
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.C_A(block)
 
@@ -432,11 +432,11 @@ def build_screen0_config_menu(
         if delta > 0:
             DEC.B(block)  # 最大インデックス
             CP.B(block)
-            JR_NC(block, adjust_end)
+            JR_NC(block, LABEL_ADJUST_END)
             INC.A(block)
         else:
             OR.A(block)
-            JR_Z(block, adjust_end)
+            JR_Z(block, LABEL_ADJUST_END)
             DEC.A(block)
 
         # 更新した値をテーブルへ書き戻し、現在値インデックスも保存する。
@@ -447,7 +447,7 @@ def build_screen0_config_menu(
         # 値の描画とカーソル形状を再描画する。
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
-        block.label(adjust_end)
+        block.label(LABEL_ADJUST_END)
         RET(block)
 
     ADJUST_OPTION_PLUS = Func(
@@ -494,8 +494,8 @@ def build_screen0_config_menu(
         # 入力状態をポーリングしてカーソル移動・値変更・終了判定を行うメインループ。
         # 入力: update_input_func が input_hold_addr/input_trg_addr を更新していることを前提に動作。
         # 破壊: A/B/C/D/E/H/L を用いて入力判定と描画を行い、ループ継続時も内容は保持されない。
-        loop_label = unique_label("__CONFIG_LOOP__")
-        block.label(loop_label)
+        LABEL_CONFIG_LOOP = unique_label("__CONFIG_LOOP__")
+        block.label(LABEL_CONFIG_LOOP)
         # 1) フレーム待ちして入力状態を更新。
         HALT(block)
         update_input_func.call(block)
@@ -508,46 +508,46 @@ def build_screen0_config_menu(
         # 3) UP キーで項目をひとつ上に移動し、表示と三角マーカーを更新。
         LD.A_mn16(block, input_trg_addr)
         BIT.n8_A(block, INPUT_KEY_BIT.L_UP)
-        skip_up = unique_label("__SKIP_UP__")
-        JR_Z(block, skip_up)
+        LABEL_SKIP_UP = unique_label("__SKIP_UP__")
+        JR_Z(block, LABEL_SKIP_UP)
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         OR.A(block)
-        JR_Z(block, skip_up)
+        JR_Z(block, LABEL_SKIP_UP)
         DEC.A(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
-        block.label(skip_up)
+        block.label(LABEL_SKIP_UP)
 
         # 4) DOWN キーで項目をひとつ下に移動し、表示と三角マーカーを更新。
         LD.A_mn16(block, input_trg_addr)
         BIT.n8_A(block, INPUT_KEY_BIT.L_DOWN)
-        skip_down = unique_label("__SKIP_DOWN__")
-        JR_Z(block, skip_down)
+        LABEL_SKIP_DOWN = unique_label("__SKIP_DOWN__")
+        JR_Z(block, LABEL_SKIP_DOWN)
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         INC.A(block)
         CP.n8(block, entry_count)
-        JR_NC(block, skip_down)
+        JR_NC(block, LABEL_SKIP_DOWN)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
-        block.label(skip_down)
+        block.label(LABEL_SKIP_DOWN)
 
         # 5) LEFT キーで現在項目の値を減少させる。
         LD.A_mn16(block, input_trg_addr)
         BIT.n8_A(block, INPUT_KEY_BIT.L_LEFT)
-        skip_left = unique_label("__SKIP_LEFT__")
-        JR_Z(block, skip_left)
+        LABEL_SKIP_LEFT = unique_label("__SKIP_LEFT__")
+        JR_Z(block, LABEL_SKIP_LEFT)
         ADJUST_OPTION_MINUS.call(block)
-        block.label(skip_left)
+        block.label(LABEL_SKIP_LEFT)
 
         # 6) RIGHT キーで現在項目の値を増加させる。
         LD.A_mn16(block, input_trg_addr)
         BIT.n8_A(block, INPUT_KEY_BIT.L_RIGHT)
-        skip_right = unique_label("__SKIP_RIGHT__")
-        JR_Z(block, skip_right)
+        LABEL_SKIP_RIGHT = unique_label("__SKIP_RIGHT__")
+        JR_Z(block, LABEL_SKIP_RIGHT)
         ADJUST_OPTION_PLUS.call(block)
-        block.label(skip_right)
+        block.label(LABEL_SKIP_RIGHT)
 
         # 7) ブリンク状態をトグルし、インジケータ描画を更新。
         LD.A_mn16(block, BLINK_STATE_ADDR)
@@ -557,7 +557,7 @@ def build_screen0_config_menu(
         UPDATE_TRIANGLE_FUNC.call(block)
 
         # 8) ループの先頭に戻って次の入力を待つ。
-        JP(block, loop_label)
+        JP(block, LABEL_CONFIG_LOOP)
 
     def emit_tables(block: Block) -> None:
         # 各種ジャンプテーブルや定数テーブルを ROM/RAM に配置するデータ出力ルーチン。
