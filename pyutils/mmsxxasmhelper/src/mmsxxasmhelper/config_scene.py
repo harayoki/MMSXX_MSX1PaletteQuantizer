@@ -195,7 +195,7 @@ def build_screen0_config_menu(
         if option_field_padding:
             # [ブロック4] 左パディング: 指定されたパディング幅だけ空白を吐き、B(残り幅)を減算。
             LD.D_n8(block, option_field_padding)
-            block.label(LABEL_OPT_LEFT_PADDING)
+            block.label(LABEL_OPT_LEFT_PADDING)  # __OPT_LEFT_PADDING__
             LD.A_n8(block, ord(" "))
             OUT(block, 0x98)
             DEC.D(block)
@@ -204,7 +204,7 @@ def build_screen0_config_menu(
 
         # [ブロック5] 文字列出力ループ: 0 終端まで文字を送り、欄幅カウンタ B を減らす。
         #   * OR A で終端判定し、0 に達したらパディング処理へ
-        block.label(LABEL_OPT_WRITE_LOOP)
+        block.label(LABEL_OPT_WRITE_LOOP)  # __OPT_WRITE_LOOP__
         LD.A_mHL(block)
         OR.A(block)
         JR_Z(block, LABEL_OPT_PADDING_LOOP)
@@ -213,9 +213,9 @@ def build_screen0_config_menu(
         DJNZ(block, LABEL_OPT_WRITE_LOOP)
         RET(block)
 
-        block.label(LABEL_OPT_PADDING_LOOP)
+        block.label(LABEL_OPT_PADDING_LOOP)  # __OPT_PADDING_LOOP__
         LD.A_n8(block, 0x20)
-        block.label(LABEL_OPT_PADDING_EXEC)
+        block.label(LABEL_OPT_PADDING_EXEC)  # __OPT_PADDING_EXEC__
         OUT(block, 0x98)
         DJNZ(block, LABEL_OPT_PADDING_EXEC)
         RET(block)
@@ -226,12 +226,12 @@ def build_screen0_config_menu(
         # オプション文字列へのポインタテーブルを組み立てる。
         # 入力: レジスタは前段の呼び出し元で自由に使用していてよい（本処理は定数データの配置のみ）。
         # 破壊: 実行時に参照されるコードを生成しないため、レジスタ内容は変更されない。
-        block.label(label_name)
+        block.label(label_name)  # __OPT_PTR__
         for opt in entry.options:
             LABEL_OPT_STR = unique_label("__OPT_STR__")
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, LABEL_OPT_STR)
-            block.label(LABEL_OPT_STR)
+            block.label(LABEL_OPT_STR)  # __OPT_STR__
             encoded = [ord(ch) & 0xFF for ch in opt]
             encoded.append(0x00)
             DB(block, *encoded)
@@ -348,11 +348,11 @@ def build_screen0_config_menu(
         OUT_C.A(block)
         JR(block, LABEL_LEFT_END)
 
-        block.label(LABEL_LEFT_HIDDEN)
+        block.label(LABEL_LEFT_HIDDEN)  # __LEFT_HIDDEN__
         LD.A_n8(block, 0x20)
         OUT_C.A(block)
 
-        block.label(LABEL_LEFT_END)
+        block.label(LABEL_LEFT_END)  # __LEFT_END__
 
         # [ブロック6] 右インジケータ描画: 退避した行アドレスにオプション欄の幅を足し、
         # 「最終オプションではない（まだ右がある）」かつ「点滅フラグが 1」の場合だけ ">" を出す。
@@ -384,11 +384,11 @@ def build_screen0_config_menu(
         OUT_C.A(block)
         JR(block, LABEL_RIGHT_END)
 
-        block.label(LABEL_RIGHT_HIDDEN)
+        block.label(LABEL_RIGHT_HIDDEN)  # __RIGHT_HIDDEN__
         LD.A_n8(block, 0x20)
         OUT_C.A(block)
 
-        block.label(LABEL_RIGHT_END)
+        block.label(LABEL_RIGHT_END)  # __RIGHT_END__
         RET(block)
 
     UPDATE_TRIANGLE_FUNC = Func(
@@ -447,7 +447,7 @@ def build_screen0_config_menu(
         # 値の描画とカーソル形状を再描画する。
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
-        block.label(LABEL_ADJUST_END)
+        block.label(LABEL_ADJUST_END)  # __ADJUST_END__
         RET(block)
 
     ADJUST_OPTION_PLUS = Func(
@@ -495,7 +495,7 @@ def build_screen0_config_menu(
         # 入力: update_input_func が input_hold_addr/input_trg_addr を更新していることを前提に動作。
         # 破壊: A/B/C/D/E/H/L を用いて入力判定と描画を行い、ループ継続時も内容は保持されない。
         LABEL_CONFIG_LOOP = unique_label("__CONFIG_LOOP__")
-        block.label(LABEL_CONFIG_LOOP)
+        block.label(LABEL_CONFIG_LOOP)  # __CONFIG_LOOP__
         # 1) フレーム待ちして入力状態を更新。
         HALT(block)
         update_input_func.call(block)
@@ -517,7 +517,7 @@ def build_screen0_config_menu(
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
-        block.label(LABEL_SKIP_UP)
+        block.label(LABEL_SKIP_UP)  # __SKIP_UP__
 
         # 4) DOWN キーで項目をひとつ下に移動し、表示と三角マーカーを更新。
         LD.A_mn16(block, input_trg_addr)
@@ -531,7 +531,7 @@ def build_screen0_config_menu(
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
-        block.label(LABEL_SKIP_DOWN)
+        block.label(LABEL_SKIP_DOWN)  # __SKIP_DOWN__
 
         # 5) LEFT キーで現在項目の値を減少させる。
         LD.A_mn16(block, input_trg_addr)
@@ -539,7 +539,7 @@ def build_screen0_config_menu(
         LABEL_SKIP_LEFT = unique_label("__SKIP_LEFT__")
         JR_Z(block, LABEL_SKIP_LEFT)
         ADJUST_OPTION_MINUS.call(block)
-        block.label(LABEL_SKIP_LEFT)
+        block.label(LABEL_SKIP_LEFT)  # __SKIP_LEFT__
 
         # 6) RIGHT キーで現在項目の値を増加させる。
         LD.A_mn16(block, input_trg_addr)
@@ -547,7 +547,7 @@ def build_screen0_config_menu(
         LABEL_SKIP_RIGHT = unique_label("__SKIP_RIGHT__")
         JR_Z(block, LABEL_SKIP_RIGHT)
         ADJUST_OPTION_PLUS.call(block)
-        block.label(LABEL_SKIP_RIGHT)
+        block.label(LABEL_SKIP_RIGHT)  # __SKIP_RIGHT__
 
         # 7) ブリンク状態をトグルし、インジケータ描画を更新。
         LD.A_mn16(block, BLINK_STATE_ADDR)
@@ -565,34 +565,34 @@ def build_screen0_config_menu(
         # 破壊: データ出力のみで CPU レジスタへの影響は想定しない (Block への emit のみ)。
 
         # 1) オプション描画関数へのジャンプテーブルを生成し、描画ディスパッチ用のエントリ点をまとめる。
-        block.label(DRAW_OPT_JT_LABEL)
+        block.label(DRAW_OPT_JT_LABEL)  # __DRAW_OPT_JT__
         for func in draw_option_funcs:
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, func.name)
 
         # 2) 各設定項目の現在値が格納されるワードアドレスを並べたテーブルを出力する。
-        block.label(ENTRY_VALUE_ADDR_LABEL)
+        block.label(ENTRY_VALUE_ADDR_LABEL)  # __ENTRY_VALUE_ADDR__
         for entry in config_entries:
             DW(block, entry.store_addr & 0xFFFF)
 
         # 3) 各設定項目に用意されている選択肢の数をバイトで出力し、範囲チェックに利用する。
-        block.label(ENTRY_OPTION_COUNT_LABEL)
+        block.label(ENTRY_OPTION_COUNT_LABEL)  # __ENTRY_OPTION_COUNT__
         for entry in config_entries:
             DB(block, len(entry.options) & 0xFF)
 
         # 4) 表示時に利用するオプション欄の幅 (文字数) を並べておき、描画幅を決定する。
-        block.label(ENTRY_OPTION_WIDTH_LABEL)
+        block.label(ENTRY_OPTION_WIDTH_LABEL)  # __ENTRY_OPTION_WIDTH__
         for width in option_field_widths:
             DB(block, width & 0xFF)
 
         # 5) 各設定項目が配置される画面上の行先頭 VRAM アドレスを計算してテーブル化する。
-        block.label(ENTRY_ROW_ADDR_LABEL)
+        block.label(ENTRY_ROW_ADDR_LABEL)  # __ENTRY_ROW_ADDR__
         for idx in range(entry_count):
             row_addr = screen0_name_base + ((entry_row_base + idx) * 40)
             DW(block, row_addr & 0xFFFF)
 
         # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
-        block.label(OPT_PTR_TABLE_LABEL)
+        block.label(OPT_PTR_TABLE_LABEL)  # __OPT_PTR_TABLE__
         for idx, entry in enumerate(config_entries):
             _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
 
