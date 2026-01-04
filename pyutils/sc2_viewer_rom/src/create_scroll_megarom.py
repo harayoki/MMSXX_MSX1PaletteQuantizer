@@ -163,21 +163,17 @@ OUTI_FUNCS_GROUP = "outi_funcs"
 OUTI_FUNCS_BACK_NUM:int = 1
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
-AUTO_ADVANCE_INTERVAL_SECONDS = [
-    0,
-    180,
-    150,
-    120,
-    90,
-    60,
-    45,
-    30,
-]
-AUTO_ADVANCE_FRAMES_PER_SECOND = 60
 AUTO_ADVANCE_INTERVAL_FRAMES = [
-    sec * AUTO_ADVANCE_FRAMES_PER_SECOND for sec in AUTO_ADVANCE_INTERVAL_SECONDS
+    0,
+    180 * 60,
+    60 * 60,
+    30 * 60,
+    10 * 60,
+    5 * 60,
+    1 * 60,
+    1,
 ]
-
+AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 1s", "MAX"]
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -924,7 +920,7 @@ def build_config_scene_func(
         ),
         Screen0ConfigEntry(
             "AUTO PAGE",
-            ["0", "1", "2", "3", "4", "5", "6", "7"],
+            AUTO_ADVANCE_INTERVAL_CHOICES,
             ADDR.CONFIG_AUTO_SPEED,
         ),
         Screen0ConfigEntry(
@@ -1333,9 +1329,6 @@ def build_boot_bank(
 
     # --- [事前計算テーブル群] ---
     # 0: 無効, 1-7: 数値が大きいほど高速になる自動切り替え秒数
-    b.label("AUTO_ADVANCE_INTERVAL_SECONDS_TABLE")
-    DB(b, *AUTO_ADVANCE_INTERVAL_SECONDS)
-
     b.label("AUTO_ADVANCE_INTERVAL_FRAMES_TABLE")
     DW(b, *AUTO_ADVANCE_INTERVAL_FRAMES)
 
