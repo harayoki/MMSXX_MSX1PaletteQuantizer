@@ -83,6 +83,7 @@ def build_screen0_config_menu(
     label_col: int = 2,
     option_col: int = -1,
     option_field_padding: int = 1,
+    use_same_width_for_all_options: bool = True,
 ) -> tuple[Func, Func, Sequence[Func]]:
     """辞書定義から SCREEN 0 のコンフィグ画面を生成する。"""
 
@@ -117,6 +118,10 @@ def build_screen0_config_menu(
         (max(len(opt) for opt in entry.options)) + (option_field_padding * 2)
         for entry in config_entries
     ]
+    # 全部同じ幅にする場合は以下を有効に
+    if use_same_width_for_all_options:
+        max_width = max(option_field_widths)
+        option_field_widths = [max_width for _ in config_entries]
 
     title_lines = title_lines or ["", "HELP & SETTING", ""]
     title_height = len(title_lines)
