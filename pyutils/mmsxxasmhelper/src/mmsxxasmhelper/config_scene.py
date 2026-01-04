@@ -157,6 +157,10 @@ def build_screen0_config_menu(
         # 破壊: ポインタ計算と VRAM 書き込みのため A/B/C/D/E/H/L を使用し、戻り時も内容は保証しない。
         row = entry_row_base + entry_index
 
+        # [ブロック1] 選択インデックス取得とポインタ解決。
+        #   * entry.store_addr から現在値を A に読み出し
+        #   * オプションポインタテーブル (OPT_PTR_TABLE_LABEL) まで 2byte ポインタオフセットを求める
+        #   * HL をテーブルの該当要素に合わせ、実際の文字列先頭アドレスを DE として退避
         LD.HL_n16(block, entry.store_addr)
         LD.A_mHL(block)
         LD.L_A(block)
@@ -169,10 +173,16 @@ def build_screen0_config_menu(
         LD.D_mHL(block)
         PUSH.DE(block)  # 文字列ポインタを退避
 
+        # [ブロック2] VRAM 書き込みの準備。
+        #   * 行・列位置から VRAM アドレスを算出し HL にセット
+        #   * 可変長の文字列 + パディングを書き込むため、事前に set_vram_write を呼んでポート 0x98 を開く
         vram_addr = screen0_name_base + (row * 40) + option_col
         LD.HL_n16(block, vram_addr)
         SET_VRAM_WRITE_FUNC.call(block)
 
+        # [ブロック3] 文字列ポインタ復帰とレジスタ初期化。
+        #   * HL を描画対象文字列先頭に戻す
+        #   * B に欄幅を設定し、C は VRAM ポート番号を固定して OUT_C 用に備える
         POP.HL(block)  # 文字列ポインタを復帰
         LD.B_n8(block, option_width)
         LD.C_n8(block, 0x98)  # ★ Cレジスタにポート番号を固定しておく
@@ -183,6 +193,7 @@ def build_screen0_config_menu(
         left_padding_loop = unique_label("__OPT_LEFT_PADDING__")
 
         if option_field_padding:
+            # [ブロック4] 左パディング: 指定されたパディング幅だけ空白を吐き、B(残り幅)を減算。
             LD.D_n8(block, option_field_padding)
             block.label(left_padding_loop)
             LD.A_n8(block, ord(" "))
@@ -191,6 +202,8 @@ def build_screen0_config_menu(
             DEC.B(block)
             JR_NZ(block, left_padding_loop)
 
+        # [ブロック5] 文字列出力ループ: 0 終端まで文字を送り、欄幅カウンタ B を減らす。
+        #   * OR A で終端判定し、0 に達したらパディング処理へ
         block.label(write_loop)
         LD.A_mHL(block)
         OR.A(block)
@@ -390,18 +403,23 @@ def build_screen0_config_menu(
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.C_A(block)
 
+        # 現在の項目インデックスを DE に退避しつつ、後のテーブル参照に備える。
         LD.E_A(block)
         LD.D_n8(block, 0)
 
+        # 値テーブルの 16bit ポインタ位置を算出 (インデックス * 2)。
         LD.A_E(block)
         ADD.A_A(block)
         LD.E_A(block)
         LD.HL_label(block, ENTRY_VALUE_ADDR_LABEL)
         ADD.HL_DE(block)
+
+        # HL が指す現在値のワードを DE に読み出す。
         LD.E_mHL(block)
         INC.HL(block)
         LD.D_mHL(block)
 
+        # 選択肢数テーブルのアドレスを HL に準備 (インデックスオフセット)。
         LD.A_C(block)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -409,6 +427,7 @@ def build_screen0_config_menu(
         ADD.HL_DE(block)
         LD.B_mHL(block)
 
+        # 現在値 A と上限 B を比較し、増減処理を行う。
         LD.A_mDE(block)
         if delta > 0:
             DEC.B(block)  # 最大インデックス
@@ -419,9 +438,13 @@ def build_screen0_config_menu(
             OR.A(block)
             JR_Z(block, adjust_end)
             DEC.A(block)
+
+        # 更新した値をテーブルへ書き戻し、現在値インデックスも保存する。
         LD.mDE_A(block)
         LD.A_C(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+
+        # 値の描画とカーソル形状を再描画する。
         DRAW_OPTION_DISPATCH.call(block)
         UPDATE_TRIANGLE_FUNC.call(block)
         block.label(adjust_end)
