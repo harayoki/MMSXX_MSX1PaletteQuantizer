@@ -13,12 +13,12 @@ def test_unique_label_increments(monkeypatch):
     first = core.unique_label()
     second = core.unique_label()
 
-    assert first == "__L0"
-    assert second == "__L1"
+    assert first == "__L-0"
+    assert second == "__L-1"
     assert first != second
 
 
 def test_unique_label_with_custom_prefix(monkeypatch):
     monkeypatch.setattr(core, "_label_counter", count(), raising=False)
 
-    assert core.unique_label("__MACRO__") == "__MACRO__0"
+    assert core.unique_label("__MACRO__") == "__MACRO__-0"

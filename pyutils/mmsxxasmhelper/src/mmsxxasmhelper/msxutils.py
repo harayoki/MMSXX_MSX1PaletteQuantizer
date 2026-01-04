@@ -567,6 +567,34 @@ def build_update_input_func(
         LD.IXL_A(block)
         block.label("_K_SKIP_DOWN")
 
+        # LEFT 判定 (6, 7, 8)
+        LD.A_B(block)
+        CP.n8(block, 6)
+        JR_Z(block, "_K_LEFT")
+        CP.n8(block, 7)
+        JR_Z(block, "_K_LEFT")
+        CP.n8(block, 8)
+        JR_NZ(block, "_K_SKIP_LEFT")
+        block.label("_K_LEFT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_LEFT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_K_SKIP_LEFT")
+
+        # RIGHT 判定 (2, 3, 4)
+        LD.A_B(block)
+        CP.n8(block, 2)
+        JR_Z(block, "_K_RIGHT")
+        CP.n8(block, 3)
+        JR_Z(block, "_K_RIGHT")
+        CP.n8(block, 4)
+        JR_NZ(block, "_K_SKIP_RIGHT")
+        block.label("_K_RIGHT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_RIGHT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_K_SKIP_RIGHT")
+
         # --- 2. ジョイスティック 1 & 2 ---
         # Port 1
         LD.A_n8(block, 1)
@@ -596,6 +624,32 @@ def build_update_input_func(
         OR.IXL(block)
         LD.IXL_A(block)
         block.label("_J1_SKIP_DOWN")
+
+        LD.A_B(block)
+        CP.n8(block, 6)
+        JR_Z(block, "_J1_LEFT")
+        CP.n8(block, 7)
+        JR_Z(block, "_J1_LEFT")
+        CP.n8(block, 8)
+        JR_NZ(block, "_J1_SKIP_LEFT")
+        block.label("_J1_LEFT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_LEFT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_J1_SKIP_LEFT")
+
+        LD.A_B(block)
+        CP.n8(block, 2)
+        JR_Z(block, "_J1_RIGHT")
+        CP.n8(block, 3)
+        JR_Z(block, "_J1_RIGHT")
+        CP.n8(block, 4)
+        JR_NZ(block, "_J1_SKIP_RIGHT")
+        block.label("_J1_RIGHT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_RIGHT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_J1_SKIP_RIGHT")
 
         # --- 3. SPACE / SHIFT ---
         # SPACE (Matrix 8, Bit 0)
@@ -683,13 +737,17 @@ def build_update_input_func(
 def build_beep_control_utils(
     beep_count_addr: int = 0xC110,
     beep_active_addr: int = 0xC111,
-    tone_period: int = 60,  # 0-4095
+    tone_period: int = 30,  # 0-4095
     duration_frames: int = 1,  # 1/60秒単位
+    volume: int = 8,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ):
     PSG_REG = 0xA0
     PSG_DAT = 0xA1
+
+    if not 0 <= volume <= 15:
+        raise ValueError("volume must be between 0 and 15")
 
     def psg_write(block: Block) -> None:
         OUT(block, PSG_REG)
@@ -729,7 +787,7 @@ def build_beep_control_utils(
 
         # 3. 音量設定 (Reg 8)
         LD.A_n8(block, 8)
-        LD.E_n8(block, 15)
+        LD.E_n8(block, volume)
         BEEP_WRITE_FUNC.call(block)
 
         RET(block)

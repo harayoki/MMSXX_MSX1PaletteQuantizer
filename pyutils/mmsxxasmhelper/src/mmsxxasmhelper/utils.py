@@ -17,6 +17,7 @@ __all__ = [
     "set_debug",
     "debug_trap",
     "debug_print_labels",
+    "embed_debug_string_macro",
     "print_bytes",
     "MemAddrAllocator",
     "with_register_preserve",
@@ -182,6 +183,63 @@ def debug_trap(b: Block) -> None:
     if not DEBUG:
         return
     HALT(b)
+
+
+#
+# デバッグ用に任意の文字列を埋め込む
+#
+
+def embed_debug_string_macro(b: Block, text: str, *, encoding: str = "ascii") -> None:
+    """任意の文字列をコードに埋め込むデバッグマクロ。
+
+    文字列の直前に文字列終端へのジャンプを挿入するため、
+    任意の位置に配置しても実行フローへ影響を与えない。
+    デバッグ時のメモリダンプで位置を把握しやすくする用途を想定している。
+    """
+
+    end_label = unique_label("debugstr_end")
+    JP(b, end_label)
+    NOP(b)
+    string_pos = b.pc
+    string_bytes = str_bytes(text, encoding)
+    DB(b, *string_bytes)
+    NOP(b)
+    b.label(end_label)
+
+    _register_debug_string(b, text, string_pos, len(string_bytes))
+
+
+def _register_debug_string(b: Block, text: str, offset: int, length: int) -> None:
+    entries = getattr(b, "_embedded_debug_strings", None)
+    if entries is None:
+        entries = []
+        setattr(b, "_embedded_debug_strings", entries)
+
+    entries.append((text, offset, length))
+
+    if getattr(b, "_embedded_debug_strings_registered", False):
+        return
+
+    def _print_debug_strings(block: Block, origin: int) -> None:
+        if not DEBUG:
+            return
+
+        embedded = getattr(block, "_embedded_debug_strings", ())
+        if not embedded:
+            return
+
+        print("Embedded debug strings:")
+        for string, relative_offset, length in embedded:
+            relative_end = relative_offset + max(length - 1, 0)
+            absolute_start = origin + relative_offset
+            absolute_end = origin + relative_end
+            print(
+                f"  {absolute_start:04X} ~ {absolute_end:04X} "
+                f"(+{relative_offset:04X} ~ +{relative_end:04X}): {string}"
+            )
+
+    b._finalize_callbacks.append(_print_debug_strings)
+    setattr(b, "_embedded_debug_strings_registered", True)
 
 
 #

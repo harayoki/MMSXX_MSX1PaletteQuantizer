@@ -28,6 +28,7 @@ MSX1 SCREEN2 の縦スクロール ROM ビルダー。
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import random
 import shutil
@@ -87,6 +88,7 @@ from mmsxxasmhelper.core import (
     ensure_funcs_defined,
     set_funcs_call_offset,
     set_funcs_bank,
+    dump_func_bytes_on_finalize,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -112,6 +114,10 @@ from mmsxxasmhelper.msxutils import (
     set_screen_colors_macro,
     set_text_cursor_macro,
     write_text_with_cursor_macro,
+)
+from mmsxxasmhelper.config_scene import (
+    Screen0ConfigEntry,
+    build_screen0_config_menu,
 )
 from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
@@ -190,6 +196,16 @@ class ADDR:
     CT_BUFFER = madd("CT_BUFFER", 256)
     TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
+    CONFIG_AUTO_SPEED = madd(
+        "CONFIG_AUTO_SPEED", 1, description="自動切り替え速度 (0-7)"
+    )
+    CONFIG_BEEP_ENABLED = madd(
+        "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
+    )
+    AUTO_ADVANCE_COUNTER = madd(
+        "AUTO_ADVANCE_COUNTER", 1, description="自動切り替えまでの残りフレーム"
+    )
+    CONFIG_WORK_BASE = madd("CONFIG_WORK_BASE", 2, description="コンフィグ用ワークベース")
 
 # mem_addr_allocator.debug_print()
 
@@ -560,14 +576,18 @@ def build_update_image_display_func(
             INC.DE(block)
 
         # --- [16bit対応: スクロール位置のリセット] ---
-        # 画像ヘッダの設定に基づき CURRENT_SCROLL_ROW を初期化する
+        # 画像ヘッダに基づき CURRENT_SCROLL_ROW を初期化する
         INIT_POS_OK = unique_label("_INIT_POS_OK")
         INIT_FROM_TOP = unique_label("_INIT_FROM_TOP")
+        INIT_FROM_BOTTOM = unique_label("_INIT_FROM_BOTTOM")
 
+        # 画像ヘッダの初期スクロール方向が 0xFF の場合は下端開始、それ以外は上端開始
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_INITIAL_SCROLL_DIRECTION)
         CP.n8(block, 0xFF)
-        JR_NZ(block, INIT_FROM_TOP)
+        JR_Z(block, INIT_FROM_BOTTOM)
+        JR(block, INIT_FROM_TOP)
 
+        block.label(INIT_FROM_BOTTOM)
         # 下端開始: (総行数 - 24) をクランプして設定
         LD.HL_mn16(block, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
         LD.BC_n16(block, 24)
@@ -654,6 +674,15 @@ def build_update_image_display_func(
         POP.HL(block)
         LD.D_n8(block, 24)  # 24行分転送
         SCROLL_VRAM_XFER_FUNC.call(block)
+
+        # 自動切り替え用カウンタを初期化
+        LD.A_mn16(block, ADDR.CONFIG_AUTO_SPEED)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, "AUTO_ADVANCE_INTERVAL_TABLE")
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        LD.mn16_A(block, ADDR.AUTO_ADVANCE_COUNTER)
 
         RET(block)
 
@@ -841,48 +870,52 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
 
 
-def build_dummy_config_scene_func(
+def build_config_scene_func(
     *, update_input_func: Func, group: str = DEFAULT_FUNC_GROUP_NAME
-) -> Func:
-    """簡易ヘルプを表示するダミーのコンフィグシーンを作成する。"""
+) -> tuple[Func, Func]:
+    """設定メニューシーンを生成する。"""
 
-    help_lines = (
-        "SCROLL VIEWER HELP",
-        "",
-        "ESC : EXIT THIS HELP",
-        "SPACE: NEXT IMAGE",
-        "SHIFT+SPACE: PREV IMAGE",
-        "UP/DOWN: SCROLL",
+    entries = [
+        Screen0ConfigEntry(
+            "AUTO",
+            ["0", "1", "2", "3", "4", "5", "6", "7"],
+            ADDR.CONFIG_AUTO_SPEED,
+        ),
+        Screen0ConfigEntry(
+            "BEEP",
+            ["ON", "OFF"],
+            ADDR.CONFIG_BEEP_ENABLED,
+        ),
+    ]
+
+    init_func, loop_func, table_func = build_screen0_config_menu(
+        entries,
+        update_input_func=update_input_func,
+        input_hold_addr=ADDR.INPUT_HOLD,
+        input_trg_addr=ADDR.INPUT_TRG,
+        work_base_addr=ADDR.CONFIG_WORK_BASE,
+        header_lines=[
+            "<HELP>",
+            "",
+            "ESC : EXIT THIS HELP",
+            "SPACE: NEXT IMAGE",
+            "SHIFT+SPACE: PREV IMAGE",
+            "UP/DOWN: SCROLL",
+        ],
+        header_col=2,
+        group=group,
     )
 
     def config_scene(block: Block) -> None:
-        CALL(block, INITXT)
-        set_screen_colors_macro(block, 15, 4, 4, current_screen_mode=0)
-
-        for y, line in enumerate(help_lines):
-            write_text_with_cursor_macro(
-                block, line, 1, y
-            )
-
-        # 入力状態を一度更新してトリガーをリセット
-        update_input_func.call(block)
-
-        WAIT_ESC = unique_label("CONFIG_WAIT_ESC")
-        block.label(WAIT_ESC)
-        HALT(block)
-        update_input_func.call(block)
-
-        LD.A_mn16(block, ADDR.INPUT_TRG)
-        BIT.n8_A(block, INPUT_KEY_BIT.L_ESC)
-        JR_Z(block, WAIT_ESC)
-
+        init_func.call(block)
+        loop_func.call(block)
         RET(block)
 
-    return Func("CONFIG_SCENE", config_scene, group=group)
+    return Func("CONFIG_SCENE", config_scene, group=group), table_func
 
 
 SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
-CONFIG_SCENE_FUNC = build_dummy_config_scene_func(
+CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNC = build_config_scene_func(
     update_input_func=UPDATE_INPUT_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
 )
 
@@ -904,6 +937,7 @@ def build_boot_bank(
     header_bytes: Sequence[int],
     fill_byte: int,
     title_wait_seconds: int,
+    beep_enabled_default: bool,
     log_lines: List[str] | None = None,
 ) -> bytes:
     if not image_entries:
@@ -944,11 +978,30 @@ def build_boot_bank(
 
     b = Block()
 
+    config_table_dump = io.StringIO()
+    dump_func_bytes_on_finalize(
+        b,
+        groups=[SCROLL_VIEWER_FUNC_GROUP],
+        funcs=[CONFIG_TABLE_FUNC],
+        stream=config_table_dump,
+    )
+
     place_msx_rom_header_macro(b, entry_point=ROM_BASE + 0x10)
 
     b.label("start")
     init_stack_pointer_macro(b)
     enaslt_macro(b)
+
+    # コンフィグの初期値を設定
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.CONFIG_AUTO_SPEED)
+    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    LD.mn16_A(b, ADDR.CONFIG_WORK_BASE)
+    if beep_enabled_default:
+        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
+    else:
+        LD.A_n8(b, 1)
+        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
 
     TITLE_SCREEN_FUNC.call(b)
 
@@ -1055,7 +1108,7 @@ def build_boot_bank(
     # 下キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
-    JR_Z(b, "CHECK_SPACE")
+    JR_Z(b, "CHECK_AUTO")
 
     # 最大値 (総行数 - 24) チェック
     LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
@@ -1068,8 +1121,8 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JR_Z(b, "CHECK_SPACE")  # 下限到達
-    JR_C(b, "CHECK_SPACE")
+    JR_Z(b, "CHECK_AUTO")  # 下限到達
+    JR_C(b, "CHECK_AUTO")
 
     # 1行下へ移動
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
@@ -1095,6 +1148,28 @@ def build_boot_bank(
     LD.A_mHL(b)
     SCROLL_NAME_TABLE_FUNC.call(b)
     # --- [差し替えここまで] ---
+
+    # --- 自動切り替え判定 ---
+    b.label("CHECK_AUTO")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
+    OR.A(b)
+    JR_Z(b, "CHECK_SPACE")
+    LD.A_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
+    OR.A(b)
+    JR_Z(b, "AUTO_NEXT_IMAGE")
+    DEC.A(b)
+    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    JR(b, "CHECK_SPACE")
+
+    b.label("AUTO_NEXT_IMAGE")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    LD.DE_label(b, "AUTO_ADVANCE_INTERVAL_TABLE")
+    ADD.HL_DE(b)
+    LD.A_mHL(b)
+    LD.mn16_A(b, ADDR.AUTO_ADVANCE_COUNTER)
+    JR(b, "NEXT_IMAGE")
 
     # --- スペースキー判定 (画像切り替え) ---
     b.label("CHECK_SPACE")
@@ -1130,13 +1205,22 @@ def build_boot_bank(
 
     b.label("__GO_UPDATE__")
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+    LD.A_mn16(b, ADDR.CONFIG_BEEP_ENABLED)
+    OR.A(b)
+    JR_NZ(b, "__SKIP_BEEP__")
     SIMPLE_BEEP_FUNC.call(b)
-    # JR(b, "MAIN_LOOP")  #相対限界超える
+    JP(b, "MAIN_LOOP")
+
+    b.label("__SKIP_BEEP__")
     JP(b, "MAIN_LOOP")
     # --- 関数定義 ---
     define_created_funcs(b, group=SCROLL_VIEWER_FUNC_GROUP)
 
     # --- [事前計算テーブル群] ---
+    # 0: 無効, 1-7: 数値が大きいほど高速になる自動切り替えフレーム数
+    b.label("AUTO_ADVANCE_INTERVAL_TABLE")
+    DB(b, 0, 180, 150, 120, 90, 60, 45, 30)
+
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
     # タイル番号のオフセット計算用。
     b.label("TABLE_MOD24")
@@ -1150,6 +1234,10 @@ def build_boot_bank(
     DB(b, *header_bytes)
 
     assembled = b.finalize(origin=ROM_BASE)
+
+    config_table_dump.seek(0)
+    for line in config_table_dump.read().splitlines():
+        log_and_store(line, log_lines)
 
     data = bytes(pad_bytes(list(assembled), PAGE_SIZE, fill_byte))
     log_and_store("---- labels ----", log_lines)
@@ -1272,6 +1360,7 @@ def build(
     start_positions: Sequence[str] | None = None,
     fill_byte: int = 0xFF,
     title_wait_seconds: int = 3,
+    beep_enabled_default: bool = True,
     log_lines: list[str] | None = None,
 ) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
@@ -1282,6 +1371,10 @@ def build(
     title_wait_seconds = max(0, min(title_wait_seconds, 255))
 
     log_and_store(f"Title wait seconds: {title_wait_seconds}", log_lines)
+    log_and_store(
+        f"BEEP default: {'ON' if beep_enabled_default else 'OFF'}",
+        log_lines,
+    )
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
@@ -1366,7 +1459,12 @@ def build(
 
     banks = [
         build_boot_bank(
-            image_entries, header_bytes, fill_byte, title_wait_seconds, log_lines
+            image_entries,
+            header_bytes,
+            fill_byte,
+            title_wait_seconds,
+            beep_enabled_default,
+            log_lines,
         )
     ]
     banks.extend(outi_funcs_banks)
@@ -1443,6 +1541,12 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="ROM情報テキストを出力するかどうか (default: ON)",
+    )
+    parser.add_argument(
+        "--beep",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="起動時のBEEP設定 (default: ON)",
     )
     parser.add_argument(
         "--start-at",
@@ -1648,6 +1752,7 @@ def main() -> None:
         start_positions=start_positions,
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
+        beep_enabled_default=args.beep,
         log_lines=log_lines,
     )
 
