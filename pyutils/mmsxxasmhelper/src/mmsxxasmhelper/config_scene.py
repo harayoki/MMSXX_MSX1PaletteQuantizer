@@ -178,9 +178,9 @@ def build_screen0_config_menu(
               f" {entry.name} index {entry_index} row={row}"
               f" vram:{vram_addr:04X}h store:{entry.store_addr} options={entry.options} width={option_width_}")
 
-        embed_debug_string_macro(
-            block,
-            f"Draw opt '{entry.name}' v:{vram_addr:04X}h s:{entry.store_addr:04X}h",)
+        # embed_debug_string_macro(
+        #     block,
+        #     f"Draw opt '{entry.name}' v:{vram_addr:04X}h s:{entry.store_addr:04X}h",)
 
         # [ブロック1] 選択インデックス取得とポインタ解決。
         #   * entry.store_addr から現在値を A に読み出し
@@ -197,6 +197,7 @@ def build_screen0_config_menu(
         INC.HL(block)
         LD.D_mHL(block)  # DE = ポインタテーブルから取得した文字列先頭アドレス
         PUSH.DE(block)  # 文字列ポインタを退避
+        debug_print_pc(block, f" Draw option: entry '{entry.name}' index {entry_index} opt_idx in A")
 
         # [ブロック2] VRAM 書き込みの準備。
         #   * 行・列位置から VRAM アドレスを算出し HL にセット
@@ -251,19 +252,24 @@ def build_screen0_config_menu(
         # オプション文字列へのポインタテーブルを組み立てる。(定数データの配置のみ）
         # print(f"Emitting option pointer table for entry {entry.name} {label_name}")
         block.label(label_name)  # __OPT_PTR__
-        for opt in entry.options:
-            LABEL_OPT_STR = unique_label("__OPT_STR__")
+        labels = []
+        for _, _ in enumerate(entry.options):
+            LABEL_OPT_STR = unique_label("__OPT_STR")
+            labels.append(LABEL_OPT_STR)
+            print(LABEL_OPT_STR)
             pos = block.emit(0, 0)
             block.add_abs16_fixup(pos, LABEL_OPT_STR)
-            block.label(LABEL_OPT_STR)  # __OPT_STR__
+        for idx, opt in enumerate(entry.options):
+            label = labels[idx]
+            block.label(label)
             encoded = [ord(ch) & 0xFF for ch in opt]
             encoded.append(0x00)
             DB(block, *encoded)
         """
+        ex) BEEP: O N / OFF
+        [0x4F, 0x20, 0x4E, 0x00] / [0x4F, 0x46, 0x46, 0x00]
         ex) AUTO SPD: 0 ~ 7
-        [48, 0] /[49, 0] / [50, 0] / [51, 0] / [52, 0] / [53, 0] / [54, 0] / [55, 0]
-        ex) BEEP: ON / OFF
-        [79, 78, 0] / [79, 70, 70, 0]
+        [0x30, 0x0] /[0x31, 0x00] / [0x32, 0] / [0x33, 0x00] / [0x34, 0x00] / [0x35, 0x00] / [0x36, 0x00] / [0x37, 0x00]
         """
 
     # 各エントリに対応する描画ルーチンをリスト化し、後続のジャンプテーブルや
@@ -508,28 +514,33 @@ def build_screen0_config_menu(
         LD.HL_label(block, ENTRY_VALUE_ADDR_LABEL)
         ADD.HL_DE(block)
 
-        # HL が指す現在値のワードを DE に読み出す。
+        # HL が指すOPTION_VALUE_ADDR_TABLESの該当要素から、実際の値格納アドレスを DE に取得。
         LD.E_mHL(block)
         INC.HL(block)
-        LD.D_mHL(block)
+        LD.D_mHL(block)  # DE = 値格納アドレス
+        PUSH.DE(block)  # 値格納アドレスを退避
 
         # 選択肢数テーブルのアドレスを HL に準備 (インデックスオフセット)。
-        LD.A_C(block)
+        LD.A_C(block)  # 項目インデックス
         LD.L_A(block)
-        LD.H_n8(block, 0)
-        LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)
-        ADD.HL_DE(block)
-        LD.B_mHL(block)
+        LD.H_n8(block, 0)  # HL = index
+        LD.DE_label(block, ENTRY_OPTION_COUNT_LABEL)  # 選択肢の数テーブル
+        ADD.HL_DE(block)  # HL = index + ENTRY_OPTION_COUNT_LABEL
+        LD.B_mHL(block)  # B = 選択肢の数
 
         # 現在値 A と上限 B を比較し、増減処理を行う。
-        LD.A_mDE(block)
+        POP.DE(block)  # 値格納アドレスを復帰
+        LD.A_mDE(block)  # A = 現在値 B = 上限
+
         if delta > 0:
             DEC.B(block)  # 最大インデックス
             CP.B(block)
+            # debug_print_pc(block," Adjust option plus: A vs B")
             JR_NC(block, LABEL_ADJUST_END)
             INC.A(block)
         else:
             OR.A(block)
+            # debug_print_pc(block," Adjust option minus: A vs 0")
             JR_Z(block, LABEL_ADJUST_END)
             DEC.A(block)
 
@@ -651,6 +662,7 @@ def build_screen0_config_menu(
         BIT.n8_A(block, INPUT_KEY_BIT.L_LEFT)
         LABEL_SKIP_LEFT = unique_label("__SKIP_LEFT__")
         JR_Z(block, LABEL_SKIP_LEFT)
+        # embed_debug_string_macro(block, "LEFT PRESSED")
         ADJUST_OPTION_MINUS.call(block)
         block.label(LABEL_SKIP_LEFT)  # __SKIP_LEFT__
 
@@ -659,6 +671,7 @@ def build_screen0_config_menu(
         BIT.n8_A(block, INPUT_KEY_BIT.L_RIGHT)
         LABEL_SKIP_RIGHT = unique_label("__SKIP_RIGHT__")
         JR_Z(block, LABEL_SKIP_RIGHT)
+        # embed_debug_string_macro(block, "RIGHT PRESSED")
         ADJUST_OPTION_PLUS.call(block)
         block.label(LABEL_SKIP_RIGHT)  # __SKIP_RIGHT__
 
@@ -712,13 +725,6 @@ def build_screen0_config_menu(
             row_addr = screen0_name_base + ((entry_row_base + idx) * 40)
             DW(block, row_addr & 0xFFFF)  # 2 x エントリ bytes
             print(f"Entry {idx} row addr: {row_addr:04X}h")
-
-    def emit_tables6(block: Block) -> None:
-
-        # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
-        for idx, entry in enumerate(config_entries):
-            # アドレス2文字 + 選択肢文字数 + 終端文字(0h)
-            _emit_option_pointer_table(block, entry, OPTION_POINTER_LABELS[idx])
 
     # print(f"len(draw_option_funcs) = {len(draw_option_funcs)}")
     # print(f"len(entries) = {len(config_entries)}")
@@ -774,11 +780,18 @@ def build_screen0_config_menu(
         no_auto_ret=True,
         group=group,
     )
-    TABLE_FUNC6 = Func(
-        "OPTION_STRING_POINTER_TABLES",
-        emit_tables6,
-        no_auto_ret=True,
-        group=group,
-    )
 
-    return INIT_FUNC, RUN_LOOP_FUNC, [TABLE_FUNC1, TABLE_FUNC2, TABLE_FUNC3, TABLE_FUNC4, TABLE_FUNC5, TABLE_FUNC6]
+    # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
+    # アドレス2文字 * option数 + (選択肢文字数 + 終端文字(0h)) * option数
+    TABLE6_FUNCS = []
+    for idx, entry in enumerate(config_entries):
+        f = Func(
+            f"OPTION_STRING_POINTER_TABLE [{entry.name}] #{idx}",
+            lambda b, e=entry, l=OPTION_POINTER_LABELS[idx]: _emit_option_pointer_table(b, e, l),
+            no_auto_ret=True,
+            group=group,
+        )
+        TABLE6_FUNCS.append(f)
+
+
+    return INIT_FUNC, RUN_LOOP_FUNC, [TABLE_FUNC1, TABLE_FUNC2, TABLE_FUNC3, TABLE_FUNC4, TABLE_FUNC5] + TABLE6_FUNCS
