@@ -369,16 +369,7 @@ def build_screen0_config_menu(
         LD.A_mHL(block)
         LD.C_A(block)
 
-        # [ブロック3] オプション欄幅: 文字数を取得し、右側インジケータの列位置計算に使用する。
-        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
-        LD.L_A(block)
-        LD.H_n8(block, 0)
-        LD.DE_label(block, ENTRY_OPTION_WIDTH_LABEL)
-        ADD.HL_DE(block)
-        LD.A_mHL(block)
-        LD.E_A(block)
-
-        # [ブロック4] 描画対象行: VRAM 上の行アドレスを取得し、左右インジケータ描画で共有する。
+        # [ブロック3] 描画対象行: VRAM 上の行アドレスを取得し、左右インジケータ描画で共有する。
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -389,7 +380,7 @@ def build_screen0_config_menu(
         INC.HL(block)
         LD.D_mHL(block)
 
-        # [ブロック5] 左インジケータ描画: 行アドレスを復元し、オプション列の直前にカーソルを置く。
+        # [ブロック4] 左インジケータ描画: 行アドレスを復元し、オプション列の直前にカーソルを置く。
         # 「オプション値が 0 ではない（左に進める）」かつ「点滅フラグが 0」の場合だけ "<" を出し、
         # それ以外は空白で消す。
         PUSH.DE(block)
@@ -403,7 +394,6 @@ def build_screen0_config_menu(
         # LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LABEL_LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         LABEL_LEFT_END = unique_label("__LEFT_END__")
-
         LD.A_C(block)
         OR.A(block)
         JR_Z(block, LABEL_LEFT_HIDDEN)
@@ -416,14 +406,24 @@ def build_screen0_config_menu(
         JR(block, LABEL_LEFT_END)
 
         block.label(LABEL_LEFT_HIDDEN)  # __LEFT_HIDDEN__
-        LD.A_n8(block, 0x20)
+        LD.A_n8(block, ord("{"))
         OUT_C.A(block)
 
         block.label(LABEL_LEFT_END)  # __LEFT_END__
 
+        # [ブロック5] オプション欄幅: 文字数を取得し、右側インジケータの列位置計算に使用する。
+        LD.A_mn16(block, CURRENT_ENTRY_ADDR)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        LD.DE_label(block, ENTRY_OPTION_WIDTH_LABEL)
+        ADD.HL_DE(block)
+        LD.A_mHL(block)
+        LD.E_A(block)
+
         # [ブロック6] 右インジケータ描画: 退避した行アドレスにオプション欄の幅を足し、
         # 「最終オプションではない（まだ右がある）」かつ「点滅フラグが 1」の場合だけ ">" を出す。
         # 右に進めない場合や点滅条件外では空白を出して消す。
+
         POP.HL(block)
         LD.BC_n16(block, option_col)
         ADD.HL_BC(block)
@@ -452,13 +452,14 @@ def build_screen0_config_menu(
         JR(block, LABEL_RIGHT_END)
 
         block.label(LABEL_RIGHT_HIDDEN)  # __RIGHT_HIDDEN__
-        LD.A_n8(block, 0x20)
+        LD.A_n8(block, ord("}"))
         OUT_C.A(block)
 
         block.label(LABEL_RIGHT_END)  # __RIGHT_END__
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.mn16_A(block, PREV_ENTRY_ADDR)
         RET(block)
+
 
     UPDATE_TRIANGLE_FUNC = Func(
         "UPDATE_TRIANGLES", update_triangles, group=group

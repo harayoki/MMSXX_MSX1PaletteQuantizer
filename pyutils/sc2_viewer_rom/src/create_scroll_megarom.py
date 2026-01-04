@@ -900,7 +900,7 @@ def build_config_scene_func(
         ),
         Screen0ConfigEntry(
             "AUTO",
-            [" 0 ", " 1 ", " 2 ", " 3 ", " 4 ", " 5 ", " 6 ", " 7 "],
+            ["0", "1", "2", "3", "4", "5", "6", "7"],
             ADDR.CONFIG_AUTO_SPEED,
         ),
     ]
