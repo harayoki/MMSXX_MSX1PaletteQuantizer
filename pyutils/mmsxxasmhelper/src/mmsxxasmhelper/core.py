@@ -51,6 +51,7 @@ v0で入っている機能:
 
 from __future__ import annotations
 from collections.abc import Iterable
+import sys
 
 __all__ = [
     "Block", "Fixup", "const", "Const",
@@ -68,6 +69,7 @@ __all__ = [
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
     "Func", "define_created_funcs", "define_all_created_funcs_label_only",
     "get_funcs_by_group", "ensure_funcs_defined", "set_funcs_call_offset", "set_funcs_bank",
+    "dump_func_bytes", "dump_func_bytes_on_finalize",
     "DB", "DW",
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
@@ -84,7 +86,7 @@ __all__ = [
 
 from dataclasses import dataclass
 from itertools import count
-from typing import Callable, Dict, List, Literal, Optional
+from typing import Callable, Dict, List, Literal, Optional, TextIO
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +147,11 @@ class Block:
             self.code.append(b & 0xFF)
             self.pc += 1
         return pos
+
+    def add_finalize_callback(self, callback: Callable[["Block", int], None]) -> None:
+        """``finalize`` 完了時に呼び出すコールバックを登録する。"""
+
+        self._finalize_callbacks.append(callback)
 
     def label(self, name: str) -> None:
         """現在位置にラベルを張る。再定義はエラー。"""
@@ -585,6 +592,7 @@ class Func:
         self.body = body
         self.no_auto_ret = no_auto_ret
         self.defined_pc: int | None = defined_pc
+        self.defined_size: int | None = None
         self.call_offset = call_offset
         self.bank = bank
         _created_funcs_by_group.setdefault(group, []).append(self)
@@ -597,14 +605,15 @@ class Func:
         self.define_label_only(b)
         start_pc = b.pc
         self.body(b)
-        self.defined_pc = start_pc
-        body_size = b.pc - start_pc
-
-        print(f"Func defined: {self.name} (body_size={body_size})")
-
         if not self.no_auto_ret:
             # RET
             b.emit(0xC9)
+
+        self.defined_pc = start_pc
+        self.defined_size = b.pc - start_pc
+        body_size = (self.defined_size if self.no_auto_ret else self.defined_size - 1)
+
+        print(f"Func defined: {self.name} (body_size={body_size})")
 
     def define_label_only(self, b: Block) -> None:
         """関数のラベルだけを配置する。"""
@@ -699,6 +708,80 @@ def set_funcs_bank(funcs: Iterable[Func], bank: int | None) -> None:
 
     for func in funcs:
         func.bank = bank
+
+
+# ---------------------------------------------------------------------------
+# Func 出力ダンプ
+# ---------------------------------------------------------------------------
+
+
+def dump_func_bytes(
+    b: Block,
+    *,
+    origin: int = 0,
+    groups: Optional[Iterable[str]] = None,
+    bytes_per_line: int = 16,
+    stream: TextIO | None = None,
+) -> None:
+    """``finalize`` 後の ``Func`` 出力をダンプする。"""
+
+    out = stream or sys.stdout
+    group_names = list(groups) if groups is not None else [DEFAULT_FUNC_GROUP_NAME]
+    seen: set[str] = set()
+
+    for group in group_names:
+        for func in _created_funcs_by_group.get(group, []):
+            if func.name in seen:
+                continue
+            if func.defined_pc is None or func.defined_size is None:
+                continue
+
+            seen.add(func.name)
+            start = func.defined_pc
+            end = start + func.defined_size
+
+            if end > len(b.code):
+                print(
+                    f"[Func dump] {func.name} skipped (range out of code: {start}-{end})",
+                    file=out,
+                )
+                continue
+
+            code_slice = b.code[start:end]
+            base_addr = origin + start
+            size = len(code_slice)
+
+            print(
+                f"[Func dump] {func.name} @0x{base_addr:04X} size={size}",
+                file=out,
+            )
+
+            for offset in range(0, size, bytes_per_line):
+                chunk = code_slice[offset:offset + bytes_per_line]
+                addr = base_addr + offset
+                hex_bytes = " ".join(f"{byte:02X}" for byte in chunk)
+                print(f"  {addr:04X}: {hex_bytes}", file=out)
+
+
+def dump_func_bytes_on_finalize(
+    b: Block,
+    *,
+    groups: Optional[Iterable[str]] = None,
+    bytes_per_line: int = 16,
+    stream: TextIO | None = None,
+) -> None:
+    """``finalize`` 完了時に ``Func`` 出力ダンプを実行する。"""
+
+    def _callback(block: Block, origin: int) -> None:
+        dump_func_bytes(
+            block,
+            origin=origin,
+            groups=groups,
+            bytes_per_line=bytes_per_line,
+            stream=stream,
+        )
+
+    b.add_finalize_callback(_callback)
 
 
 
