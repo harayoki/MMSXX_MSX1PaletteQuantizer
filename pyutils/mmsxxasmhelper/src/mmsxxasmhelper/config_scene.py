@@ -262,6 +262,7 @@ def build_screen0_config_menu(
         for idx, opt in enumerate(entry.options):
             label = labels[idx]
             block.label(label)
+            print(f" Emitting option string for entry {entry.name} option '{opt}'")
             encoded = [ord(ch) & 0xFF for ch in opt]
             encoded.append(0x00)
             DB(block, *encoded)
