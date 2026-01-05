@@ -101,5 +101,31 @@ def test_lookup_contains_metadata_and_debug_output() -> None:
 
     debug_str = allocator.as_str()
     assert "[00] 07000h: BUFFER (size=2, initial=[01 02]) # buf" in debug_str
-    assert "[01] 07002h: FLAG (size=1, initial=[00]) # flag" in debug_str
+    assert "[01] 07002h: FLAG (size=1) # flag" in debug_str
+
+
+def test_debug_allocation_is_ignored_when_disabled() -> None:
+    allocator = MemAddrAllocator(0x8000)
+
+    allocator.add("DEBUG", 2, initial_value=b"\xAA\xBB", debug_only=True)
+    allocator.add("NEXT", 1)
+
+    assert allocator.get("DEBUG") == 0x8000
+    assert allocator.get("NEXT") == 0x8000
+    assert allocator.total_size == 1
+    assert allocator.initial_bytes[: allocator.total_size] == bytes([0x00])
+
+
+def test_debug_allocation_is_applied_when_enabled() -> None:
+    allocator = MemAddrAllocator(0x9000, debug=True)
+
+    allocator.add("DEBUG", 2, initial_value=b"\xAA\xBB", debug_only=True)
+    allocator.add("NEXT", 1)
+
+    assert allocator.get("DEBUG") == 0x9000
+    assert allocator.get("NEXT") == 0x9002
+    assert allocator.total_size == 3
+
+    expected = bytes([0xAA, 0xBB, 0x00])
+    assert allocator.initial_bytes[: allocator.total_size] == expected
 

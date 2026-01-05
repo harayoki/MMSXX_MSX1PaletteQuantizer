@@ -52,6 +52,7 @@ v0で入っている機能:
 from __future__ import annotations
 from collections.abc import Iterable
 import sys
+from typing import Tuple
 
 __all__ = [
     "Block", "Fixup", "const", "Const",
@@ -82,6 +83,9 @@ __all__ = [
     "OUTI", "OUTD", "OUTIR", "OUTDR",
     "PUSH", "POP",
     "NOP", "HALT", "DI", "EI",
+    "dump_regs",
+    "dump_mem",
+    "register_dump_target",
 ]
 
 from dataclasses import dataclass
@@ -96,6 +100,7 @@ _label_counters: Dict[str, int] = {}
 DEFAULT_FUNC_GROUP_NAME = "default"
 _created_funcs: Dict[str, "Func"] = {}
 _created_funcs_by_group: Dict[str, List["Func"]] = {}
+_dump_targets: Dict[str, Tuple[int, int]] = {}
 
 
 def unique_label(prefix: str = "__L") -> str:
@@ -132,17 +137,37 @@ class Fixup:
 class Block:
     """Z80コード(とそのメタ情報)を貯める箱。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, debug: bool = False) -> None:
+        self.debug = debug
         self.code = bytearray()
         self.pc: int = 0
         self.labels: Dict[str, int] = {}
         self.fixups: List[Fixup] = []
         self._finalize_callbacks: List[Callable[["Block", int], None]] = []
+        self._debug_section_depth = 0
+
+    def _debug_allows_output(self) -> bool:
+        return self._debug_section_depth == 0 or self.debug
+
+    def ifdebug(self) -> None:
+        """DEBUGセクションの開始を宣言する。"""
+
+        self._debug_section_depth += 1
+
+    def endifdebug(self) -> None:
+        """DEBUGセクションの終了を宣言する。"""
+
+        if self._debug_section_depth == 0:
+            raise ValueError("endifdebug without matching ifdebug")
+        self._debug_section_depth -= 1
 
     # --- 基本出力 ---
 
     def emit(self, *bs: int) -> int:
         """バイト列を追加し、先頭の位置(pc)を返す。"""
+
+        if not self._debug_allows_output():
+            return self.pc
 
         pos = self.pc
         for b in bs:
@@ -158,6 +183,9 @@ class Block:
     def label(self, name: str) -> None:
         """現在位置にラベルを張る。再定義はエラー。"""
 
+        if not self._debug_allows_output():
+            return
+
         if name in self.labels:
             raise ValueError(f"label redefined: {name}")
         self.labels[name] = self.pc
@@ -170,6 +198,9 @@ class Block:
         pos: 下位バイトを書き込む位置
         """
 
+        if not self._debug_allows_output():
+            return
+
         self.fixups.append(Fixup(kind="abs16", pos=pos, target=target, offset=offset))
 
     def add_rel8_fixup(self, pos: int, target: str) -> None:
@@ -177,6 +208,9 @@ class Block:
 
         pos: オフセットを書き込む位置（この1バイトの直後が基準アドレス）。
         """
+
+        if not self._debug_allows_output():
+            return
 
         self.fixups.append(Fixup(kind="rel8", pos=pos, target=target))
 
@@ -190,6 +224,9 @@ class Block:
 
         # TODO func_in_bunkを用いた分岐
         """
+
+        if self._debug_section_depth != 0:
+            raise ValueError("ifdebug/endifdebug mismatch detected at finalize")
 
         groups_to_check = groups or [DEFAULT_FUNC_GROUP_NAME]
         undefined_funcs = [
@@ -2575,4 +2612,151 @@ def DI(b: Block) -> None:
 def EI(b: Block) -> None:
     """EI (割り込み許可) 命令を挿入する。"""
     b.emit(0xFB)
+
+
+def register_dump_target(name: str, addr: int, size: int) -> None:
+    """ダンプ先のメモリアドレスと確保バイト数を登録する。"""
+
+    if size <= 0:
+        raise ValueError("dump target size must be positive")
+    if size > 8:
+        raise ValueError("dump targets support at most 8 bytes")
+    _dump_targets[name] = (addr & 0xFFFF, size)
+
+
+def dump_regs(
+    b: Block,
+    target: str,
+    *,
+    af: bool = True,
+    bc: bool = True,
+    de: bool = True,
+    hl: bool = True,
+    ix: bool = False,
+    iy: bool = False,
+) -> None:
+    """現在のレジスタ値を破壊せずにメモリへダンプする。
+
+    事前に :func:`register_dump_target` で名前とアドレス、確保バイト数を
+    登録しておき、その名前を ``target`` に渡す。登録サイズが選択された
+    レジスタの総バイト数を下回る場合はエラーとなる。空きバイトがある場合は
+    0 で埋める。
+    """
+
+    if target not in _dump_targets:
+        raise ValueError(f"dump_regs target is not registered: {target}")
+
+    dest_addr, max_bytes = _dump_targets[target]
+
+    ordered_flags = [
+        ("AF", af),
+        ("BC", bc),
+        ("DE", de),
+        ("HL", hl),
+        ("IX", ix),
+        ("IY", iy),
+    ]
+    selected = [reg for reg, flag in ordered_flags if flag]
+    total_bytes = len(selected) * 2
+    if total_bytes > max_bytes:
+        raise ValueError(
+            f"dump_regs target '{target}' reserves {max_bytes} bytes; requires {total_bytes}"
+        )
+
+    padding = max_bytes - total_bytes
+
+    push_sequence: List[RegNames16] = []
+    # 出力対象に含まれないが作業で破壊するレジスタを先に退避
+    for reg in ("AF", "BC", "DE", "HL"):
+        if reg not in selected:
+            PUSH.r(b, reg)
+            push_sequence.append(reg)
+
+    # 出力対象を逆順に PUSH して、スタック先頭を AF→… の順に並べる
+    for reg in reversed(selected):
+        PUSH.r(b, reg)
+        push_sequence.append(reg)
+
+    # スタック先頭→dest_addr に LDIR でコピー
+    LD.HL_n16(b, 0)
+    ADD.HL_SP(b)
+    LD.DE_n16(b, dest_addr & 0xFFFF)
+    if total_bytes:
+        LD.BC_n16(b, total_bytes)
+        LDIR(b)
+
+    if padding:
+        XOR.A(b)
+        for _ in range(padding):
+            LD.mDE_A(b)
+            INC.DE(b)
+
+    for reg in reversed(push_sequence):
+        POP.r(b, reg)
+
+
+def dump_mem(
+    b: Block,
+    target: str,
+    source_addr: int,
+    *,
+    length: Optional[int] = None,
+    padding_byte: int = 0,
+) -> None:
+    """指定メモリ領域を破壊せずにターゲット領域へダンプする。
+
+    :param target: :func:`register_dump_target` で登録したターゲット名。
+    :param source_addr: コピー元アドレス。
+    :param length: コピーするバイト数。指定がない場合はターゲットの確保バイト数
+        すべてをダンプする。ターゲット確保サイズを超える場合はエラー。
+    :param padding_byte: ``length`` が登録サイズに満たない場合に余りを埋める値。
+        0〜255 で指定し、それ以外は :class:`ValueError`。
+    """
+
+    if target not in _dump_targets:
+        raise ValueError(f"dump_mem target is not registered: {target}")
+
+    dest_addr, max_bytes = _dump_targets[target]
+    if length is None:
+        copy_bytes = max_bytes
+    else:
+        if length < 0:
+            raise ValueError("dump_mem length must be non-negative")
+        copy_bytes = length
+
+    if copy_bytes > max_bytes:
+        raise ValueError(
+            f"dump_mem target '{target}' reserves {max_bytes} bytes; requires {copy_bytes}"
+        )
+
+    if not 0 <= padding_byte <= 0xFF:
+        raise ValueError("dump_mem padding_byte must be between 0 and 255")
+
+    padding = max_bytes - copy_bytes
+
+    # レジスタを全て復元するために退避
+    PUSH.AF(b)
+    PUSH.BC(b)
+    PUSH.DE(b)
+    PUSH.HL(b)
+
+    LD.HL_n16(b, source_addr & 0xFFFF)
+    LD.DE_n16(b, dest_addr & 0xFFFF)
+    if copy_bytes:
+        LD.BC_n16(b, copy_bytes)
+        LDIR(b)
+
+    if padding:
+        if padding_byte == 0:
+            XOR.A(b)
+        else:
+            LD.A_n8(b, padding_byte)
+        for _ in range(padding):
+            LD.mDE_A(b)
+            INC.DE(b)
+
+    POP.HL(b)
+    POP.DE(b)
+    POP.BC(b)
+    POP.AF(b)
 
