@@ -228,7 +228,9 @@ class ADDR:
         description="コンフィグ用ワークベース",
     )
 
-# mem_addr_allocator.debug_print()
+    DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ", debug_only=True)
+    DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ", debug_only=True)
+
 
 
 @dataclass
@@ -985,6 +987,7 @@ def build_boot_bank(
     title_wait_seconds: int,
     beep_enabled_default: bool,
     log_lines: List[str] | None = None,
+    debug_build: bool = False,
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
@@ -1015,14 +1018,15 @@ def build_boot_bank(
         LD.mn16_A(block, BDRCLR)
         CALL(block, CHGCLR)
 
-    set_debug(True)
+    if debug_build:
+        set_debug(True)
 
     ensure_funcs_defined(OUTI_FUNCS)
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
 
-    b = Block()
+    b = Block(debug=debug_build)
 
     config_table_dump = io.StringIO()
     dump_func_bytes_on_finalize(
@@ -1243,7 +1247,7 @@ def build_boot_bank(
 
     b.label("DO_UPDATE_SCROLL")
     # 1. 新しい行の PG/CT を転送
-    SYNC_SCROLL_ROW_FUNC.call(b)
+    # SYNC_SCROLL_ROW_FUNC.call(b)
 
     # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
     LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
@@ -1377,9 +1381,9 @@ def build_boot_bank(
 
 
 def build_outi_funcs_bank(
-    fill_byte: int, log_lines: list[str] | None = None
+    fill_byte: int, log_lines: list[str] | None = None, debug_build: bool = False
 ) -> list[bytes]:
-    b = Block()
+    b = Block(debug=debug_build)
 
     define_created_funcs(b, group=OUTI_FUNCS_GROUP)
     assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
@@ -1473,6 +1477,7 @@ def build(
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
     log_lines: list[str] | None = None,
+    debug_build: bool = False,
 ) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
@@ -1489,7 +1494,7 @@ def build(
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines)
+    outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines, debug_build=debug_build)
     OUTI_FUNCS_BACK_NUM = 1
     log_and_store(
         f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
@@ -1576,6 +1581,7 @@ def build(
             title_wait_seconds,
             beep_enabled_default,
             log_lines,
+            debug_build,
         )
     ]
     banks.extend(outi_funcs_banks)
@@ -1676,6 +1682,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="全画像の初期表示位置をランダムに決定する（テスト用途）",
     )
+    parser.add_argument(
+        "--debug-build",
+        action="store_true",
+        help="デバッグ用ビルドモードを有効にする。",
+    )
     return parser.parse_args()
 
 
@@ -1763,6 +1774,7 @@ def main() -> None:
 
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
+    mem_addr_allocator.debug = args.debug_build
 
     if args.output is not None:
         ensure_output_writable(args.output)
@@ -1865,6 +1877,7 @@ def main() -> None:
         title_wait_seconds=args.title_wait_seconds,
         beep_enabled_default=args.beep,
         log_lines=log_lines,
+        debug_build=args.debug_build,
     )
 
     out = args.output
