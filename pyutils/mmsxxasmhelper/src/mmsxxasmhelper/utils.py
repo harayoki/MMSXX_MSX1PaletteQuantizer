@@ -431,6 +431,7 @@ class MemAddrAllocator:
         s = ""
         for index, name in enumerate(self._allocated):
             entry = self._lookup[name]
+            has_initial_value = entry["has_initial_value"]
             address = entry["address"]
             size = entry["size"]
             desc = entry["description"]
@@ -438,10 +439,10 @@ class MemAddrAllocator:
 
             desc_text = f" # {desc}" if desc else ""
             initial_hex = " ".join(f"{byte:02X}" for byte in initial)
-            s += (
-                f"[{index:02d}] {address:05X}h: {name} (size={size}, initial=[{initial_hex}])"
+            s += f"[{index:02d}] {address:05X}h: {name} (size={size}" + \
+                (f", initial=[{initial_hex}])" if has_initial_value else ")") + \
                 f"{desc_text}\n"
-            )
+
         return s
 
     @property
@@ -475,10 +476,13 @@ class MemAddrAllocator:
 
             address = int(entry["address"])
             data = bytearray(entry["initial_value"])
+
+            print(f"Emitting {name} initial value loader: {address:04X}, size {len(data)} data:{data.hex()}")
             if segments and address == segments[-1][0] + len(segments[-1][1]):
                 segments[-1][1].extend(data)
             else:
                 segments.append((address, data))
+
 
         for index, (address, data) in enumerate(segments):
             data_label = unique_label(f"{table_label_prefix}_{index}")
