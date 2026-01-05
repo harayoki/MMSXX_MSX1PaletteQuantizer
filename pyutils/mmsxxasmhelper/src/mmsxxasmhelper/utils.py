@@ -329,7 +329,7 @@ def print_bytes(data: bytes, step: int = 16, address: int | None = 0, title: str
 class MemAddrAllocator:
     """メモリアドレスを順次管理するユーティリティ。"""
 
-    def __init__(self, base_address: int) -> None:
+    def __init__(self, base_address: int, *, debug: bool = False) -> None:
         self._base_address = base_address
         self._current_address = base_address
         self._allocated: list[str] = []
@@ -337,6 +337,8 @@ class MemAddrAllocator:
 
         self._initial_bytes = bytearray()
         self._initial_value_names: list[str] = []
+
+        self.debug = debug
 
     def _ensure_capacity(self, address: int, size: int) -> int:
         offset = address - self._base_address
@@ -360,6 +362,8 @@ class MemAddrAllocator:
         size: int | None = None,
         initial_value: Sequence[int] | None = None,
         description: str = "",
+        *,
+        debug_only: bool = False,
     ) -> int:
         """名前とサイズを登録し、割り当て先アドレスを返す。
 
@@ -395,19 +399,25 @@ class MemAddrAllocator:
 
         address = self._current_address
         self._allocated.append(name)
-        has_initial_value = initial_value is not None
-        raw_initial_value = raw if raw else [0x00] * size
+        apply_allocation = not debug_only or self.debug
+        has_initial_value = apply_allocation and initial_value is not None
+        effective_size = size if apply_allocation else 0
+        if apply_allocation:
+            raw_initial_value = raw if raw else [0x00] * size
+        else:
+            raw_initial_value = []
         self._lookup[name] = {
             "address": address,
-            "size": size,
+            "size": effective_size,
             "description": description,
             "initial_value": bytes(raw_initial_value),
             "has_initial_value": has_initial_value,
+            "debug_only": debug_only,
         }
-        self._current_address += size
+        self._current_address += effective_size
 
-        offset = self._ensure_capacity(address, size)
-        if raw is not None:
+        offset = self._ensure_capacity(address, effective_size)
+        if apply_allocation and raw is not None:
             self._initial_bytes[offset : offset + len(raw)] = raw
 
         if has_initial_value:
