@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pyutils/mmsxxasmhelper/src"))
 
 from mmsxxasmhelper.core import Block, dump_regs, register_dump_target
 
@@ -26,11 +26,44 @@ def test_dump_regs_default_sequence():
             0x11,
             0x00,
             0x40,  # LD DE,0x4000
-            0x01,
-            0x08,
-            0x00,  # LD BC,8
-            0xED,
-            0xB0,  # LDIR
+            0x23,
+            0x7E,
+            0x12,
+            0x13,
+            0x2B,
+            0x7E,
+            0x12,
+            0x13,
+            0x23,
+            0x23,
+            0x23,
+            0x7E,
+            0x12,
+            0x13,
+            0x2B,
+            0x7E,
+            0x12,
+            0x13,
+            0x23,
+            0x23,
+            0x23,
+            0x7E,
+            0x12,
+            0x13,
+            0x2B,
+            0x7E,
+            0x12,
+            0x13,
+            0x23,
+            0x23,
+            0x23,
+            0x7E,
+            0x12,
+            0x13,
+            0x2B,
+            0x7E,
+            0x12,
+            0x13,
             0xF1,  # POP AF
             0xC1,  # POP BC
             0xD1,  # POP DE
@@ -57,11 +90,14 @@ def test_dump_regs_padding_and_selection():
             0x11,
             0x34,
             0x12,  # LD DE,0x1234
-            0x01,
-            0x02,
-            0x00,  # LD BC,2
-            0xED,
-            0xB0,  # LDIR
+            0x23,
+            0x7E,
+            0x12,
+            0x13,
+            0x2B,
+            0x7E,
+            0x12,
+            0x13,
             0xAF,  # XOR A -> A=0
             0x12,
             0x13,

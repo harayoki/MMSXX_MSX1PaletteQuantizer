@@ -2678,13 +2678,28 @@ def dump_regs(
         PUSH.r(b, reg)
         push_sequence.append(reg)
 
-    # スタック先頭→dest_addr に LDIR でコピー
+    # スタック先頭→dest_addr に AF の上位バイトから順にコピー
     LD.HL_n16(b, 0)
     ADD.HL_SP(b)
     LD.DE_n16(b, dest_addr & 0xFFFF)
     if total_bytes:
-        LD.BC_n16(b, total_bytes)
-        LDIR(b)
+        for idx in range(len(selected)):
+            # 上位バイト
+            INC.HL(b)
+            LD.A_mHL(b)
+            LD.mDE_A(b)
+            INC.DE(b)
+
+            # 下位バイト
+            DEC.HL(b)
+            LD.A_mHL(b)
+            LD.mDE_A(b)
+            INC.DE(b)
+
+            # 次のレジスタへ
+            if idx + 1 < len(selected):
+                INC.HL(b)
+                INC.HL(b)
 
     if padding:
         XOR.A(b)
