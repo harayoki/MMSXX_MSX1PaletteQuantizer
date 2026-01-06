@@ -652,13 +652,13 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
 DRAW_SCROLL_VIEW_FUNC = build_draw_scroll_view_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
-OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
-OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
-OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
-OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
-OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
-OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
-set_funcs_call_offset(OUTI_FUNCS, 0x8000)
+# OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
+# OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
+# OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
+# OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
+# OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
+# OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
+# set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
 OUTI_256_FUNC_IN_BOOT = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
 
@@ -1039,7 +1039,7 @@ def build_boot_bank(
     if debug_build:
         set_debug(True)
 
-    ensure_funcs_defined(OUTI_FUNCS)
+    # ensure_funcs_defined(OUTI_FUNCS)
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
@@ -1397,38 +1397,38 @@ def build_boot_bank(
     return data
 
 
-def build_outi_funcs_bank(
-    fill_byte: int, log_lines: list[str] | None = None, debug_build: bool = False
-) -> list[bytes]:
-    b = Block(debug=debug_build)
-
-    define_created_funcs(b, group=OUTI_FUNCS_GROUP)
-    assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
-    bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
-    if bank_count > 1:
-        raise ValueError(
-            "OUTI funcs bank must fit within a single bank; actual: "
-            f"{bank_count} banks"
-        )
-    total_size = bank_count * PAGE_SIZE
-    data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
-    used_percent = len(assembled) / PAGE_SIZE * 100
-    log_and_store(
-        "OUTI funcs bank usage: "
-        f"{len(assembled)} bytes across {bank_count} bank(s) "
-        f"({used_percent:.2f}% of first bank)",
-        log_lines,
-    )
-    log_and_store("---- labels ----", log_lines)
-    log_and_store(
-        debug_print_labels(b, origin=0, no_print=True, include_offset=True),
-        log_lines,
-    )
-
-    banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
-    ensure_funcs_defined(OUTI_FUNCS)
-
-    return banks
+# def build_outi_funcs_bank(
+#     fill_byte: int, log_lines: list[str] | None = None, debug_build: bool = False
+# ) -> list[bytes]:
+#     b = Block(debug=debug_build)
+#
+#     define_created_funcs(b, group=OUTI_FUNCS_GROUP)
+#     assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
+#     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
+#     if bank_count > 1:
+#         raise ValueError(
+#             "OUTI funcs bank must fit within a single bank; actual: "
+#             f"{bank_count} banks"
+#         )
+#     total_size = bank_count * PAGE_SIZE
+#     data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
+#     used_percent = len(assembled) / PAGE_SIZE * 100
+#     log_and_store(
+#         "OUTI funcs bank usage: "
+#         f"{len(assembled)} bytes across {bank_count} bank(s) "
+#         f"({used_percent:.2f}% of first bank)",
+#         log_lines,
+#     )
+#     log_and_store("---- labels ----", log_lines)
+#     log_and_store(
+#         debug_print_labels(b, origin=0, no_print=True, include_offset=True),
+#         log_lines,
+#     )
+#
+#     banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
+#     # ensure_funcs_defined(OUTI_FUNCS)
+#
+#     return banks
 
 
 def validate_image_data(image: ImageData) -> None:
@@ -1511,14 +1511,15 @@ def build(
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines, debug_build=debug_build)
-    OUTI_FUNCS_BACK_NUM = 1
-    log_and_store(
-        f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
-        log_lines,
-    )
-    set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
-    next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
+    # outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines, debug_build=debug_build)
+    # OUTI_FUNCS_BACK_NUM = 1
+    # log_and_store(
+    #     f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
+    #     log_lines,
+    # )
+    # set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
+    # next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
+    next_bank = 1
     header_bytes: list[int] = []
 
     if start_positions is None:
@@ -1601,7 +1602,7 @@ def build(
             debug_build,
         )
     ]
-    banks.extend(outi_funcs_banks)
+    # banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
 
