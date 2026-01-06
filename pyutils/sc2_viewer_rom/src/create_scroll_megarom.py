@@ -896,11 +896,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             JP_PE(block, ct_copy_loop)
 
         # --- ③ VRAM 転送 (ミラーリング) ---
-        # OUTI連打関数が入っているバンクをページ2に接続し、
         # PG/CTバッファからVRAMへ高速転送する。行オフセットを加味して
         # 0x00/0x08/0x10 (PG) と 0x20/0x28/0x30 (CT) の各ミラー領域へ出力。
-        LD.A_n8(block, OUTI_FUNCS_BACK_NUM)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
 
         LD.A_mn16(block, ADDR.TARGET_ROW)
         AND.n8(block, 0x07)  # A = 行オフセット(0-7)
@@ -917,8 +914,6 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
             OUTI_256_FUNC_IN_BOOT.call(block)
-            # for _ in range(256):
-            #     OUTI(block)
 
         # カラー転送 (0x20, 0x28, 0x30)
         for idx, base_h in enumerate([0x20, 0x28, 0x30]):
@@ -931,12 +926,6 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
             OUTI_256_FUNC_IN_BOOT.call(block)
-            # for _ in range(256):
-            #     OUTI(block)
-
-        # 最後にページ2をメインバンク(0)に戻しておく
-        XOR.A(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
 
         RET(block)
     return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
