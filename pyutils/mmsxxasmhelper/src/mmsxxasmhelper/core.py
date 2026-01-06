@@ -75,7 +75,7 @@ __all__ = [
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
     "CPL", "NEG",
-    "LDIR",
+    "LDI", "LDD", "LDIR",
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_A", "OUT_C",
@@ -1529,6 +1529,20 @@ class LD:
     @staticmethod
     def A_IXL(b: Block) -> None:
         b.emit(0xDD, 0x7D)
+
+
+def LDI(b: Block) -> None:
+    """
+    ブロック転送(Load and Increment)、(HL)の内容を(DE)にコピーし、HL, DEを+1、BCを-1する。
+    """
+    b.emit(0xED, 0xA0)
+
+
+def LDD(b: Block) -> None:
+    """
+    逆方向ブロック転送(Load and Decrement)、(HL)の内容を(DE)にコピーし、HL, DEを-1、BCを-1する。
+    """
+    b.emit(0xED, 0xA8)
 
 
 def LDIR(b: Block) -> None:
