@@ -760,31 +760,30 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         # --- ① パターン (PG) 転送準備 ---
         # 行番号から2bit分を切り出してパターンバンク番号として使い、
         # タイルデータが格納されているROMバンクをページ2に接続する。
-        # その後、VRAM側で参照する行の開始アドレス(HL)を組み立てておく。
-        LD.A_mn16(block, ADDR.TARGET_ROW)
+        LD.A_mn16(block, ADDR.TARGET_ROW)  # パターンジェネレータデータだけが1画面を超えてもならぶためバンク番号差分がわかる
         RLCA(block)
         RLCA(block)
         AND.n8(block, 0x03)
         LD.C_A(block)
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)  # 今のバンク番号に加算
         ADD.A_C(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
-        LD.B_A(block)
+        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク切り替え
+        LD.B_A(block)  # B = バンク番号 保存
 
-        # dump_regs(block, "DEBUG_DUMP_8BYTE_1")  # debug
-        debug_print_pc(block, "DEBUG_DUMP_8BYTE_1")  # debug
-
+        # VRAM側で参照する行の開始アドレス(HL)を組み立てておく。
         LD.A_mn16(block, ADDR.TARGET_ROW)
-        AND.n8(block, 0x3F)
+        AND.n8(block, 0x3F)  # 0b00111111 (行番号下位6bit)  この処理必要？？？
         ADD.A_n8(block, 0x80)
         LD.H_A(block)
-        LD.L_n8(block, 0)
+        LD.L_n8(block, 0)  # HL= 8000h + (行番号低6bit * 256)  : 256 = 8bytes * 32文字
 
-        # --- PG 並べ替え読み込み (Z80ループ版) ---
-        # 画面横32タイル分のパターンデータをVRAM並び順に並べ替えながら
+        # --------------------------------------------------------------------------
+
+        # --- PG 並べ替え読み込み ---
+        # 画面横32タイル分のパターンデータをVRAM並び順に並べ替えながら  ... ここが間違っている並べ直す必要がない
         # RAM上のPG_BUFFERへ読み込む。8ライン×32タイルをZ80ループで展開。
-        LD.DE_n16(block, ADDR.PG_BUFFER)
-        LD.A_n8(block, 32)  # タイル数カウンタ
+        LD.DE_n16(block, ADDR.PG_BUFFER)  # 転送先バッファ C013h など 256bytes
+        LD.A_n8(block, 32)  # 32文字カウンタ
 
         TILE_LOOP_PG = unique_label("TILE_LOOP_PG")
         block.label(TILE_LOOP_PG)
@@ -792,23 +791,32 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         PUSH.HL(block)
         PUSH.BC(block)
 
-        # 1タイル(8ライン)の読み込み
+        # A  .. 32文字カウンタ
+        # B  .. バンク番号
+        # HL .. 転送元アドレス
+        # DE .. 転送先アドレス
+
+        # 1タイル(１文字 8ライン)の読み込み
         for _ in range(8):
-            lbl_skip = unique_label("PG_SKIP")
+
+            # バンク切り替えチェック
+            # TODO 確認：1タイル内でバンクまたぐことなんてないのでは？？
+            PG_SKIP = unique_label("PG_SKIP")
             LD.A_H(block)
-            CP.n8(block, 0xC0)
-            JR_C(block, lbl_skip)
-            SUB.n8(block, 0x40)
+            CP.n8(block, 0xC0)  # 64行境界チェック？？ 0xC0 = 192
+            JR_C(block, PG_SKIP)
+            SUB.n8(block, 0x40)  # HL -= 0x4000
             LD.H_A(block)
             INC.B(block)
             LD.A_B(block)
             LD.mn16_A(block, ASCII16_PAGE2_REG)
-            block.label(lbl_skip)
+            block.label(PG_SKIP)  # バンク切り替えスキップ先
 
+            #
             LD.A_mHL(block)
-            LD.mDE_A(block)
+            LD.mDE_A(block) # DE へ HL の内容をコピー
             INC.DE(block)
-            LD.BC_n16(block, 32)
+            LD.BC_n16(block, 32)  # 32バイト分進める
             ADD.HL_BC(block)
 
         POP.BC(block)
@@ -817,9 +825,12 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         POP.HL(block)
         INC.HL(block)  # 次のタイルアドレスへ
 
-        POP.AF(block)
-        DEC.A(block)
-        JP_NZ(block, TILE_LOOP_PG)  # 32回繰り返す
+        POP.AF(block)  # カウンタ復帰
+        DEC.A(block)  # カウンタ--
+        JP_NZ(block, TILE_LOOP_PG)  # 32文字分繰り返す
+
+        # --------------------------------------------------------------------------
+
 
         # --- ② カラー (CT) 転送準備 ---
         # パターンと同様に、表示行に対応するカラー定義の先頭アドレスと
@@ -1271,7 +1282,7 @@ def build_boot_bank(
     LD.mn16_A(b, ADDR.TARGET_ROW)
 
     b.label("DO_UPDATE_SCROLL")
-    # 1. 新しい行の PG/CT を転送
+    # 1. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
     SYNC_SCROLL_ROW_FUNC.call(b)
 
     # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
@@ -1282,7 +1293,6 @@ def build_boot_bank(
     ADD.HL_DE(b)
     LD.A_mHL(b)
     SCROLL_NAME_TABLE_FUNC.call(b)
-    # --- [差し替えここまで] ---
 
     # --- 自動切り替え判定 ---
     b.label("CHECK_AUTO")
