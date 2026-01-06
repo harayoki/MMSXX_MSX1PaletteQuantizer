@@ -166,9 +166,10 @@ SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 7
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
-OUTI_FUNCS_GROUP = "outi_funcs"
 
-OUTI_FUNCS_BACK_NUM:int = 1
+# OUTI_FUNCS_GROUP = "outi_funcs"
+# OUTI_FUNCS_BACK_NUM:int = 1
+
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
 AUTO_ADVANCE_INTERVAL_FRAMES = [
@@ -660,7 +661,7 @@ DRAW_SCROLL_VIEW_FUNC = build_draw_scroll_view_func(group=SCROLL_VIEWER_FUNC_GRO
 # OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
 # set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
-OUTI_256_FUNC_IN_BOOT = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
+OUTI_256_FUNC = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
 
 def build_update_image_display_func(
     image_entries_count: int, *, group: str = DEFAULT_FUNC_GROUP_NAME
@@ -913,7 +914,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.HL_n16(block, ADDR.PG_BUFFER + 256 * idx)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
-            OUTI_256_FUNC_IN_BOOT.call(block)
+            OUTI_256_FUNC.call(block)
 
         # カラー転送 (0x20, 0x28, 0x30)
         for idx, base_h in enumerate([0x20, 0x28, 0x30]):
@@ -925,7 +926,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.HL_n16(block, ADDR.CT_BUFFER + 256 * idx)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
-            OUTI_256_FUNC_IN_BOOT.call(block)
+            OUTI_256_FUNC.call(block)
 
         RET(block)
     return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
