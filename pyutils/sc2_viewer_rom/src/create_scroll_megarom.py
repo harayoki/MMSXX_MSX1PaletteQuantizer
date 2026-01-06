@@ -660,6 +660,8 @@ OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
 OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
 set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
+OUTI_256_FUNC_IN_BOOT = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
+
 def build_update_image_display_func(
     image_entries_count: int, *, group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
@@ -914,7 +916,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.HL_n16(block, ADDR.PG_BUFFER + 256 * idx)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
-            OUTI_256_FUNC.call(block)
+            OUTI_256_FUNC_IN_BOOT.call(block)
             # for _ in range(256):
             #     OUTI(block)
 
@@ -928,7 +930,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.HL_n16(block, ADDR.CT_BUFFER + 256 * idx)  # 転送元RAMアドレス
             LD.C_n8(block, 0x98)
             # 256個の OUTI 羅列関数を呼び出し
-            OUTI_256_FUNC.call(block)
+            OUTI_256_FUNC_IN_BOOT.call(block)
             # for _ in range(256):
             #     OUTI(block)
 

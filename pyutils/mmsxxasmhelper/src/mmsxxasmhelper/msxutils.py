@@ -871,7 +871,8 @@ def build_outi_repeat_func(
     if count <= 0:
         raise ValueError("count must be positive")
 
-    func_name = name or f"OUTI_REPEAT_{count}"
+    func_name = name or f"OUTI_REPEAT{count}"
+    func_name = unique_label(func_name)
 
     def outi_repeat(block: Block) -> None:
         for _ in range(count):
