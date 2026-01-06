@@ -769,7 +769,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         LD.mn16_A(block, ASCII16_PAGE2_REG)
         LD.B_A(block)
 
-        dump_regs(block, "DEBUG_DUMP_8BYTE_1")  # debug
+        # dump_regs(block, "DEBUG_DUMP_8BYTE_1")  # debug
         debug_print_pc(block, "DEBUG_DUMP_8BYTE_1")  # debug
 
         LD.A_mn16(block, ADDR.TARGET_ROW)
