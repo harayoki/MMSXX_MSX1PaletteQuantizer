@@ -786,9 +786,11 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
         # --------------------------------------------------------------------------
 
-        # --- カラー (CT) 転送 ---
-        # 表示行に対応するカラー定義を 0/8/16 ライン先頭で VRAM へ直接出力する。
+        # --- カラー (CT) / パターン (PG) 転送 ---
+        # 表示行に対応するカラー定義を 0/8/16 ライン先頭で VRAM へ直接出力し、
+        # 続けて同じラインのパターンデータを転送する。
         for line_offset in [0, 8, 16]:
+            # --- カラー (CT) 転送 ---
             LD.A_mn16(block, ADDR.TARGET_ROW)
             if line_offset:
                 ADD.A_n8(block, line_offset)
@@ -834,12 +836,11 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
 
+            # --- パターン (PG) 転送 ---
+            # 画面横32タイル分のパターンデータを3ブロックぶんそのまま転送する。
+            # スクロール位置が1ライン進むとそれぞれ8ライン間隔で参照先がずれるため、
+            # 0/8/16 ライン先頭を VRAM の各ミラー領域へ直接出力する。
 
-        # --- PG コピー ---
-        # 画面横32タイル分のパターンデータを3ブロックぶんそのまま転送する。
-        # スクロール位置が1ライン進むとそれぞれ8ライン間隔で参照先がずれるため、
-        # 0/8/16 ライン先頭を VRAM の各ミラー領域へ直接出力する。
-        for line_offset in [0, 8, 16]:
             # 行番号にオフセットを加味し、対象バンクを決定。
             LD.A_mn16(block, ADDR.TARGET_ROW)
             if line_offset:
