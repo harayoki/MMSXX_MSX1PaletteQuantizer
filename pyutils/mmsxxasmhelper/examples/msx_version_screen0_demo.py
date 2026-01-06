@@ -19,6 +19,7 @@ from mmsxxasmhelper.msxutils import (
     BDRCLR,
     FORCLR,
     CHGCLR,
+    enable_turbor_high_speed_macro,
     enaslt_macro,
     get_msxver_macro,
     place_msx_rom_header_macro,
@@ -58,6 +59,7 @@ def build_msx_version_rom() -> bytes:
     # スタックポインタ退避＋スロット有効化
     store_stack_pointer_macro(b)
     enaslt_macro(b)
+    enable_turbor_high_speed_macro(b)
 
     # SCREEN 0 を初期化して見やすい色をセット
     CALL(b, INITXT)

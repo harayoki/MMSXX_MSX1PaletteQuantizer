@@ -39,6 +39,7 @@ __all__ = [
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
+    "enable_turbor_high_speed_macro",
 ]
 P = ParamSpec("P")
 
@@ -54,6 +55,8 @@ CHPUT = 0x00A2  # 1文字出力（SCREEN0/1/2 text??、その他未対応）
 INITXT = 0x006C  # SCREEN 0 初期化
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
+# turboR 専用
+CHGCPU = 0x0180  # CPU 切り替え (A=0: Z80, 1: R800 ROM, 2: R800 DRAM)
 # EXPTBL = 0xFCC1  # 拡張スロット情報
 # EXPTBL_MINUS_1 = EXPTBL -1
 # CALSLT = 0x001C  # インタースロットCALL（任意スロットの任意アドレスを呼ぶ）
@@ -358,6 +361,29 @@ def set_msx2_palette_default_macro(b: Block) -> None:
 
     # print("-----")
     # print(_MSX2_PALETTE_BYTES)
+
+
+def enable_turbor_high_speed_macro(b: Block) -> None:
+    """turboR の場合に R800 DRAM モードへ切り替える。
+
+    - MSXVER で turboR かを判定し、それ以外では何もしない。
+    - R800 DRAM を指定するため、A=2 をセットして CHGCPU を呼び出す。
+
+    レジスタ変更: A
+    """
+
+    end_label = unique_label("__TURBOR_HIGH_SPEED_END__")
+
+    # turboR 以外ではスキップ
+    get_msxver_macro(b)
+    CP.n8(b, 0x03)
+    JP_NZ(b, end_label)
+
+    # A=2 (R800 DRAM) で高速モードへ
+    LD.A_n8(b, 0x02)
+    CALL(b, CHGCPU)
+
+    b.label(end_label)
     # print("-----")
 
 
