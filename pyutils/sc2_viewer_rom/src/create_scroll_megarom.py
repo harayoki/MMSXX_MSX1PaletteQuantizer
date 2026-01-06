@@ -786,52 +786,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
         # --------------------------------------------------------------------------
 
-        # --- PG コピー ---
-        # 画面横32タイル分のパターンデータを3ブロックぶんそのまま転送する。
-        # スクロール位置が1ライン進むとそれぞれ8ライン間隔で参照先がずれるため、
-        # 0/8/16 ライン先頭を VRAM の各ミラー領域へ直接出力する。
-        for line_offset in [0, 8, 16]:
-            # 行番号にオフセットを加味し、対象バンクを決定。
-            LD.A_mn16(block, ADDR.TARGET_ROW)
-            if line_offset:
-                ADD.A_n8(block, line_offset)
-            LD.D_A(block)  # 後続のアドレス計算用に保持
-
-            RLCA(block)
-            RLCA(block)
-            AND.n8(block, 0x03)
-            LD.C_A(block)  # バンク番号の下位2bit
-
-            LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-            ADD.A_C(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)
-            LD.E_A(block)  # E = バンク番号 (コピー中の境界越え検出用)
-
-            # HL = パターン開始アドレス
-            LD.A_D(block)
-            AND.n8(block, 0x3F)
-            ADD.A_n8(block, 0x80)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
-
-            # 行オフセットを加味した VRAM 書き込みアドレスをセット
-            PUSH.HL(block)
-            LD.A_mn16(block, ADDR.TARGET_ROW)
-            AND.n8(block, 0x07)
-            if line_offset:
-                ADD.A_n8(block, line_offset)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
-            SET_VRAM_WRITE_FUNC.call(block)
-            POP.HL(block)
-
-            LD.C_n8(block, 0x98)
-            OUTI_256_FUNC.call(block)
-
-
-        # --- ② カラー (CT) 転送準備 ---
-        # パターンと同様に、表示行に対応するカラー定義を 0/8/16 ライン先頭で
-        # VRAM へ直接出力する。
+        # --- カラー (CT) 転送 ---
+        # 表示行に対応するカラー定義を 0/8/16 ライン先頭で VRAM へ直接出力する。
         for line_offset in [0, 8, 16]:
             LD.A_mn16(block, ADDR.TARGET_ROW)
             if line_offset:
@@ -870,6 +826,49 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.A_mn16(block, ADDR.TARGET_ROW)
             AND.n8(block, 0x07)
             ADD.A_n8(block, 0x20 + line_offset)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            SET_VRAM_WRITE_FUNC.call(block)
+            POP.HL(block)
+
+            LD.C_n8(block, 0x98)
+            OUTI_256_FUNC.call(block)
+
+
+        # --- PG コピー ---
+        # 画面横32タイル分のパターンデータを3ブロックぶんそのまま転送する。
+        # スクロール位置が1ライン進むとそれぞれ8ライン間隔で参照先がずれるため、
+        # 0/8/16 ライン先頭を VRAM の各ミラー領域へ直接出力する。
+        for line_offset in [0, 8, 16]:
+            # 行番号にオフセットを加味し、対象バンクを決定。
+            LD.A_mn16(block, ADDR.TARGET_ROW)
+            if line_offset:
+                ADD.A_n8(block, line_offset)
+            LD.D_A(block)  # 後続のアドレス計算用に保持
+
+            RLCA(block)
+            RLCA(block)
+            AND.n8(block, 0x03)
+            LD.C_A(block)  # バンク番号の下位2bit
+
+            LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+            ADD.A_C(block)
+            LD.mn16_A(block, ASCII16_PAGE2_REG)
+            LD.E_A(block)  # E = バンク番号 (コピー中の境界越え検出用)
+
+            # HL = パターン開始アドレス
+            LD.A_D(block)
+            AND.n8(block, 0x3F)
+            ADD.A_n8(block, 0x80)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+
+            # 行オフセットを加味した VRAM 書き込みアドレスをセット
+            PUSH.HL(block)
+            LD.A_mn16(block, ADDR.TARGET_ROW)
+            AND.n8(block, 0x07)
+            if line_offset:
+                ADD.A_n8(block, line_offset)
             LD.H_A(block)
             LD.L_n8(block, 0)
             SET_VRAM_WRITE_FUNC.call(block)
