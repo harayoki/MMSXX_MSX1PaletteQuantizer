@@ -72,6 +72,7 @@ from mmsxxasmhelper.core import (
     NOP,
     OUT,
     OUT_A,
+    LDIR,
     EX,
     SBC,
     OUT_C,
@@ -779,6 +780,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
         # --------------------------------------------------------------------------
 
+        修正前 ブロックＡ
         # --- PG 並べ替え読み込み ---
         # 画面横32タイル分のパターンデータをVRAM並び順に並べ替えながら  ... ここが間違っている並べ直す必要がない
         # RAM上のPG_BUFFERへ読み込む。8ライン×32タイルをZ80ループで展開。
@@ -800,7 +802,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         for _ in range(8):
 
             # バンク切り替えチェック
-            # TODO 確認：1タイル内でバンクまたぐことなんてないのでは？？
+            # TODO 確認：1タイル内や32文字内でバンクまたぐことなんてないのでは？？ 8行ずれたらありうる
             PG_SKIP = unique_label("PG_SKIP")
             LD.A_H(block)
             CP.n8(block, 0xC0)  # 64行境界チェック？？ 0xC0 = 192
@@ -829,7 +831,21 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         DEC.A(block)  # カウンタ--
         JP_NZ(block, TILE_LOOP_PG)  # 32文字分繰り返す
 
+        """
+        # 修正案 ブロックＡ まだ1行しか対応していないので 8行はなれて3回繰り返す必要があるはず
+        # --- PG 並べ替え読み込み ---
+        # 画面横32タイル分のパターンデータをRAM上のPG_BUFFERへ読み込む。8ライン×32タイルを展開。
+        LD.DE_n16(block, ADDR.PG_BUFFER)  # 転送先バッファ C013h など 256bytes
+        # B  .. バンク番号
+        # HL .. 転送元アドレス
+        # DE .. 転送先アドレス
+        PUSH.BC(block)  # PUSHしたくないがとりあえず
+        LD.BC_n16(block, 256)  # 256バイト (32 * 8) 分転送
+        LDIR(block)  # 256バイト一括転送
+        POP.BC(block)
+
         # --------------------------------------------------------------------------
+        """
 
 
         # --- ② カラー (CT) 転送準備 ---
