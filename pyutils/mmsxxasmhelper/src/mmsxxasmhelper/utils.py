@@ -370,6 +370,8 @@ class MemAddrAllocator:
         例: ``allocator.add("BUFFER", 4, initial_value=b"\x01\x02\x03\x04", description="作業領域")``
         """
 
+        assert debug_only is False, "debug_only is not supported yet"  # False の メモリアドレスが重なってしまうバグあり
+
         if name in self._lookup:
             msg = f"{name!r} is already allocated"
             raise ValueError(msg)
@@ -425,11 +427,20 @@ class MemAddrAllocator:
 
         return address
 
-    def get(self, name: str) -> int:
+    def get_address(self, name: str) -> int:
         """登録済みの名前を指定してアドレスを取得する。"""
 
         try:
             return self._lookup[name]["address"]  # type: ignore[index]
+        except KeyError as exc:  # pragma: no cover - simple passthrough
+            raise KeyError(name) from exc
+
+    def get_size(self, name: str) -> int:
+        """登録済みの名前を指定してサイズを取得する。"""
+
+        try:
+            print(self._lookup[name])
+            return self._lookup[name]["size"]  # type: ignore[index]
         except KeyError as exc:  # pragma: no cover - simple passthrough
             raise KeyError(name) from exc
 

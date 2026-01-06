@@ -2618,9 +2618,10 @@ def register_dump_target(name: str, addr: int, size: int) -> None:
     """ダンプ先のメモリアドレスと確保バイト数を登録する。"""
 
     if size <= 0:
-        raise ValueError("dump target size must be positive")
+        raise ValueError(f"dump target size must be positive : {size}")
     if size > 8:
-        raise ValueError("dump targets support at most 8 bytes")
+        # TODO 8以上は受け付けていい
+        raise ValueError(f"dump targets support at most 8 bytes : {size}")
     _dump_targets[name] = (addr & 0xFFFF, size)
 
 

@@ -90,6 +90,9 @@ from mmsxxasmhelper.core import (
     set_funcs_call_offset,
     set_funcs_bank,
     dump_func_bytes_on_finalize,
+    register_dump_target,
+    dump_mem,
+    dump_regs,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -131,6 +134,7 @@ from mmsxxasmhelper.utils import (
     print_bytes,
     debug_print_labels,
     MemAddrAllocator,
+    debug_print_pc,
 )
 
 from PIL import Image
@@ -227,10 +231,18 @@ class ADDR:
         get_work_byte_length_for_screen0_config_menu(),
         description="コンフィグ用ワークベース",
     )
+    TEMP = madd(
+        "TEMP",
+        1,
+        description="Padding",
+    )
+    # debug_only = Trueがまだうまく動いていない
+    DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ", debug_only=False)
+    DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ", debug_only=False)
 
-    DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ", debug_only=True)
-    DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ", debug_only=True)
 
+register_dump_target("DEBUG_DUMP_8BYTE_1", ADDR.DEBUG_DUMP_8BYTE_1, 8)
+register_dump_target("DEBUG_DUMP_8BYTE_2", ADDR.DEBUG_DUMP_8BYTE_2, 8)
 
 
 @dataclass
@@ -757,6 +769,9 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         LD.mn16_A(block, ASCII16_PAGE2_REG)
         LD.B_A(block)
 
+        dump_regs(block, "DEBUG_DUMP_8BYTE_1")  # debug
+        debug_print_pc(block, "DEBUG_DUMP_8BYTE_1")  # debug
+
         LD.A_mn16(block, ADDR.TARGET_ROW)
         AND.n8(block, 0x3F)
         ADD.A_n8(block, 0x80)
@@ -1247,7 +1262,7 @@ def build_boot_bank(
 
     b.label("DO_UPDATE_SCROLL")
     # 1. 新しい行の PG/CT を転送
-    # SYNC_SCROLL_ROW_FUNC.call(b)
+    SYNC_SCROLL_ROW_FUNC.call(b)
 
     # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
     LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
