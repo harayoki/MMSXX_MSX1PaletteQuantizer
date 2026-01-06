@@ -758,7 +758,9 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
 def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
-        # (バンク切り替えと初期アドレス計算はそのまま)
+        # 行番号から2bit分を切り出してパターンバンク番号として使い、
+        # タイルデータが格納されているROMバンクをページ2に接続する。
+        # その後、VRAM側で参照する行の開始アドレス(HL)を組み立てておく。
         LD.A_mn16(block, ADDR.TARGET_ROW)
         RLCA(block)
         RLCA(block)
@@ -779,6 +781,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         LD.L_n8(block, 0)
 
         # --- PG 並べ替え読み込み (Z80ループ版) ---
+        # 画面横32タイル分のパターンデータをVRAM並び順に並べ替えながら
+        # RAM上のPG_BUFFERへ読み込む。8ライン×32タイルをZ80ループで展開。
         LD.DE_n16(block, ADDR.PG_BUFFER)
         LD.A_n8(block, 32)  # タイル数カウンタ
 
@@ -818,7 +822,9 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         JP_NZ(block, TILE_LOOP_PG)  # 32回繰り返す
 
         # --- ② カラー (CT) 転送準備 ---
-        # (CT用のアドレス計算)
+        # パターンと同様に、表示行に対応するカラー定義の先頭アドレスと
+        # バンク番号を算出する。アドレスが64行境界を跨いだ場合は
+        # 上位ビットを落としてバンクをインクリメントする。
         LD.A_mn16(block, ADDR.TARGET_ROW)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -846,6 +852,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         LD.L_n8(block, 0)
 
         # --- CT 並べ替え読み込み (Z80ループ版) ---
+        # カラーテーブルもPGと同じ並びでRAM上に再配置する。ライン8本を
+        # 32タイル分コピーしつつ、64行ごとにバンクを繰り上げる処理を含む。
         LD.DE_n16(block, ADDR.CT_BUFFER)
         LD.A_n8(block, 32)
 
@@ -884,7 +892,9 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         JP_NZ(block, TILE_LOOP_CT)
 
         # --- ③ VRAM 転送 (ミラーリング) ---
-        # ページ2に高速転送関数が入っているバンクを接続
+        # OUTI連打関数が入っているバンクをページ2に接続し、
+        # PG/CTバッファからVRAMへ高速転送する。行オフセットを加味して
+        # 0x00/0x08/0x10 (PG) と 0x20/0x28/0x30 (CT) の各ミラー領域へ出力。
         LD.A_n8(block, OUTI_FUNCS_BACK_NUM)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
 
