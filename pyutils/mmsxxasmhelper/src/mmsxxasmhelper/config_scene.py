@@ -413,8 +413,7 @@ def build_screen0_config_menu(
         LD.D_mHL(block)
 
         # [ブロック4] 左インジケータ描画: 行アドレスを復元し、オプション列の直前にカーソルを置く。
-        # 「オプション値が 0 ではない（左に進める）」かつ「点滅フラグが 0」の場合だけ "<" を出し、
-        # それ以外は空白で消す。
+        # 点滅フラグが 0 の場合だけ "<" を出し、それ以外は空白で消す。
         PUSH.DE(block)
         POP.HL(block)
         PUSH.HL(block)
@@ -426,9 +425,6 @@ def build_screen0_config_menu(
         # LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LABEL_LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         LABEL_LEFT_END = unique_label("__LEFT_END__")
-        LD.A_C(block)
-        OR.A(block)
-        JR_Z(block, LABEL_LEFT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_NZ(block, LABEL_LEFT_HIDDEN)
@@ -453,8 +449,7 @@ def build_screen0_config_menu(
         LD.E_A(block)
 
         # [ブロック6] 右インジケータ描画: 退避した行アドレスにオプション欄の幅を足し、
-        # 「最終オプションではない（まだ右がある）」かつ「点滅フラグが 1」の場合だけ ">" を出す。
-        # 右に進めない場合や点滅条件外では空白を出して消す。
+        # 点滅フラグが 1 の場合だけ ">" を出す。点滅条件外では空白で消す。
 
         POP.HL(block)
         LD.BC_n16(block, option_col)
@@ -470,11 +465,6 @@ def build_screen0_config_menu(
         LABEL_RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
         LABEL_RIGHT_END = unique_label("__RIGHT_END__")
 
-        LD.A_B(block)
-        DEC.A(block)
-        CP.C(block)
-        JR_Z(block, LABEL_RIGHT_HIDDEN)
-        JP_M(block, LABEL_RIGHT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_Z(block, LABEL_RIGHT_HIDDEN)
@@ -501,6 +491,7 @@ def build_screen0_config_menu(
         # 入力: CURRENT_ENTRY_ADDR から項目インデックスを取得し、ENTRY_VALUE_ADDR_LABEL の値を書き換える。
         # 破壊: A/B/C/D/E/H/L を使用して範囲チェック・書き込み・再描画を行うため、戻り時に内容は保持されない。
         LABEL_ADJUST_END = unique_label("__ADJUST_END__")
+        LABEL_ADJUST_STORE = unique_label("__ADJUST_STORE__")
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.C_A(block)
 
@@ -536,15 +527,23 @@ def build_screen0_config_menu(
         if delta > 0:
             DEC.B(block)  # 最大インデックス
             CP.B(block)
-            # debug_print_pc(block," Adjust option plus: A vs B")
-            JR_NC(block, LABEL_ADJUST_END)
+            LABEL_ADJUST_PLUS_INCREMENT = unique_label("__ADJUST_PLUS_INCREMENT__")
+            JR_C(block, LABEL_ADJUST_PLUS_INCREMENT)
+            XOR.A(block)
+            JR(block, LABEL_ADJUST_STORE)
+            block.label(LABEL_ADJUST_PLUS_INCREMENT)
             INC.A(block)
         else:
             OR.A(block)
-            # debug_print_pc(block," Adjust option minus: A vs 0")
-            JR_Z(block, LABEL_ADJUST_END)
+            LABEL_ADJUST_MINUS_DECREMENT = unique_label("__ADJUST_MINUS_DECREMENT__")
+            JR_NZ(block, LABEL_ADJUST_MINUS_DECREMENT)
+            LD.A_B(block)
+            DEC.A(block)
+            JR(block, LABEL_ADJUST_STORE)
+            block.label(LABEL_ADJUST_MINUS_DECREMENT)
             DEC.A(block)
 
+        block.label(LABEL_ADJUST_STORE)
         # 更新した値をテーブルへ書き戻し、現在値インデックスも保存する。
         LD.mDE_A(block)
         LD.A_C(block)
