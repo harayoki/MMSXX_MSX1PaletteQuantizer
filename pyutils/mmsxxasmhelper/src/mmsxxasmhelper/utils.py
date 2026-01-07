@@ -362,15 +362,11 @@ class MemAddrAllocator:
         size: int | None = None,
         initial_value: Sequence[int] | None = None,
         description: str = "",
-        *,
-        debug_only: bool = False,
     ) -> int:
         """名前とサイズを登録し、割り当て先アドレスを返す。
 
         例: ``allocator.add("BUFFER", 4, initial_value=b"\x01\x02\x03\x04", description="作業領域")``
         """
-
-        assert debug_only is False, "debug_only is not supported yet"  # False の メモリアドレスが重なってしまうバグあり
 
         if name in self._lookup:
             msg = f"{name!r} is already allocated"
@@ -401,25 +397,19 @@ class MemAddrAllocator:
 
         address = self._current_address
         self._allocated.append(name)
-        apply_allocation = not debug_only or self.debug
-        has_initial_value = apply_allocation and initial_value is not None
-        effective_size = size if apply_allocation else 0
-        if apply_allocation:
-            raw_initial_value = raw if raw else [0x00] * size
-        else:
-            raw_initial_value = []
+        has_initial_value = initial_value is not None
+        raw_initial_value = raw if raw else [0x00] * size
         self._lookup[name] = {
             "address": address,
-            "size": effective_size,
+            "size": size,
             "description": description,
             "initial_value": bytes(raw_initial_value),
             "has_initial_value": has_initial_value,
-            "debug_only": debug_only,
         }
-        self._current_address += effective_size
+        self._current_address += size
 
-        offset = self._ensure_capacity(address, effective_size)
-        if apply_allocation and raw is not None:
+        offset = self._ensure_capacity(address, size)
+        if raw is not None:
             self._initial_bytes[offset : offset + len(raw)] = raw
 
         if has_initial_value:

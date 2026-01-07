@@ -244,9 +244,8 @@ class ADDR:
         1,
         description="Padding",
     )
-    # debug_only = Trueがまだうまく動いていない
-    DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ", debug_only=False)
-    DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ", debug_only=False)
+    DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ")
+    DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ")
 
 
 register_dump_target("DEBUG_DUMP_8BYTE_1", ADDR.DEBUG_DUMP_8BYTE_1, 8)
