@@ -39,6 +39,7 @@ def build_play_vgm_frame_func(
     vgm_bank_addr: int | None = None,
     current_bank_addr: int | None = None,
     page2_bank_reg_addr: int = 0x7000,
+    volume: int | None = None,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> tuple[Func, Func, Callable[[Block], None]]:
@@ -56,6 +57,8 @@ def build_play_vgm_frame_func(
         vgm_timer_flag_addr の 0/1 を反転し、0のとき再生処理をスキップする。
         vgm_bank_addr が指定されている場合、再生時にページ2バンクを切り替える。
     """
+    if volume is not None and not 0 <= volume <= 15:
+        raise ValueError("volume must be between 0 and 15")
 
     def play_vgm_frame_macro(block: Block) -> None:
         loop_reg = unique_label("PLAY_VGM_LOOP")
@@ -112,14 +115,14 @@ def build_play_vgm_frame_func(
         if vgm_bank_addr is not None:
             if current_bank_addr is not None:
                 LD.A_mn16(block, current_bank_addr)
-                LD.C_A(block)
+                PUSH.AF(block)
             LD.A_mn16(block, vgm_bank_addr)
             LD.mn16_A(block, page2_bank_reg_addr)
             if current_bank_addr is not None:
                 LD.mn16_A(block, current_bank_addr)
         play_vgm_frame_macro(block)
         if vgm_bank_addr is not None and current_bank_addr is not None:
-            LD.A_C(block)
+            POP.AF(block)
             LD.mn16_A(block, page2_bank_reg_addr)
             LD.mn16_A(block, current_bank_addr)
         block.label(skip_play)
@@ -139,6 +142,14 @@ def build_play_vgm_frame_func(
         LD.mn16_A(block, init_music_addr)
         LD.HL_label(block, "MUSIC_ISR")
         LD.mn16_HL(block, (init_music_addr + 1) & 0xFFFF)
+        if volume is not None:
+            psg_reg_port = 0xA0
+            psg_data_port = 0xA1
+            for reg in (8, 9, 10):
+                LD.A_n8(block, reg)
+                OUT(block, psg_reg_port)
+                LD.A_n8(block, volume)
+                OUT(block, psg_data_port)
         EI(block)
 
     init_music_func = Func("INIT_MUSIC", init_music, group=group)
