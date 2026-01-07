@@ -25,8 +25,6 @@ __all__ = ["build_play_vgm_frame_func"]
 def build_play_vgm_frame_func(
     vgm_ptr_addr: int,
     vgm_loop_addr: int,
-    psg_reg_port: int = 0xA0,
-    psg_data_port: int = 0xA1,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> Func:
@@ -41,6 +39,8 @@ def build_play_vgm_frame_func(
         loop_reg = unique_label("PLAY_VGM_LOOP")
         next_frame = unique_label("PLAY_VGM_NEXT")
         do_loop = unique_label("PLAY_VGM_DO_LOOP")
+        psg_reg_port = 0xA0
+        psg_data_port = 0xA1
 
         LD.A_mHL(block)
         INC.HL(block)
