@@ -128,7 +128,6 @@ from mmsxxasmhelper.config_scene import (
     build_screen0_config_menu,
     get_work_byte_length_for_screen0_config_menu,
 )
-from mmsxxasmhelper.psgstream import build_play_vgm_frame_func
 from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -225,17 +224,6 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="起動時のBEEP設定 (default: ON)",
-    )
-    parser.add_argument(
-        "--bgm",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="起動時のBGM設定 (default: OFF)",
-    )
-    parser.add_argument(
-        "--bgm-path",
-        type=Path,
-        help="BGMのbinファイルパス (未指定の場合はBGM設定は強制OFF)",
     )
     parser.add_argument(
         "--start-at",
@@ -340,15 +328,6 @@ class ADDR:
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
     CONFIG_BEEP_ENABLED = madd(
         "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
-    )
-    CONFIG_BGM_ENABLED = madd(
-        "CONFIG_BGM_ENABLED", 1, description="BGMの有効/無効"
-    )
-    BGM_PTR_ADDR = madd(
-        "BGM_PTR_ADDR", 2, description="BGMストリームの現在位置"
-    )
-    BGM_LOOP_ADDR = madd(
-        "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
     )
     CONFIG_AUTO_SPEED = madd(
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
@@ -1016,11 +995,6 @@ def build_config_scene_func(
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(
-            "BGM",
-            ["O N", "OFF"],
-            ADDR.CONFIG_BGM_ENABLED,
-        ),
-        Screen0ConfigEntry(
             "AUTO PAGE",
             AUTO_ADVANCE_INTERVAL_CHOICES,
             ADDR.CONFIG_AUTO_SPEED,
@@ -1082,8 +1056,6 @@ def build_boot_bank(
     fill_byte: int,
     title_wait_seconds: int,
     beep_enabled_default: bool,
-    bgm_enabled_default: bool,
-    bgm_start_bank: int | None,
     log_lines: List[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1103,12 +1075,6 @@ def build_boot_bank(
         update_input_func=UPDATE_INPUT_FUNC,
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
-    PLAY_VGM_FRAME_FUNC = None
-    if bgm_start_bank is not None:
-        PLAY_VGM_FRAME_FUNC = build_play_vgm_frame_func(
-            ADDR.BGM_PTR_ADDR, ADDR.BGM_LOOP_ADDR, group=SCROLL_VIEWER_FUNC_GROUP
-        )
-
     def apply_viewer_screen_settings(block: Block) -> None:
         LD.A_n8(block, 2)
         CALL(block, CHGMOD)
@@ -1152,15 +1118,6 @@ def build_boot_bank(
     else:
         LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
-    if bgm_enabled_default:
-        LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
-    else:
-        LD.A_n8(b, 1)
-        LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
-    if bgm_start_bank is not None:
-        LD.HL_n16(b, DATA_BANK_ADDR)
-        LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
-        LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
 
     TITLE_SCREEN_FUNC.call(b)
 
@@ -1231,16 +1188,6 @@ def build_boot_bank(
     b.label("MAIN_LOOP")
     HALT(b)  # V-Sync 待ち
     UPDATE_BEEP_FUNC.call(b)
-    if PLAY_VGM_FRAME_FUNC is not None:
-        BGM_SKIP = unique_label("SKIP_BGM")
-        LD.A_mn16(b, ADDR.CONFIG_BGM_ENABLED)
-        OR.A(b)
-        JR_NZ(b, BGM_SKIP)
-        LD.A_n8(b, bgm_start_bank)
-        LD.mn16_A(b, ASCII16_PAGE2_REG)
-        LD.HL_mn16(b, ADDR.BGM_PTR_ADDR)
-        PLAY_VGM_FRAME_FUNC.call(b)
-        b.label(BGM_SKIP)
     UPDATE_INPUT_FUNC.call(b)
 
     # ESC でコンフィグ（ヘルプ）シーンへ遷移
@@ -1597,8 +1544,6 @@ def build(
     fill_byte: int = 0xFF,
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
-    bgm_enabled_default: bool = False,
-    bgm_data: bytes | None = None,
     log_lines: list[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1614,10 +1559,6 @@ def build(
         f"BEEP default: {'ON' if beep_enabled_default else 'OFF'}",
         log_lines,
     )
-    log_and_store(
-        f"BGM default: {'ON' if bgm_enabled_default else 'OFF'}",
-        log_lines,
-    )
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
@@ -1631,17 +1572,6 @@ def build(
     # next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     next_bank = 1
     header_bytes: list[int] = []
-    bgm_bank_count = 0
-    bgm_start_bank: int | None = None
-    if bgm_data is not None:
-        if len(bgm_data) > PAGE_SIZE:
-            bgm_data = bgm_data[:PAGE_SIZE]
-        bgm_start_bank = next_bank
-        bgm_payload = bytearray([fill_byte] * PAGE_SIZE)
-        bgm_payload[: len(bgm_data)] = bgm_data
-        data_banks.append(bytes(bgm_payload))
-        bgm_bank_count = 1
-        next_bank += bgm_bank_count
 
     if start_positions is None:
         start_positions = ["top"] * len(images)
@@ -1719,8 +1649,6 @@ def build(
             fill_byte,
             title_wait_seconds,
             beep_enabled_default,
-            bgm_enabled_default,
-            bgm_start_bank,
             log_lines,
             debug_build,
         )
@@ -1815,8 +1743,6 @@ def main() -> None:
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
     mem_addr_allocator.debug = args.debug_build
-    bgm_data: bytes | None = None
-    bgm_enabled_default = args.bgm
 
     if args.output is not None:
         ensure_output_writable(args.output)
@@ -1912,24 +1838,12 @@ def main() -> None:
     else:
         start_positions = [args.start_at] * len(image_data_list)
 
-    if args.bgm_path is None:
-        bgm_enabled_default = False
-    else:
-        if not args.bgm_path.is_file():
-            raise SystemExit(f"BGM file not found: {args.bgm_path}")
-        bgm_data = args.bgm_path.read_bytes()
-        if len(bgm_data) > PAGE_SIZE:
-            log_and_store("BGM file size exceeds 16KB; truncating to 16KB", log_lines)
-            bgm_data = bgm_data[:PAGE_SIZE]
-
     rom = build(
         image_data_list,
         start_positions=start_positions,
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
         beep_enabled_default=args.beep,
-        bgm_enabled_default=bgm_enabled_default,
-        bgm_data=bgm_data,
         log_lines=log_lines,
         debug_build=args.debug_build,
     )
