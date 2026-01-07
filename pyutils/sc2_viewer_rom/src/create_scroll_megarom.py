@@ -144,6 +144,119 @@ from mmsxxasmhelper.utils import (
 from PIL import Image
 from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
 
+
+def int_from_str(value: str) -> int:
+    return int(value, 0)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
+    )
+    parser.add_argument(
+        "-i",
+        "--input",
+        dest="input",
+        metavar="PNG",
+        type=Path,
+        nargs="+",
+        action="append",
+        required=True,
+        help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
+    )
+    parser.add_argument(
+        "--use-debug-image",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--debug-image-index",
+        type=int,
+        default=0,
+        help="--use-debug-image 時に埋め込む番号",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="出力 ROM ファイル名（未指定なら自動命名）",
+    )
+    parser.add_argument(
+        "--background",
+        type=str,
+        default="#000000",
+        help="右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
+    )
+    parser.add_argument(
+        "--msx1pq-cli",
+        type=Path,
+        help="msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
+    )
+    parser.add_argument(
+        "--workdir",
+        type=Path,
+        help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
+    )
+    parser.add_argument(
+        "--fill-byte",
+        type=int_from_str,
+        default=0xFF,
+        help="未使用領域の埋め値 (default: 0xFF)",
+    )
+    parser.add_argument(
+        "--title-wait-seconds",
+        type=int,
+        default=5,
+        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
+    )
+    parser.add_argument(
+        "--rom-info",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="ROM情報テキストを出力するかどうか (default: ON)",
+    )
+    parser.add_argument(
+        "--beep",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="起動時のBEEP設定 (default: ON)",
+    )
+    parser.add_argument(
+        "--bgm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="起動時のBGM設定 (default: OFF)",
+    )
+    parser.add_argument(
+        "--start-at",
+        choices=["top", "bottom"],
+        default="top",
+        help="全画像の初期表示位置デフォルト (default: top)",
+    )
+    parser.add_argument(
+        "--start-at-override",
+        nargs="+",
+        choices=["top", "bottom"],
+        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
+    )
+    parser.add_argument(
+        "--start-at-random",
+        action="store_true",
+        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
+    )
+    parser.add_argument(
+        "--debug-build",
+        action="store_true",
+        help="デバッグ用ビルドモードを有効にする。",
+    )
+    return parser.parse_args()
+
+args = parse_args()
+
 PAGE_SIZE = 0x4000
 ROM_BASE = 0x4000
 
@@ -239,6 +352,9 @@ class ADDR:
         get_work_byte_length_for_screen0_config_menu(),
         description="コンフィグ用ワークベース",
     )
+
+
+if args.debug_build:
     TEMP = madd(
         "TEMP",
         1,
@@ -246,10 +362,8 @@ class ADDR:
     )
     DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ")
     DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ")
-
-
-register_dump_target("DEBUG_DUMP_8BYTE_1", ADDR.DEBUG_DUMP_8BYTE_1, 8)
-register_dump_target("DEBUG_DUMP_8BYTE_2", ADDR.DEBUG_DUMP_8BYTE_2, 8)
+    register_dump_target("DEBUG_DUMP_8BYTE_1", DEBUG_DUMP_8BYTE_1, 8)
+    register_dump_target("DEBUG_DUMP_8BYTE_2", DEBUG_DUMP_8BYTE_2, 8)
 
 
 @dataclass
@@ -265,11 +379,6 @@ class ImageData:
     pattern: bytes
     color: bytes
     tile_rows: int
-
-
-def int_from_str(value: str) -> int:
-    return int(value, 0)
-
 
 @contextmanager
 def open_workdir(path: Path | None):
@@ -1576,112 +1685,6 @@ def build(
     return b"".join(banks)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
-    )
-    parser.add_argument(
-        "-i",
-        "--input",
-        dest="input",
-        metavar="PNG",
-        type=Path,
-        nargs="+",
-        action="append",
-        required=True,
-        help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
-    )
-    parser.add_argument(
-        "--use-debug-image",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--debug-image-index",
-        type=int,
-        default=0,
-        help="--use-debug-image 時に埋め込む番号",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        help="出力 ROM ファイル名（未指定なら自動命名）",
-    )
-    parser.add_argument(
-        "--background",
-        type=str,
-        default="#000000",
-        help="右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
-    )
-    parser.add_argument(
-        "--msx1pq-cli",
-        type=Path,
-        help="msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
-    )
-    parser.add_argument(
-        "--workdir",
-        type=Path,
-        help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
-    )
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
-    )
-    parser.add_argument(
-        "--fill-byte",
-        type=int_from_str,
-        default=0xFF,
-        help="未使用領域の埋め値 (default: 0xFF)",
-    )
-    parser.add_argument(
-        "--title-wait-seconds",
-        type=int,
-        default=5,
-        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
-    )
-    parser.add_argument(
-        "--rom-info",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="ROM情報テキストを出力するかどうか (default: ON)",
-    )
-    parser.add_argument(
-        "--beep",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="起動時のBEEP設定 (default: ON)",
-    )
-    parser.add_argument(
-        "--bgm",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="起動時のBGM設定 (default: OFF)",
-    )
-    parser.add_argument(
-        "--start-at",
-        choices=["top", "bottom"],
-        default="top",
-        help="全画像の初期表示位置デフォルト (default: top)",
-    )
-    parser.add_argument(
-        "--start-at-override",
-        nargs="+",
-        choices=["top", "bottom"],
-        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
-    )
-    parser.add_argument(
-        "--start-at-random",
-        action="store_true",
-        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
-    )
-    parser.add_argument(
-        "--debug-build",
-        action="store_true",
-        help="デバッグ用ビルドモードを有効にする。",
-    )
-    return parser.parse_args()
-
 
 def concatenate_images_vertically(images: Sequence[Image.Image]) -> Image.Image:
     height = sum(img.height for img in images)
@@ -1763,7 +1766,6 @@ def ensure_output_writable(path: Path) -> None:
 
 
 def main() -> None:
-    args = parse_args()
 
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
