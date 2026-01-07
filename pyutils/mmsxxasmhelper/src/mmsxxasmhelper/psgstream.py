@@ -4,18 +4,26 @@ PSGストリーム再生ユーティリティ
 
 from __future__ import annotations
 
+from typing import Callable
+
 from mmsxxasmhelper.core import (
     Block,
     CP,
     DEFAULT_FUNC_GROUP_NAME,
+    DI,
     DJNZ,
+    EI,
     Func,
     INC,
+    JR,
     JR_Z,
     LD,
     OR,
     OUT,
-    RET,
+    POP,
+    PUSH,
+    RET_Z,
+    XOR,
     unique_label,
 )
 
@@ -25,23 +33,31 @@ __all__ = ["build_play_vgm_frame_func"]
 def build_play_vgm_frame_func(
     vgm_ptr_addr: int,
     vgm_loop_addr: int,
+    init_music_addr: int,
+    vgm_timer_flag_addr: int,
+    bgm_enabled_addr: int,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
-) -> Func:
+) -> tuple[Func, Func, Callable[[Block], None]]:
     """
-    VGMフレームを1回分再生する関数を生成する。
+    VGMフレーム再生と割り込みフック用関数を生成する。
 
-    ※この実装は処理が重くなった際の事を考えていないので、再生がとまったりお遅くなったりします。
-    参考実装で水。
+    返却値:
+        (INIT_MUSIC, MUSIC_ISR, PLAY_VGM_FRAME_MACRO) の3つ
 
-    入力:
+    PLAY_VGM_FRAME_MACRO の入力:
         HL = (VGM_PTR) アドレス（現在のVGMストリーム位置）
+
+    MUSIC_ISR の動作:
+        bgm_enabled_addr が 0 のときは即時リターンする。
+        vgm_timer_flag_addr の 0/1 を反転し、0のとき再生処理をスキップする。
     """
 
-    def play_vgm_frame(block: Block) -> None:
+    def play_vgm_frame_macro(block: Block) -> None:
         loop_reg = unique_label("PLAY_VGM_LOOP")
         next_frame = unique_label("PLAY_VGM_NEXT")
         do_loop = unique_label("PLAY_VGM_DO_LOOP")
+        end_label = unique_label("PLAY_VGM_END")
         psg_reg_port = 0xA0
         psg_data_port = 0xA1
 
@@ -66,11 +82,49 @@ def build_play_vgm_frame_func(
 
         block.label(next_frame)
         LD.mn16_HL(block, vgm_ptr_addr)
-        RET(block)
+        JR(block, end_label)
 
         block.label(do_loop)
         LD.HL_mn16(block, vgm_loop_addr)
         LD.mn16_HL(block, vgm_ptr_addr)
-        RET(block)
+        block.label(end_label)
 
-    return Func("PLAY_VGM_FRAME", play_vgm_frame, no_auto_ret=True, group=group)
+    def music_isr(block: Block) -> None:
+        skip_play = unique_label("MUSIC_ISR_SKIP_PLAY")
+        LD.A_mn16(block, bgm_enabled_addr)
+        OR.A(block)
+        RET_Z(block)
+        PUSH.AF(block)
+        PUSH.BC(block)
+        PUSH.DE(block)
+        PUSH.HL(block)
+        PUSH.IX(block)
+        PUSH.IY(block)
+
+        LD.A_mn16(block, vgm_timer_flag_addr)
+        XOR.n8(block, 1)
+        LD.mn16_A(block, vgm_timer_flag_addr)
+        JR_Z(block, skip_play)
+        play_vgm_frame_macro(block)
+        block.label(skip_play)
+
+        POP.IY(block)
+        POP.IX(block)
+        POP.HL(block)
+        POP.DE(block)
+        POP.BC(block)
+        POP.AF(block)
+
+    music_isr_func = Func("MUSIC_ISR", music_isr, group=group)
+
+    def init_music(block: Block) -> None:
+        DI(block)
+        LD.A_n8(block, 0xC3)
+        LD.mn16_A(block, init_music_addr)
+        LD.HL_label(block, "MUSIC_ISR")
+        LD.mn16_HL(block, (init_music_addr + 1) & 0xFFFF)
+        EI(block)
+
+    init_music_func = Func("INIT_MUSIC", init_music, group=group)
+
+    return init_music_func, music_isr_func, play_vgm_frame_macro

@@ -303,6 +303,7 @@ AUTO_ADVANCE_INTERVAL_FRAMES = [
     1,
 ]
 AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 3s", " 1s", "MAX"]
+H_TIMI_HOOK_ADDR = 0xFD9F
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -349,6 +350,9 @@ class ADDR:
     )
     BGM_LOOP_ADDR = madd(
         "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
+    )
+    VGM_TIMER_FLAG = madd(
+        "VGM_TIMER_FLAG", 1, initial_value=bytes([0]), description="VGM再生の1/2フレーム切り替えフラグ"
     )
     CONFIG_AUTO_SPEED = madd(
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
@@ -1103,10 +1107,19 @@ def build_boot_bank(
         update_input_func=UPDATE_INPUT_FUNC,
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
-    PLAY_VGM_FRAME_FUNC = None
+    INIT_MUSIC_FUNC = None
+    MUSIC_ISR_FUNC = None
+    PLAY_VGM_FRAME_MACRO = None
     if bgm_start_bank is not None:
-        PLAY_VGM_FRAME_FUNC = build_play_vgm_frame_func(
-            ADDR.BGM_PTR_ADDR, ADDR.BGM_LOOP_ADDR, group=SCROLL_VIEWER_FUNC_GROUP
+        INIT_MUSIC_FUNC, MUSIC_ISR_FUNC, PLAY_VGM_FRAME_MACRO = (
+            build_play_vgm_frame_func(
+                ADDR.BGM_PTR_ADDR,
+                ADDR.BGM_LOOP_ADDR,
+                H_TIMI_HOOK_ADDR,
+                ADDR.VGM_TIMER_FLAG,
+                ADDR.CONFIG_BGM_ENABLED,
+                group=SCROLL_VIEWER_FUNC_GROUP,
+            )
         )
 
     def apply_viewer_screen_settings(block: Block) -> None:
@@ -1231,16 +1244,6 @@ def build_boot_bank(
     b.label("MAIN_LOOP")
     HALT(b)  # V-Sync 待ち
     UPDATE_BEEP_FUNC.call(b)
-    if PLAY_VGM_FRAME_FUNC is not None:
-        BGM_SKIP = unique_label("SKIP_BGM")
-        LD.A_mn16(b, ADDR.CONFIG_BGM_ENABLED)
-        OR.A(b)
-        JR_NZ(b, BGM_SKIP)
-        LD.A_n8(b, bgm_start_bank)
-        LD.mn16_A(b, ASCII16_PAGE2_REG)
-        LD.HL_mn16(b, ADDR.BGM_PTR_ADDR)
-        PLAY_VGM_FRAME_FUNC.call(b)
-        b.label(BGM_SKIP)
     UPDATE_INPUT_FUNC.call(b)
 
     # ESC でコンフィグ（ヘルプ）シーンへ遷移
