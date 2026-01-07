@@ -217,7 +217,7 @@ class ADDR:
 
     PG_BUFFER = madd("PG_BUFFER", 256 * 3)
     CT_BUFFER = madd("CT_BUFFER", 256 * 3)
-    TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
+    TARGET_ROW = madd("TARGET_ROW", 2)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
     CONFIG_BEEP_ENABLED = madd(
         "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
@@ -767,10 +767,16 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         # --- ① パターン (PG) 転送準備 ---
         # 行番号から2bit分を切り出してパターンバンク番号として使い、
         # タイルデータが格納されているROMバンクをページ2に接続する。
-        LD.A_mn16(block, ADDR.TARGET_ROW)  # パターンジェネレータデータだけが1画面を超えてもならぶためバンク番号差分がわかる
+        LD.HL_mn16(block, ADDR.TARGET_ROW)
+        LD.A_H(block)
+        ADD.A_A(block)  # *2
+        ADD.A_A(block)  # *4
+        LD.C_A(block)  # H * 4
+        LD.A_L(block)
         RLCA(block)
         RLCA(block)
         AND.n8(block, 0x03)
+        ADD.A_C(block)  # (H * 4) + (L >> 6)
         LD.C_A(block)
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)  # 今のバンク番号に加算
         ADD.A_C(block)
@@ -778,8 +784,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         LD.B_A(block)  # B = バンク番号 保存
 
         # VRAM側で参照する行の開始アドレス(HL)を組み立てておく。
-        LD.A_mn16(block, ADDR.TARGET_ROW)
-        AND.n8(block, 0x3F)  # 0b00111111 (行番号下位6bit)  この処理必要？？？
+        LD.A_L(block)
+        AND.n8(block, 0x3F)  # 0b00111111 (行番号下位6bit)
         ADD.A_n8(block, 0x80)
         LD.H_A(block)
         LD.L_n8(block, 0)  # HL= 8000h + (行番号低6bit * 256)  : 256 = 8bytes * 32文字
@@ -789,17 +795,29 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         # --- カラー (CT) 転送 ---
         # 表示行に対応するカラー定義を 0/8/16 ライン先頭で VRAM へ直接出力する。
         for line_offset in [0, 8, 16]:
-            LD.A_mn16(block, ADDR.TARGET_ROW)
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
             if line_offset:
-                ADD.A_n8(block, line_offset)
-            LD.D_A(block)
+                LD.BC_n16(block, line_offset)
+                ADD.HL_BC(block)
 
             # カラーデータのバンクを初期化
+            LD.A_H(block)
+            ADD.A_A(block)  # *2
+            ADD.A_A(block)  # *4
+            LD.C_A(block)
+            LD.A_L(block)
+            RLCA(block)
+            RLCA(block)
+            AND.n8(block, 0x03)
+            ADD.A_C(block)
+            LD.C_A(block)
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
+            ADD.A_C(block)
             LD.E_A(block)
 
             # HL = カラー開始アドレス
-            LD.A_D(block)
+            LD.A_L(block)
+            AND.n8(block, 0x3F)
             LD.L_A(block)
             LD.H_n8(block, 0)
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)
@@ -823,7 +841,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.L_n8(block, 0)
 
             PUSH.HL(block)
-            LD.A_mn16(block, ADDR.TARGET_ROW)
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
+            LD.A_L(block)
             AND.n8(block, 0x07)
             ADD.A_n8(block, 0x20 + line_offset)
             LD.H_A(block)
@@ -841,14 +860,20 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         # 0/8/16 ライン先頭を VRAM の各ミラー領域へ直接出力する。
         for line_offset in [0, 8, 16]:
             # 行番号にオフセットを加味し、対象バンクを決定。
-            LD.A_mn16(block, ADDR.TARGET_ROW)
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
             if line_offset:
-                ADD.A_n8(block, line_offset)
-            LD.D_A(block)  # 後続のアドレス計算用に保持
+                LD.BC_n16(block, line_offset)
+                ADD.HL_BC(block)
 
+            LD.A_H(block)
+            ADD.A_A(block)  # *2
+            ADD.A_A(block)  # *4
+            LD.C_A(block)
+            LD.A_L(block)
             RLCA(block)
             RLCA(block)
             AND.n8(block, 0x03)
+            ADD.A_C(block)
             LD.C_A(block)  # バンク番号の下位2bit
 
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
@@ -857,7 +882,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             LD.E_A(block)  # E = バンク番号 (コピー中の境界越え検出用)
 
             # HL = パターン開始アドレス
-            LD.A_D(block)
+            LD.A_L(block)
             AND.n8(block, 0x3F)
             ADD.A_n8(block, 0x80)
             LD.H_A(block)
@@ -865,7 +890,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
             # 行オフセットを加味した VRAM 書き込みアドレスをセット
             PUSH.HL(block)
-            LD.A_mn16(block, ADDR.TARGET_ROW)
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
+            LD.A_L(block)
             AND.n8(block, 0x07)
             if line_offset:
                 ADD.A_n8(block, line_offset)
@@ -1138,8 +1164,7 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
     # ターゲット行は「新しく入ってきた上端の行」
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
     JR(b, "DO_UPDATE_SCROLL")
 
     b.label("CHECK_DOWN")
@@ -1210,8 +1235,7 @@ def build_boot_bank(
     # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
     LD.BC_n16(b, 23)
     ADD.HL_BC(b)
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
 
     b.label("DO_UPDATE_SCROLL")
     # 1. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
