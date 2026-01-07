@@ -801,8 +801,8 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             # HL = カラー開始アドレス + 行番号
             LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
             if line_offset:
-                LD.BC_n16(block, line_offset)
-                ADD.HL_BC(block)
+                LD.DE_n16(block, line_offset)
+                ADD.HL_DE(block)
                 CARRY_COLOR_OFFSET = unique_label("CT_CARRY_OFFSET")
                 JR_NC(block, CARRY_COLOR_OFFSET)
                 INC.B(block)
