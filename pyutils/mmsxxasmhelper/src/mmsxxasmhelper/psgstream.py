@@ -105,6 +105,8 @@ def build_play_vgm_frame_func(
         process_play = unique_label("PROCESS_PLAY")
         skip_play = unique_label("MUSIC_ISR_SKIP_PLAY")
 
+        PUSH.AF(block)
+
         LD.A_mn16(block, bgm_enabled_addr)
         OR.A(block)
         JP_NZ(block, process_play)
@@ -122,21 +124,23 @@ def build_play_vgm_frame_func(
             LD.A_n8(block, 0)
             OUT(block, psg_data_port)
 
+        POP.AF(block)
         RET(block)
 
         block.label(process_play)
-        PUSH.AF(block)
+
+        debug_print_pc(block, "MUSIC_ISR_START")
+        LD.A_mn16(block, vgm_timer_flag_addr)
+        XOR.n8(block, 1)
+        LD.mn16_A(block, vgm_timer_flag_addr)
+        JR_Z(block, skip_play)
+
         PUSH.BC(block)
         PUSH.DE(block)
         PUSH.HL(block)
         PUSH.IX(block)
         PUSH.IY(block)
-        debug_print_pc(block, "MUSIC_ISR")
 
-        LD.A_mn16(block, vgm_timer_flag_addr)
-        XOR.n8(block, 1)
-        LD.mn16_A(block, vgm_timer_flag_addr)
-        JR_Z(block, skip_play)
         if vgm_bank_addr is not None:
             LD.A_mn16(block, vgm_bank_addr)
             LD.mn16_A(block, page2_bank_reg_addr)
@@ -144,13 +148,15 @@ def build_play_vgm_frame_func(
         if current_bank_addr is not None:
             LD.A_mn16(block, current_bank_addr)
             LD.mn16_A(block, page2_bank_reg_addr)
-        block.label(skip_play)
 
         POP.IY(block)
         POP.IX(block)
         POP.HL(block)
         POP.DE(block)
         POP.BC(block)
+
+        block.label(skip_play)
+
         POP.AF(block)
 
     music_isr_func = Func("MUSIC_ISR", music_isr, group=group)
