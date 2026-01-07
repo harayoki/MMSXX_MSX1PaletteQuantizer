@@ -75,7 +75,7 @@ __all__ = [
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
     "CPL", "NEG",
-    "SRL",
+    "RR", "SRL",
     "LDI", "LDD", "LDIR",
     "RLCA",
     "INC", "DEC",
@@ -2176,6 +2176,78 @@ def RLA(b: Block) -> None:
 
 def RRA(b: Block) -> None:
     b.emit(0x1F)
+
+
+class RR:
+    """RR r/(HL)/(IX+d)/(IY+d) 命令。"""
+
+    _REG8_INDEX = {
+        "B": 0,
+        "C": 1,
+        "D": 2,
+        "E": 3,
+        "H": 4,
+        "L": 5,
+        "mHL": 6,
+        "A": 7,
+    }
+
+    @staticmethod
+    def r(b: Block, reg: str) -> None:
+        """RR reg"""
+
+        try:
+            r_index = RR._REG8_INDEX[reg]
+        except KeyError as exc:
+            raise ValueError(f"invalid RR reg operand: {reg}") from exc
+        opcode = 0x18 | r_index
+        b.emit(0xCB, opcode)
+
+    @staticmethod
+    def B(b: Block) -> None:
+        RR.r(b, "B")
+
+    @staticmethod
+    def C(b: Block) -> None:
+        RR.r(b, "C")
+
+    @staticmethod
+    def D(b: Block) -> None:
+        RR.r(b, "D")
+
+    @staticmethod
+    def E(b: Block) -> None:
+        RR.r(b, "E")
+
+    @staticmethod
+    def H(b: Block) -> None:
+        RR.r(b, "H")
+
+    @staticmethod
+    def L(b: Block) -> None:
+        RR.r(b, "L")
+
+    @staticmethod
+    def A(b: Block) -> None:
+        RR.r(b, "A")
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        RR.r(b, "mHL")
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """RR (IX+d)"""
+
+        opcode = 0x18 | RR._REG8_INDEX["mHL"]
+        b.emit(0xDD, 0xCB, disp & 0xFF, opcode)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """RR (IY+d)"""
+
+        opcode = 0x18 | RR._REG8_INDEX["mHL"]
+        b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
 
 
 class SRL:
