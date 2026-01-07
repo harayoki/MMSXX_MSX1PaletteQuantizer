@@ -110,11 +110,12 @@ def build_play_vgm_frame_func(
         JP_NZ(block, process_play)
 
         # PSGを停止（ミキサー無効化 + 各チャンネル音量0）
+        # 毎フレーム対応したくないならコンフィグ側で音量ＯＦＦにすべき
+        # とりあえず許容
         LD.A_n8(block, 0x07)
         OUT(block, psg_reg_port)
         LD.A_n8(block, 0b10111111)
         OUT(block, psg_data_port)
-
         for reg in (8, 9, 10):
             LD.A_n8(block, reg)
             OUT(block, psg_reg_port)
