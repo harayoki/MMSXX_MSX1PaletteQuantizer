@@ -232,6 +232,11 @@ def parse_args() -> argparse.Namespace:
         help="起動時のBGM設定 (default: OFF)",
     )
     parser.add_argument(
+        "--bgm-path",
+        type=Path,
+        help="BGMのbinファイルパス (未指定の場合はBGM設定は強制OFF)",
+    )
+    parser.add_argument(
         "--start-at",
         choices=["top", "bottom"],
         default="top",
@@ -1566,6 +1571,7 @@ def build(
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
     bgm_enabled_default: bool = False,
+    bgm_data: bytes | None = None,
     log_lines: list[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1598,6 +1604,15 @@ def build(
     # next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     next_bank = 1
     header_bytes: list[int] = []
+    bgm_bank_count = 0
+    if bgm_data is not None:
+        if len(bgm_data) > PAGE_SIZE:
+            raise ValueError("bgm_data must fit within 16KB")
+        bgm_payload = bytearray([fill_byte] * PAGE_SIZE)
+        bgm_payload[: len(bgm_data)] = bgm_data
+        data_banks.append(bytes(bgm_payload))
+        bgm_bank_count = 1
+        next_bank += bgm_bank_count
 
     if start_positions is None:
         start_positions = ["top"] * len(images)
@@ -1770,6 +1785,8 @@ def main() -> None:
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
     mem_addr_allocator.debug = args.debug_build
+    bgm_data: bytes | None = None
+    bgm_enabled_default = args.bgm
 
     if args.output is not None:
         ensure_output_writable(args.output)
@@ -1865,13 +1882,23 @@ def main() -> None:
     else:
         start_positions = [args.start_at] * len(image_data_list)
 
+    if args.bgm_path is None:
+        bgm_enabled_default = False
+    else:
+        if not args.bgm_path.is_file():
+            raise SystemExit(f"BGM file not found: {args.bgm_path}")
+        bgm_data = args.bgm_path.read_bytes()
+        if len(bgm_data) > PAGE_SIZE:
+            raise SystemExit("BGM file size exceeds 16KB")
+
     rom = build(
         image_data_list,
         start_positions=start_positions,
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
         beep_enabled_default=args.beep,
-        bgm_enabled_default=args.bgm,
+        bgm_enabled_default=bgm_enabled_default,
+        bgm_data=bgm_data,
         log_lines=log_lines,
         debug_build=args.debug_build,
     )
