@@ -1635,7 +1635,7 @@ def build(
     bgm_start_bank: int | None = None
     if bgm_data is not None:
         if len(bgm_data) > PAGE_SIZE:
-            raise ValueError("bgm_data must fit within 16KB")
+            bgm_data = bgm_data[:PAGE_SIZE]
         bgm_start_bank = next_bank
         bgm_payload = bytearray([fill_byte] * PAGE_SIZE)
         bgm_payload[: len(bgm_data)] = bgm_data
@@ -1919,7 +1919,8 @@ def main() -> None:
             raise SystemExit(f"BGM file not found: {args.bgm_path}")
         bgm_data = args.bgm_path.read_bytes()
         if len(bgm_data) > PAGE_SIZE:
-            raise SystemExit("BGM file size exceeds 16KB")
+            log_and_store("BGM file size exceeds 16KB; truncating to 16KB", log_lines)
+            bgm_data = bgm_data[:PAGE_SIZE]
 
     rom = build(
         image_data_list,
