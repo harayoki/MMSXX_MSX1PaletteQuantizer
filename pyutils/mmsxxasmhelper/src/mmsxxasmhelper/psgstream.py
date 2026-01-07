@@ -100,6 +100,8 @@ def build_play_vgm_frame_func(
 
     def music_isr(block: Block) -> None:
         skip_play = unique_label("MUSIC_ISR_SKIP_PLAY")
+        restore_bank = unique_label("MUSIC_ISR_RESTORE_BANK")
+        after_restore = unique_label("MUSIC_ISR_AFTER_RESTORE")
         LD.A_mn16(block, bgm_enabled_addr)
         OR.A(block)
         RET_Z(block)
@@ -125,10 +127,15 @@ def build_play_vgm_frame_func(
                 LD.mn16_A(block, current_bank_addr)
         play_vgm_frame_macro(block)
         if vgm_bank_addr is not None and current_bank_addr is not None:
+            JR(block, restore_bank)
+        block.label(skip_play)
+        if vgm_bank_addr is not None and current_bank_addr is not None:
+            JR(block, after_restore)
+            block.label(restore_bank)
             POP.AF(block)
             LD.mn16_A(block, page2_bank_reg_addr)
             LD.mn16_A(block, current_bank_addr)
-        block.label(skip_play)
+            block.label(after_restore)
 
         POP.IY(block)
         POP.IX(block)
