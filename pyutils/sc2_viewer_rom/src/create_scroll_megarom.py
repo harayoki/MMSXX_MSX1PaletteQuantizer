@@ -1242,12 +1242,30 @@ def build_boot_bank(
     SYNC_SCROLL_ROW_FUNC.call(b)
 
     # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
-    LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    #    16bit行番号の mod 24 を計算するため、
+    #    row % 24 = (low % 24 + (high * 16) % 24) % 24 を使う
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.B_H(b)  # high byte を保存
+    LD.A_L(b)
     LD.L_A(b)
     LD.H_n8(b, 0)
     LD.DE_label(b, "TABLE_MOD24")
     ADD.HL_DE(b)
     LD.A_mHL(b)
+    LD.C_A(b)
+
+    LD.A_B(b)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    LD.DE_label(b, "TABLE_MOD24_HIGH")
+    ADD.HL_DE(b)
+    LD.A_mHL(b)
+    ADD.A_C(b)
+    CP.n8(b, 24)
+    ROW_MOD_OK = unique_label("_ROW_MOD_OK")
+    JR_C(b, ROW_MOD_OK)
+    SUB.n8(b, 24)
+    b.label(ROW_MOD_OK)
     SCROLL_NAME_TABLE_FUNC.call(b)
 
     # --- 自動切り替え判定 ---
@@ -1333,6 +1351,11 @@ def build_boot_bank(
     TABLE_MOD24 = [i % 24 for i in range(256)]
     print_bytes(TABLE_MOD24, title="TABLE_MOD24")
     DB(b, *TABLE_MOD24)
+    # 高位バイト用: (i * 16) % 24
+    b.label("TABLE_MOD24_HIGH")
+    TABLE_MOD24_HIGH = [(i * 16) % 24 for i in range(256)]
+    print_bytes(TABLE_MOD24_HIGH, title="TABLE_MOD24_HIGH")
+    DB(b, *TABLE_MOD24_HIGH)
 
     # --- [画像データ配置ヘッダー] ---
     b.label("IMAGE_HEADER_TABLE")
