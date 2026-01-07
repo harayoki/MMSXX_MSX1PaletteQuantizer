@@ -955,5 +955,3 @@ def build_scroll_name_table_func(
         RET(block)
 
     return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
-
-
