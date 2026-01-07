@@ -75,6 +75,7 @@ __all__ = [
     "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
     "EX",
     "CPL", "NEG",
+    "SRL",
     "LDI", "LDD", "LDIR",
     "RLCA",
     "INC", "DEC",
@@ -2177,6 +2178,78 @@ def RRA(b: Block) -> None:
     b.emit(0x1F)
 
 
+class SRL:
+    """SRL r/(HL)/(IX+d)/(IY+d) 命令。"""
+
+    _REG8_INDEX = {
+        "B": 0,
+        "C": 1,
+        "D": 2,
+        "E": 3,
+        "H": 4,
+        "L": 5,
+        "mHL": 6,
+        "A": 7,
+    }
+
+    @staticmethod
+    def r(b: Block, reg: str) -> None:
+        """SRL reg"""
+
+        try:
+            r_index = SRL._REG8_INDEX[reg]
+        except KeyError as exc:
+            raise ValueError(f"invalid SRL reg operand: {reg}") from exc
+        opcode = 0x38 | r_index
+        b.emit(0xCB, opcode)
+
+    @staticmethod
+    def B(b: Block) -> None:
+        SRL.r(b, "B")
+
+    @staticmethod
+    def C(b: Block) -> None:
+        SRL.r(b, "C")
+
+    @staticmethod
+    def D(b: Block) -> None:
+        SRL.r(b, "D")
+
+    @staticmethod
+    def E(b: Block) -> None:
+        SRL.r(b, "E")
+
+    @staticmethod
+    def H(b: Block) -> None:
+        SRL.r(b, "H")
+
+    @staticmethod
+    def L(b: Block) -> None:
+        SRL.r(b, "L")
+
+    @staticmethod
+    def A(b: Block) -> None:
+        SRL.r(b, "A")
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        SRL.r(b, "mHL")
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """SRL (IX+d)"""
+
+        opcode = 0x38 | SRL._REG8_INDEX["mHL"]
+        b.emit(0xDD, 0xCB, disp & 0xFF, opcode)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """SRL (IY+d)"""
+
+        opcode = 0x38 | SRL._REG8_INDEX["mHL"]
+        b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
+
+
 def DAA(b: Block) -> None:
     b.emit(0x27)
 
@@ -2794,4 +2867,3 @@ def dump_mem(
     POP.DE(b)
     POP.BC(b)
     POP.AF(b)
-
