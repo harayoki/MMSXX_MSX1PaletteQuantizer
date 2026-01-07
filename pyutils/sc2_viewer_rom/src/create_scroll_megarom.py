@@ -354,9 +354,9 @@ class ADDR:
     BGM_BANK_ADDR = madd(
         "BGM_BANK_ADDR", 1, description="BGMストリームのバンク番号"
     )
-    CURRENT_PAGE2_BANK_ADDR = madd(
-        "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
-    )
+    # CURRENT_PAGE2_BANK_ADDR = madd(
+    #     "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
+    # )
     VGM_TIMER_FLAG = madd(
         "VGM_TIMER_FLAG", 1, initial_value=bytes([0]), description="VGM再生の1/2フレーム切り替えフラグ"
     )
@@ -389,7 +389,7 @@ if args.debug_build:
 
 
 def set_page2_bank(block: Block) -> None:
-    LD.mn16_A(block, ADDR.CURRENT_PAGE2_BANK_ADDR)
+    # LD.mn16_A(block, ADDR.CURRENT_PAGE2_BANK_ADDR)
     LD.mn16_A(block, ASCII16_PAGE2_REG)
 
 
@@ -1027,12 +1027,12 @@ def build_config_scene_func(
     entries = [
         Screen0ConfigEntry(
             "BEEP",
-            ["O N", "OFF"],
+            ["OFF", "O N"],
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(
             "BGM",
-            ["O N", "OFF"],
+            ["OFF", "O N"],
             ADDR.CONFIG_BGM_ENABLED,
         ),
         Screen0ConfigEntry(
@@ -1120,9 +1120,8 @@ def build_boot_bank(
     )
     INIT_MUSIC_FUNC = None
     MUSIC_ISR_FUNC = None
-    PLAY_VGM_FRAME_MACRO = None
     if bgm_start_bank is not None:
-        INIT_MUSIC_FUNC, MUSIC_ISR_FUNC, PLAY_VGM_FRAME_MACRO = (
+        INIT_MUSIC_FUNC, MUSIC_ISR_FUNC = (
             build_play_vgm_frame_func(
                 ADDR.BGM_PTR_ADDR,
                 ADDR.BGM_LOOP_ADDR,
@@ -1130,9 +1129,10 @@ def build_boot_bank(
                 ADDR.VGM_TIMER_FLAG,
                 ADDR.CONFIG_BGM_ENABLED,
                 vgm_bank_addr=ADDR.BGM_BANK_ADDR,
-                current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
+                current_bank_addr=bgm_start_bank,
                 page2_bank_reg_addr=ASCII16_PAGE2_REG,
                 group=SCROLL_VIEWER_FUNC_GROUP,
+                volume=8,
             )
         )
 
@@ -1175,14 +1175,14 @@ def build_boot_bank(
     # コンフィグの初期値を設定
     mem_addr_allocator.emit_initial_value_loader(b)
     if beep_enabled_default:
+        LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
     else:
-        LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
     if bgm_enabled_default:
+        LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     else:
-        LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     if bgm_start_bank is not None:
         LD.A_n8(b, bgm_start_bank & 0xFF)
@@ -1255,6 +1255,9 @@ def build_boot_bank(
     # --- [初期表示] ---
     XOR.A(b)
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
+
+    if INIT_MUSIC_FUNC:
+        INIT_MUSIC_FUNC.call(b)
 
     # --- [メインループ] ---
     b.label("MAIN_LOOP")
@@ -1462,7 +1465,7 @@ def build_boot_bank(
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
     LD.A_mn16(b, ADDR.CONFIG_BEEP_ENABLED)
     OR.A(b)
-    JR_NZ(b, "__SKIP_BEEP__")
+    JR_Z(b, "__SKIP_BEEP__")
     SIMPLE_BEEP_FUNC.call(b)
     JP(b, "MAIN_LOOP")
 

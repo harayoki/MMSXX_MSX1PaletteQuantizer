@@ -27,6 +27,8 @@ from mmsxxasmhelper.core import (
     unique_label,
 )
 
+from mmsxxasmhelper.utils import debug_print_pc
+
 __all__ = ["build_play_vgm_frame_func"]
 
 
@@ -42,7 +44,7 @@ def build_play_vgm_frame_func(
     volume: int | None = None,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
-) -> tuple[Func, Func, Callable[[Block], None]]:
+) -> tuple[Func, Func]:
     """
     VGMフレーム再生と割り込みフック用関数を生成する。
 
@@ -107,6 +109,7 @@ def build_play_vgm_frame_func(
         PUSH.HL(block)
         PUSH.IX(block)
         PUSH.IY(block)
+        debug_print_pc(block, "MUSIC_ISR")
 
         LD.A_mn16(block, vgm_timer_flag_addr)
         XOR.n8(block, 1)
@@ -154,4 +157,4 @@ def build_play_vgm_frame_func(
 
     init_music_func = Func("INIT_MUSIC", init_music, group=group)
 
-    return init_music_func, music_isr_func, play_vgm_frame_macro
+    return init_music_func, music_isr_func
