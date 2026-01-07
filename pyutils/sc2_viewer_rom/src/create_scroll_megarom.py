@@ -83,6 +83,8 @@ from mmsxxasmhelper.core import (
     RET,
     RET_NC,
     RLCA,
+    SRL,
+    RR,
     BIT,
     HALT,
     unique_label,
