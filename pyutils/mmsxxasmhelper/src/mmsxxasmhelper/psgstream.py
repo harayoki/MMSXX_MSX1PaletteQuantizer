@@ -109,17 +109,17 @@ def build_play_vgm_frame_func(
         OR.A(block)
         JP_NZ(block, process_play)
 
-        # 音量を0にする（うまく動かず消えていない）
+        # PSGを停止（ミキサー無効化 + 各チャンネル音量0）
         LD.A_n8(block, 0x07)
         OUT(block, psg_reg_port)
-        LD.A_n8(block, 0x0b10111111)
+        LD.A_n8(block, 0b10111111)
         OUT(block, psg_data_port)
-        """
-        ld  a, 7            ; レジスタ7 (ミキサー) を指定
-        out (0xa0), a       ; レジスタ選択ポート
-        ld  a, 0b10111111   ; 下位6ビットを1にする (発音禁止)
-        out (0xa1), a       ; データ書き込みポート
-        """
+
+        for reg in (8, 9, 10):
+            LD.A_n8(block, reg)
+            OUT(block, psg_reg_port)
+            LD.A_n8(block, 0)
+            OUT(block, psg_data_port)
 
         RET(block)
 
