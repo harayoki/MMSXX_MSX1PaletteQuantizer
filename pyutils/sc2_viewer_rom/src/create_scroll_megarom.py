@@ -795,24 +795,37 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         # --- カラー (CT) 転送 ---
         # 表示行に対応するカラー定義を 0/8/16 ライン先頭で VRAM へ直接出力する。
         for line_offset in [0, 8, 16]:
-            LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
-            LD.B_A(block)  # B = ベースバンク
-
-            # HL = カラー開始アドレス + 行番号
-            LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+            # 行番号 + オフセットを求める
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
             if line_offset:
                 LD.DE_n16(block, line_offset)
                 ADD.HL_DE(block)
-                CARRY_COLOR_OFFSET = unique_label("CT_CARRY_OFFSET")
-                JR_NC(block, CARRY_COLOR_OFFSET)
-                INC.B(block)
-                block.label(CARRY_COLOR_OFFSET)
-            LD.DE_mn16(block, ADDR.TARGET_ROW)
-            ADD.HL_DE(block)
-            CARRY_COLOR_ROW = unique_label("CT_CARRY_ROW")
-            JR_NC(block, CARRY_COLOR_ROW)
-            INC.B(block)
-            block.label(CARRY_COLOR_ROW)
+
+            # バンク番号の計算 (row_hi*4 + row_lo>>6)
+            LD.A_H(block)
+            RLCA(block)
+            RLCA(block)
+            LD.C_A(block)
+            LD.A_L(block)
+            AND.n8(block, 0x3F)
+            LD.D_A(block)  # row_lo (0-63) を保持
+            LD.A_L(block)
+            RLCA(block)
+            RLCA(block)
+            AND.n8(block, 0x03)
+            ADD.A_C(block)
+            LD.C_A(block)
+
+            LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
+            ADD.A_C(block)
+            LD.B_A(block)  # B = バンク番号
+
+            # HL = カラー開始アドレス + (row_lo * 256)
+            LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+            LD.A_D(block)
+            ADD.A_H(block)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
 
             lbl_ct_norm = unique_label("CT_NORM")
             lbl_ct_done = unique_label("CT_DONE")
