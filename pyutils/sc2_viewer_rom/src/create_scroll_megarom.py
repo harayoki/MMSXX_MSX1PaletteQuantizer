@@ -1128,11 +1128,10 @@ def build_boot_bank(
                 H_TIMI_HOOK_ADDR,
                 ADDR.VGM_TIMER_FLAG,
                 ADDR.CONFIG_BGM_ENABLED,
-                vgm_bank_addr=bgm_start_bank,
+                vgm_bank_num=bgm_start_bank,
                 current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
                 page2_bank_reg_addr=ASCII16_PAGE2_REG,
                 group=SCROLL_VIEWER_FUNC_GROUP,
-                volume=8,
             )
         )
 

@@ -261,7 +261,7 @@ def debug_print_pc(b: Block, name: str) -> None:
             return
 
         absolute = origin + pos
-        print(f"BP {name}: {absolute:04X} (+{pos:04X})")
+        print(f"[BP] {name}: {absolute:04X} (+{pos:04X})")
 
     b._finalize_callbacks.append(_print_pc)
 

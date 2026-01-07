@@ -40,10 +40,9 @@ def build_play_vgm_frame_func(
     init_music_addr: int,
     vgm_timer_flag_addr: int,
     bgm_enabled_addr: int,
-    vgm_bank_addr: int | None = None,
+    vgm_bank_num: int | None = None,
     current_bank_addr: int | None = None,
     page2_bank_reg_addr: int = 0x7000,
-    volume: int | None = None,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> tuple[Func, Func]:
@@ -61,8 +60,6 @@ def build_play_vgm_frame_func(
         vgm_timer_flag_addr の 0/1 を反転し、0のとき再生処理をスキップする。
         vgm_bank_addr が指定されている場合、再生時にページ2バンクを切り替える。
     """
-    if volume is not None and not 0 <= volume <= 15:
-        raise ValueError("volume must be between 0 and 15")
 
     psg_reg_port = 0xA0
     psg_data_port = 0xA1
@@ -73,6 +70,7 @@ def build_play_vgm_frame_func(
         do_loop = unique_label("PLAY_VGM_DO_LOOP")
         end_label = unique_label("PLAY_VGM_END")
 
+        LD.HL_mn16(block, vgm_ptr_addr)
         LD.A_mHL(block)
         INC.HL(block)
 
@@ -129,7 +127,6 @@ def build_play_vgm_frame_func(
 
         block.label(process_play)
 
-        debug_print_pc(block, "MUSIC_ISR_START")
         LD.A_mn16(block, vgm_timer_flag_addr)
         XOR.n8(block, 1)
         LD.mn16_A(block, vgm_timer_flag_addr)
@@ -141,8 +138,10 @@ def build_play_vgm_frame_func(
         PUSH.IX(block)
         PUSH.IY(block)
 
-        if vgm_bank_addr is not None:
-            LD.A_mn16(block, vgm_bank_addr)
+        debug_print_pc(block, "MUSIC_ISR_START")
+
+        if vgm_bank_num is not None:
+            LD.A_n8(block, vgm_bank_num)
             LD.mn16_A(block, page2_bank_reg_addr)
         play_vgm_frame_macro(block)
         if current_bank_addr is not None:
@@ -167,14 +166,6 @@ def build_play_vgm_frame_func(
         LD.mn16_A(block, init_music_addr)
         LD.HL_label(block, "MUSIC_ISR")
         LD.mn16_HL(block, (init_music_addr + 1) & 0xFFFF)
-        if volume is not None:
-            psg_reg_port = 0xA0
-            psg_data_port = 0xA1
-            for reg in (8, 9, 10):
-                LD.A_n8(block, reg)
-                OUT(block, psg_reg_port)
-                LD.A_n8(block, volume)
-                OUT(block, psg_data_port)
         EI(block)
 
     init_music_func = Func("INIT_MUSIC", init_music, group=group)
