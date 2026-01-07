@@ -1242,9 +1242,17 @@ def build_boot_bank(
     SYNC_SCROLL_ROW_FUNC.call(b)
 
     # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
+    #    行番号は1ドット単位なので、名前テーブル用に /8 してタイル行に合わせる
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    SRL.H(b)
+    RR.L(b)
+    SRL.H(b)
+    RR.L(b)
+    SRL.H(b)
+    RR.L(b)
+
     #    16bit行番号の mod 24 を計算するため、
     #    row % 24 = (low % 24 + (high * 16) % 24) % 24 を使う
-    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     LD.B_H(b)  # high byte を保存
     LD.A_L(b)
     LD.L_A(b)
