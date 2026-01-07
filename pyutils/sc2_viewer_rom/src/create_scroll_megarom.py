@@ -128,6 +128,7 @@ from mmsxxasmhelper.config_scene import (
     build_screen0_config_menu,
     get_work_byte_length_for_screen0_config_menu,
 )
+from mmsxxasmhelper.psgstream import build_play_vgm_frame_func
 from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -342,6 +343,12 @@ class ADDR:
     )
     CONFIG_BGM_ENABLED = madd(
         "CONFIG_BGM_ENABLED", 1, description="BGMの有効/無効"
+    )
+    BGM_PTR_ADDR = madd(
+        "BGM_PTR_ADDR", 2, description="BGMストリームの現在位置"
+    )
+    BGM_LOOP_ADDR = madd(
+        "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
     )
     CONFIG_AUTO_SPEED = madd(
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
@@ -1076,6 +1083,7 @@ def build_boot_bank(
     title_wait_seconds: int,
     beep_enabled_default: bool,
     bgm_enabled_default: bool,
+    bgm_start_bank: int | None,
     log_lines: List[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1095,6 +1103,11 @@ def build_boot_bank(
         update_input_func=UPDATE_INPUT_FUNC,
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
+    PLAY_VGM_FRAME_FUNC = None
+    if bgm_start_bank is not None:
+        PLAY_VGM_FRAME_FUNC = build_play_vgm_frame_func(
+            ADDR.BGM_PTR_ADDR, ADDR.BGM_LOOP_ADDR, group=SCROLL_VIEWER_FUNC_GROUP
+        )
 
     def apply_viewer_screen_settings(block: Block) -> None:
         LD.A_n8(block, 2)
@@ -1144,6 +1157,10 @@ def build_boot_bank(
     else:
         LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
+    if bgm_start_bank is not None:
+        LD.HL_n16(b, DATA_BANK_ADDR)
+        LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
+        LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
 
     TITLE_SCREEN_FUNC.call(b)
 
@@ -1214,6 +1231,16 @@ def build_boot_bank(
     b.label("MAIN_LOOP")
     HALT(b)  # V-Sync 待ち
     UPDATE_BEEP_FUNC.call(b)
+    if PLAY_VGM_FRAME_FUNC is not None:
+        BGM_SKIP = unique_label("SKIP_BGM")
+        LD.A_mn16(b, ADDR.CONFIG_BGM_ENABLED)
+        OR.A(b)
+        JR_NZ(b, BGM_SKIP)
+        LD.A_n8(b, bgm_start_bank)
+        LD.mn16_A(b, ASCII16_PAGE2_REG)
+        LD.HL_mn16(b, ADDR.BGM_PTR_ADDR)
+        PLAY_VGM_FRAME_FUNC.call(b)
+        b.label(BGM_SKIP)
     UPDATE_INPUT_FUNC.call(b)
 
     # ESC でコンフィグ（ヘルプ）シーンへ遷移
@@ -1605,9 +1632,11 @@ def build(
     next_bank = 1
     header_bytes: list[int] = []
     bgm_bank_count = 0
+    bgm_start_bank: int | None = None
     if bgm_data is not None:
         if len(bgm_data) > PAGE_SIZE:
             raise ValueError("bgm_data must fit within 16KB")
+        bgm_start_bank = next_bank
         bgm_payload = bytearray([fill_byte] * PAGE_SIZE)
         bgm_payload[: len(bgm_data)] = bgm_data
         data_banks.append(bytes(bgm_payload))
@@ -1691,6 +1720,7 @@ def build(
             title_wait_seconds,
             beep_enabled_default,
             bgm_enabled_default,
+            bgm_start_bank,
             log_lines,
             debug_build,
         )
