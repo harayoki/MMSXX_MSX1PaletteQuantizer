@@ -1119,9 +1119,9 @@ def build_boot_bank(
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
     INIT_MUSIC_FUNC = None
-    MUSIC_ISR_FUNC = None
     if bgm_start_bank is not None:
-        INIT_MUSIC_FUNC, MUSIC_ISR_FUNC = (
+        print("Building BGM playback function... bgm_start_bank:", bgm_start_bank)
+        INIT_MUSIC_FUNC, _ = (
             build_play_vgm_frame_func(
                 ADDR.BGM_PTR_ADDR,
                 ADDR.BGM_LOOP_ADDR,
