@@ -36,6 +36,9 @@ def build_play_vgm_frame_func(
     init_music_addr: int,
     vgm_timer_flag_addr: int,
     bgm_enabled_addr: int,
+    vgm_bank_addr: int | None = None,
+    current_bank_addr: int | None = None,
+    page2_bank_reg_addr: int = 0x7000,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> tuple[Func, Func, Callable[[Block], None]]:
@@ -51,6 +54,7 @@ def build_play_vgm_frame_func(
     MUSIC_ISR の動作:
         bgm_enabled_addr が 0 のときは即時リターンする。
         vgm_timer_flag_addr の 0/1 を反転し、0のとき再生処理をスキップする。
+        vgm_bank_addr が指定されている場合、再生時にページ2バンクを切り替える。
     """
 
     def play_vgm_frame_macro(block: Block) -> None:
@@ -105,7 +109,19 @@ def build_play_vgm_frame_func(
         XOR.n8(block, 1)
         LD.mn16_A(block, vgm_timer_flag_addr)
         JR_Z(block, skip_play)
+        if vgm_bank_addr is not None:
+            if current_bank_addr is not None:
+                LD.A_mn16(block, current_bank_addr)
+                LD.C_A(block)
+            LD.A_mn16(block, vgm_bank_addr)
+            LD.mn16_A(block, page2_bank_reg_addr)
+            if current_bank_addr is not None:
+                LD.mn16_A(block, current_bank_addr)
         play_vgm_frame_macro(block)
+        if vgm_bank_addr is not None and current_bank_addr is not None:
+            LD.A_C(block)
+            LD.mn16_A(block, page2_bank_reg_addr)
+            LD.mn16_A(block, current_bank_addr)
         block.label(skip_play)
 
         POP.IY(block)

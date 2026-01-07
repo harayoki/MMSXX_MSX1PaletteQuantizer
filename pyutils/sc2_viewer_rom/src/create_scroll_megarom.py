@@ -351,6 +351,12 @@ class ADDR:
     BGM_LOOP_ADDR = madd(
         "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
     )
+    BGM_BANK_ADDR = madd(
+        "BGM_BANK_ADDR", 1, description="BGMストリームのバンク番号"
+    )
+    CURRENT_PAGE2_BANK_ADDR = madd(
+        "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
+    )
     VGM_TIMER_FLAG = madd(
         "VGM_TIMER_FLAG", 1, initial_value=bytes([0]), description="VGM再生の1/2フレーム切り替えフラグ"
     )
@@ -380,6 +386,11 @@ if args.debug_build:
     DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ")
     register_dump_target("DEBUG_DUMP_8BYTE_1", DEBUG_DUMP_8BYTE_1, 8)
     register_dump_target("DEBUG_DUMP_8BYTE_2", DEBUG_DUMP_8BYTE_2, 8)
+
+
+def set_page2_bank(block: Block) -> None:
+    LD.mn16_A(block, ADDR.CURRENT_PAGE2_BANK_ADDR)
+    LD.mn16_A(block, ASCII16_PAGE2_REG)
 
 
 @dataclass
@@ -632,7 +643,7 @@ def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
 
         # 現在のバンクをメガROMにセット (Eレジスタの値を使用)
         LD.A_E(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        set_page2_bank(block)
 
         LD.B_n8(block, 0)  # 1ページ(256byte)転送用
         LD.C_n8(block, 0x98)  # VDPデータポート
@@ -901,7 +912,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
         LD.C_A(block)
         LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)  # 今のバンク番号に加算
         ADD.A_C(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク切り替え
+        set_page2_bank(block)  # バンク切り替え
         LD.B_A(block)  # B = バンク番号 保存
 
         # VRAM側で参照する行の開始アドレス(HL)を組み立てておく。
@@ -946,7 +957,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             block.label(lbl_ct_done)
 
             LD.A_E(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)
+            set_page2_bank(block)
             LD.L_n8(block, 0)
 
             PUSH.HL(block)
@@ -980,7 +991,7 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
             ADD.A_C(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)
+            set_page2_bank(block)
             LD.E_A(block)  # E = バンク番号 (コピー中の境界越え検出用)
 
             # HL = パターン開始アドレス
@@ -1118,6 +1129,9 @@ def build_boot_bank(
                 H_TIMI_HOOK_ADDR,
                 ADDR.VGM_TIMER_FLAG,
                 ADDR.CONFIG_BGM_ENABLED,
+                vgm_bank_addr=ADDR.BGM_BANK_ADDR,
+                current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
+                page2_bank_reg_addr=ASCII16_PAGE2_REG,
                 group=SCROLL_VIEWER_FUNC_GROUP,
             )
         )
@@ -1171,6 +1185,8 @@ def build_boot_bank(
         LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     if bgm_start_bank is not None:
+        LD.A_n8(b, bgm_start_bank & 0xFF)
+        LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
         LD.HL_n16(b, DATA_BANK_ADDR)
         LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
         LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
@@ -1201,7 +1217,7 @@ def build_boot_bank(
     LD.HL_label(b, "IMAGE_HEADER_TABLE")  # 各埋め込み画像のバンク番号やアドレスが書き込まれているアドレス
     LD.A_mHL(b)
     LD.mn16_A(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)  # 保存
-    LD.mn16_A(b, ASCII16_PAGE2_REG)  # バンク切り替え
+    set_page2_bank(b)  # バンク切り替え
 
     # DE = パターンジェネレータアドレス
     INC.HL(b)
