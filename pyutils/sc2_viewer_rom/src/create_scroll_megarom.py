@@ -222,6 +222,9 @@ class ADDR:
     CONFIG_BEEP_ENABLED = madd(
         "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
     )
+    CONFIG_BGM_ENABLED = madd(
+        "CONFIG_BGM_ENABLED", 1, description="BGMの有効/無効"
+    )
     CONFIG_AUTO_SPEED = madd(
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
     )
@@ -893,6 +896,11 @@ def build_config_scene_func(
             ADDR.CONFIG_BEEP_ENABLED,
         ),
         Screen0ConfigEntry(
+            "BGM",
+            ["O N", "OFF"],
+            ADDR.CONFIG_BGM_ENABLED,
+        ),
+        Screen0ConfigEntry(
             "AUTO PAGE",
             AUTO_ADVANCE_INTERVAL_CHOICES,
             ADDR.CONFIG_AUTO_SPEED,
@@ -954,6 +962,7 @@ def build_boot_bank(
     fill_byte: int,
     title_wait_seconds: int,
     beep_enabled_default: bool,
+    bgm_enabled_default: bool,
     log_lines: List[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1017,6 +1026,11 @@ def build_boot_bank(
     else:
         LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
+    if bgm_enabled_default:
+        LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
+    else:
+        LD.A_n8(b, 1)
+        LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
 
     TITLE_SCREEN_FUNC.call(b)
 
@@ -1443,6 +1457,7 @@ def build(
     fill_byte: int = 0xFF,
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
+    bgm_enabled_default: bool = False,
     log_lines: list[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1456,6 +1471,10 @@ def build(
     log_and_store(f"Title wait seconds: {title_wait_seconds}", log_lines)
     log_and_store(
         f"BEEP default: {'ON' if beep_enabled_default else 'OFF'}",
+        log_lines,
+    )
+    log_and_store(
+        f"BGM default: {'ON' if bgm_enabled_default else 'OFF'}",
         log_lines,
     )
 
@@ -1548,6 +1567,7 @@ def build(
             fill_byte,
             title_wait_seconds,
             beep_enabled_default,
+            bgm_enabled_default,
             log_lines,
             debug_build,
         )
@@ -1632,6 +1652,12 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="起動時のBEEP設定 (default: ON)",
+    )
+    parser.add_argument(
+        "--bgm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="起動時のBGM設定 (default: OFF)",
     )
     parser.add_argument(
         "--start-at",
@@ -1844,6 +1870,7 @@ def main() -> None:
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
         beep_enabled_default=args.beep,
+        bgm_enabled_default=args.bgm,
         log_lines=log_lines,
         debug_build=args.debug_build,
     )
