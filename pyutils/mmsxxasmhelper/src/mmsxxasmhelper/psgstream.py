@@ -17,12 +17,14 @@ from mmsxxasmhelper.core import (
     INC,
     JR,
     JR_Z,
+    JP_NZ,
     LD,
     OR,
     OUT,
     POP,
     PUSH,
     RET_Z,
+    RET,
     XOR,
     unique_label,
 )
@@ -62,13 +64,14 @@ def build_play_vgm_frame_func(
     if volume is not None and not 0 <= volume <= 15:
         raise ValueError("volume must be between 0 and 15")
 
+    psg_reg_port = 0xA0
+    psg_data_port = 0xA1
+
     def play_vgm_frame_macro(block: Block) -> None:
         loop_reg = unique_label("PLAY_VGM_LOOP")
         next_frame = unique_label("PLAY_VGM_NEXT")
         do_loop = unique_label("PLAY_VGM_DO_LOOP")
         end_label = unique_label("PLAY_VGM_END")
-        psg_reg_port = 0xA0
-        psg_data_port = 0xA1
 
         LD.A_mHL(block)
         INC.HL(block)
@@ -99,10 +102,28 @@ def build_play_vgm_frame_func(
         block.label(end_label)
 
     def music_isr(block: Block) -> None:
+        process_play = unique_label("PROCESS_PLAY")
         skip_play = unique_label("MUSIC_ISR_SKIP_PLAY")
+
         LD.A_mn16(block, bgm_enabled_addr)
         OR.A(block)
-        RET_Z(block)
+        JP_NZ(block, process_play)
+
+        # 音量を0にする（うまく動かず消えていない）
+        LD.A_n8(block, 0x07)
+        OUT(block, psg_reg_port)
+        LD.A_n8(block, 0x0b10111111)
+        OUT(block, psg_data_port)
+        """
+        ld  a, 7            ; レジスタ7 (ミキサー) を指定
+        out (0xa0), a       ; レジスタ選択ポート
+        ld  a, 0b10111111   ; 下位6ビットを1にする (発音禁止)
+        out (0xa1), a       ; データ書き込みポート
+        """
+
+        RET(block)
+
+        block.label(process_play)
         PUSH.AF(block)
         PUSH.BC(block)
         PUSH.DE(block)
@@ -116,18 +137,12 @@ def build_play_vgm_frame_func(
         LD.mn16_A(block, vgm_timer_flag_addr)
         JR_Z(block, skip_play)
         if vgm_bank_addr is not None:
-            if current_bank_addr is not None:
-                LD.A_mn16(block, current_bank_addr)
-                PUSH.AF(block)
             LD.A_mn16(block, vgm_bank_addr)
             LD.mn16_A(block, page2_bank_reg_addr)
-            if current_bank_addr is not None:
-                LD.mn16_A(block, current_bank_addr)
         play_vgm_frame_macro(block)
-        if vgm_bank_addr is not None and current_bank_addr is not None:
-            POP.AF(block)
+        if current_bank_addr is not None:
+            LD.A_mn16(block, current_bank_addr)
             LD.mn16_A(block, page2_bank_reg_addr)
-            LD.mn16_A(block, current_bank_addr)
         block.label(skip_play)
 
         POP.IY(block)

@@ -351,12 +351,12 @@ class ADDR:
     BGM_LOOP_ADDR = madd(
         "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
     )
-    BGM_BANK_ADDR = madd(
-        "BGM_BANK_ADDR", 1, description="BGMストリームのバンク番号"
-    )
-    # CURRENT_PAGE2_BANK_ADDR = madd(
-    #     "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
+    # BGM_BANK_ADDR = madd(
+    #     "BGM_BANK_ADDR", 1, description="BGMストリームのバンク番号"
     # )
+    CURRENT_PAGE2_BANK_ADDR = madd(
+        "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
+    )
     VGM_TIMER_FLAG = madd(
         "VGM_TIMER_FLAG", 1, initial_value=bytes([0]), description="VGM再生の1/2フレーム切り替えフラグ"
     )
@@ -389,7 +389,7 @@ if args.debug_build:
 
 
 def set_page2_bank(block: Block) -> None:
-    # LD.mn16_A(block, ADDR.CURRENT_PAGE2_BANK_ADDR)
+    LD.mn16_A(block, ADDR.CURRENT_PAGE2_BANK_ADDR)
     LD.mn16_A(block, ASCII16_PAGE2_REG)
 
 
@@ -1128,8 +1128,8 @@ def build_boot_bank(
                 H_TIMI_HOOK_ADDR,
                 ADDR.VGM_TIMER_FLAG,
                 ADDR.CONFIG_BGM_ENABLED,
-                vgm_bank_addr=ADDR.BGM_BANK_ADDR,
-                current_bank_addr=bgm_start_bank,
+                vgm_bank_addr=bgm_start_bank,
+                current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
                 page2_bank_reg_addr=ASCII16_PAGE2_REG,
                 group=SCROLL_VIEWER_FUNC_GROUP,
                 volume=8,
@@ -1186,7 +1186,7 @@ def build_boot_bank(
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     if bgm_start_bank is not None:
         LD.A_n8(b, bgm_start_bank & 0xFF)
-        LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
+        # LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
         LD.HL_n16(b, DATA_BANK_ADDR)
         LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
         LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
