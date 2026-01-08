@@ -399,6 +399,7 @@ def set_screen_mode_macro(b: Block, mode: int) -> None:
 
 def set_screen_display_macro(b: Block, display_on: bool) -> None:
     """VDPレジスタ1のBit6を 0/1 に設定して画面表示を切り替えるマクロ。
+    画面非表示中は VDP アクセスをウェイト無しで行えるため、高速化に利用できる。
 
     レジスタ変更: A
     """
