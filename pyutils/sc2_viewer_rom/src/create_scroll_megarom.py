@@ -321,6 +321,7 @@ AUTO_ADVANCE_INTERVAL_FRAMES = [
     1,
 ]
 AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 3s", " 1s", "MAX"]
+AUTO_SCROLL_LEVEL_CHOICES = ["NONE", "1", "2", "3", "4", "5", "6", "7", "8"]
 H_TIMI_HOOK_ADDR = 0xFD9F
 
 # 状況を保存するメモリアドレス
@@ -388,7 +389,7 @@ class ADDR:
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
     )
     CONFIG_AUTO_SCROLL = madd(
-        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロールの有効/無効"
+        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロール速度 (0-8)"
     )
     CONFIG_VDP_WAIT = madd(
         "CONFIG_VDP_WAIT",
@@ -1107,7 +1108,7 @@ def build_config_scene_func(
         ),
         Screen0ConfigEntry(
             "AUTO SCROLL",
-            ["O N", "OFF"],
+            AUTO_SCROLL_LEVEL_CHOICES,
             ADDR.CONFIG_AUTO_SCROLL,
         ),
         Screen0ConfigEntry(
