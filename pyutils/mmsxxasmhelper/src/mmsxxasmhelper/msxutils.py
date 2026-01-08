@@ -697,15 +697,27 @@ def build_update_input_func(
         LD.IXL_A(block)
         block.label("_SKIP_SPACE")
 
-        # SHIFT (Matrix 6, Bit 0)
+        # --- Matrix 6 (SHIFT, CTRL, GRAPH, etc.) ---
         LD.A_n8(block, 6)
         CALL(block, SNSMAT)
+        LD.B_A(block)  # Aレジスタの内容をBに保持
+
+        # SHIFT (Bit 0)
         BIT.n8_A(block, 0)
         JR_NZ(block, "_SKIP_SHIFT")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_B)
         OR.IXL(block)
         LD.IXL_A(block)
         block.label("_SKIP_SHIFT")
+
+        # GRAPH (Bit 2)       # Bit 2 が GRAPH です
+        LD.A_B(block)  # Bから読み込み直す
+        BIT.n8_A(block, 2)
+        JR_NZ(block, "_SKIP_GRAPH")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_EXTRA)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_GRAPH")
 
         # ESC キー (キーボードバッファ)
         CALL(block, CHSNS)
