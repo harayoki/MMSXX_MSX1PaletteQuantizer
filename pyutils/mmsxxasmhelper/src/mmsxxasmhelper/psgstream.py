@@ -140,8 +140,6 @@ def build_play_vgm_frame_func(
         PUSH.IX(block)
         PUSH.IY(block)
 
-        debug_print_pc(block, "MUSIC_ISR_START")
-
         if vgm_bank_num is not None:
             LD.A_n8(block, vgm_bank_num)
             LD.mn16_A(block, page2_bank_reg_addr)
