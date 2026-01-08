@@ -1570,7 +1570,7 @@ def build_boot_bank(
     b.label("CHECK_AUTO_SCROLL")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
     OR.A(b)
-    JR_Z(b, "CHECK_AUTO_PAGE")
+    JP_Z(b, "CHECK_AUTO_PAGE")
 
     # 端待ちカウンタが動作中なら優先して処理
     LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
@@ -1581,7 +1581,7 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_H(b)
     OR.L(b)
-    JR_NZ(b, "CHECK_AUTO_PAGE")
+    JP_NZ(b, "CHECK_AUTO_PAGE")
     LD.HL_n16(b, 0)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
@@ -1596,7 +1596,7 @@ def build_boot_bank(
     LD.D_mHL(b)
     EX.DE_HL(b)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
-    JR(b, "CHECK_AUTO_PAGE")
+    JP(b, "CHECK_AUTO_PAGE")
 
     b.label("AUTO_SCROLL_COUNTER_CHECK")
     LD.HL_mn16(b, ADDR.AUTO_SCROLL_COUNTER)
@@ -1605,7 +1605,7 @@ def build_boot_bank(
     JR_Z(b, "AUTO_SCROLL_STEP")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
-    JR(b, "CHECK_AUTO_PAGE")
+    JP(b, "CHECK_AUTO_PAGE")
 
     b.label("AUTO_SCROLL_STEP")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
@@ -1652,7 +1652,7 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_H(b)
     OR.L(b)
-    JR_NZ(b, "CHECK_AUTO_PAGE")
+    JP_NZ(b, "CHECK_AUTO_PAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
     LD.L_A(b)
     LD.H_n8(b, 0)
@@ -1664,7 +1664,7 @@ def build_boot_bank(
     LD.D_mHL(b)
     EX.DE_HL(b)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
-    JR(b, "CHECK_AUTO_PAGE")
+    JP(b, "CHECK_AUTO_PAGE")
 
     # --- 自動切り替え判定 ---
     b.label("CHECK_AUTO_PAGE")
