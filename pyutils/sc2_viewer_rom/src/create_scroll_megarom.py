@@ -370,6 +370,9 @@ class ADDR:
     CONFIG_AUTO_SCROLL = madd(
         "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロールの有効/無効"
     )
+    CONFIG_VDP_WAIT = madd(
+        "CONFIG_VDP_WAIT", 1, initial_value=bytes([1]), description="VDP WAITの設定"
+    )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
     )
@@ -1073,6 +1076,11 @@ def build_config_scene_func(
             ["O N", "OFF"],
             ADDR.CONFIG_AUTO_SCROLL,
         ),
+        Screen0ConfigEntry(
+            "VDP WAIT",
+            ["N O", "YES"],
+            ADDR.CONFIG_VDP_WAIT,
+        ),
     ]
 
     init_func, loop_func, table_funcs = build_screen0_config_menu(
@@ -1472,7 +1480,6 @@ def build_boot_bank(
     ADD.HL_DE(b)
     LD.A_mHL(b)
     HALT(b)  # ここでVBLANKを待つ
-    # SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK.call(b)  # 1ブロック分だけ非同期で転送 VBLANK中のみ可能
     SCROLL_NAME_TABLE_FUNC_NOWAIT.call(b)  # 1ブロック分だけ非同期で転送 VBLANK中のみ可能
 
     # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
