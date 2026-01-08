@@ -1744,6 +1744,11 @@ def build_boot_bank(
     JR(b, "CHECK_GRAPH")
 
     b.label("AUTO_PAGE_EDGE_CHECK")
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)
+    JR_C(b, "AUTO_NEXT_IMAGE")
     LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
     CP.n8(b, 2)
     JR_NZ(b, "CHECK_GRAPH")
