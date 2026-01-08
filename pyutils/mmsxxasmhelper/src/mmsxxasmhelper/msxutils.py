@@ -970,18 +970,25 @@ def build_scroll_name_table_func(
 
 
 def build_scroll_name_table_func2(
-        SET_VRAM_WRITE_FUNC: Func, OUTI_256_FUNC: Func, *, group: str = DEFAULT_FUNC_GROUP_NAME
+    SET_VRAM_WRITE_FUNC: Func,
+    OUTI_256_FUNC: Func,
+    OUTI_256_FUNC_NO_WAIT: Func | None = None,  # Noneを許容
+    *,
+    use_no_wait_if_possible: bool = False,                  # 生成時のフラグ
+    group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
     """
-    build_scroll_name_table_funcのテーブル転送高速版
-    :param SET_VRAM_WRITE_FUNC:
-    :param OUTI_256_FUNC: 256回のOUTIを実行するFunc
+    名前テーブル転送の高速版。
+    生成時に use_no_wait=True かつ NO_WAIT関数がない場合はエラーを出す。
     """
+    # エラーチェック
+    if use_no_wait_if_possible and OUTI_256_FUNC_NO_WAIT is None:
+        raise ValueError("use_no_wait=True requires OUTI_256_FUNC_NO_WAIT to be provided.")
+
     def scroll_name_table(block: Block) -> None:
         # 入力: A = CURRENT_SCROLL_ROW (0-23)
 
         # 1. オフセット計算: HL = (A % 8) * 32
-        # ネームテーブルは256枚(8行分)で一周するため、A & 7 でオフセットを決める
         AND.n8(block, 0x07)
         LD.L_A(block)
         LD.H_n8(block, 0)
@@ -991,32 +998,37 @@ def build_scroll_name_table_func2(
         # 2. テーブルの物理アドレスを加算
         LD.DE_label(block, "NAME_TABLE_512_LUT")
         ADD.HL_DE(block)
-        PUSH.HL(block)  # 計算済み開始アドレスを保存
+        PUSH.HL(block)
 
-        # 3. VRAMアドレスセット (0x1800: SCREEN 2 名前テーブル基地局)
+        # 3. VRAMアドレスセット (0x1800)
         LD.HL_n16(block, 0x1800)
         SET_VRAM_WRITE_FUNC.call(block)
 
-        # 4. 256バイト × 3ブロック分を連続転送
-        # 上・中・下段で同じパターン配置(0-255)を繰り返すため同じHLから3回送る
+        # 4. 256バイト × 3ブロック分を転送
         LD.C_n8(block, 0x98)
 
-        POP.HL(block)  # アドレス復帰
+        # --- 第1ブロック (上段) ---
+        POP.HL(block)
         PUSH.HL(block)
-        OUTI_256_FUNC.call(block)  # 上段転送
+        if use_no_wait_if_possible and OUTI_256_FUNC_NO_WAIT:
+            # Python側でフラグが立っており、かつ関数が存在する場合のみNO_WAIT版を実体化
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
 
-        POP.HL(block)  # アドレス復帰
+        # --- 第2・3ブロック (中・下段) ---
+        # 表示期間に食い込むため常に通常版を使用
+        POP.HL(block)
         PUSH.HL(block)
-        OUTI_256_FUNC.call(block)  # 中段転送
+        OUTI_256_FUNC.call(block)
 
-        POP.HL(block)  # アドレス復帰
-        OUTI_256_FUNC.call(block)  # 下段転送
+        POP.HL(block)
+        OUTI_256_FUNC.call(block)
 
         RET(block)
 
-        # --- 関数内部にデータテーブルを配置 ---
+        # --- 512バイト LUT ---
         block.label("NAME_TABLE_512_LUT")
-        # 0-255 を2回繰り返すことで、どの位置から256バイト読んでも連続性が保たれる
         lut_data = [i for i in range(256)] * 2
         DB(block, *lut_data)
 

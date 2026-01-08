@@ -796,10 +796,21 @@ DRAW_SCROLL_VIEW_FUNC = build_draw_scroll_view_func(group=SCROLL_VIEWER_FUNC_GRO
 # set_funcs_call_offset(OUTI_FUNCS, 0x8000)
 
 OUTI_256_FUNC = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
+OUTI_256_FUNC_NO_WAIT = build_outi_repeat_func(256, weight=0, group=SCROLL_VIEWER_FUNC_GROUP)
 
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func2(
-    SET_VRAM_WRITE_FUNC, OUTI_256_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
+    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+    OUTI_256_FUNC=OUTI_256_FUNC,
+    use_no_wait_if_possible=False,
+    group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_NAME_TABLE_FUNC_NOWAIT_IF_POSSIBLE = build_scroll_name_table_func2(
+    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+    OUTI_256_FUNC=OUTI_256_FUNC,
+    OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
+    use_no_wait_if_possible=True,
+    group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
