@@ -1028,7 +1028,9 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
 )
 
 
-def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+def build_sync_scroll_row_func(
+    *, scroll_dir: str, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
     def sync_scroll_row(block: Block) -> None:
         # --- ① パターン (PG) 転送準備 ---
         # 行番号から2bit分を切り出してパターンバンク番号として使い、
@@ -1143,7 +1145,12 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
             OUTI_256_FUNC.call(block)
 
         RET(block)
-    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
+    return Func(
+        f"SYNC_SCROLL_ROW_{scroll_dir.upper()}",
+        sync_scroll_row,
+        no_auto_ret=True,
+        group=group,
+    )
 
 
 def build_config_scene_func(
@@ -1214,7 +1221,12 @@ def build_config_scene_func(
     return Func("CONFIG_SCENE", config_scene, group=group), table_funcs
 
 
-SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
+SYNC_UP_SCROLL_ROW_FUNC = build_sync_scroll_row_func(
+    scroll_dir="up", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_DOWN_SCROLL_ROW_FUNC = build_sync_scroll_row_func(
+    scroll_dir="down", group=SCROLL_VIEWER_FUNC_GROUP
+)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -1597,7 +1609,14 @@ def build_boot_bank(
     b.label(SCROLL_NOWAIT_DONE)
 
     # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
-    SYNC_SCROLL_ROW_FUNC.call(b)
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_DIR)
+    CP.n8(b, 1)
+    JR_Z(b, "SYNC_SCROLL_ROW_DOWN")
+    SYNC_UP_SCROLL_ROW_FUNC.call(b)
+    JR(b, "SYNC_SCROLL_ROW_DONE")
+    b.label("SYNC_SCROLL_ROW_DOWN")
+    SYNC_DOWN_SCROLL_ROW_FUNC.call(b)
+    b.label("SYNC_SCROLL_ROW_DONE")
 
     JP(b, "CHECK_AUTO_PAGE")
 
