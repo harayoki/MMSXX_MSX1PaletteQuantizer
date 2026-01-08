@@ -410,13 +410,13 @@ class ADDR:
         "VGM_TIMER_FLAG", 1, initial_value=bytes([0]), description="VGM再生の1/2フレーム切り替えフラグ"
     )
     CONFIG_AUTO_SPEED = madd(
-        "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
+        "CONFIG_AUTO_SPEED", 1, initial_value=bytes([4]), description="自動切り替え速度 (0-7)"
     )
     CONFIG_AUTO_SCROLL = madd(
-        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロール速度 (0-9)"
+        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([4]), description="自動スクロール速度 (0-9)"
     )
     CONFIG_AUTO_PAGE_EDGE = madd(
-        "CONFIG_AUTO_PAGE_EDGE", 1, initial_value=bytes([0]), description="自動スクロール中のページ端遷移"
+        "CONFIG_AUTO_PAGE_EDGE", 1, initial_value=bytes([1]), description="自動スクロール中のページ端遷移"
     )
     CONFIG_VDP_WAIT = madd(
         "CONFIG_VDP_WAIT",
@@ -1160,14 +1160,14 @@ def build_config_scene_func(
             ADDR.CONFIG_AUTO_SPEED,
         ),
         Screen0ConfigEntry(
-            "AUTO SCROLL",
-            AUTO_SCROLL_LEVEL_CHOICES,
-            ADDR.CONFIG_AUTO_SCROLL,
-        ),
-        Screen0ConfigEntry(
             "AUTO PAGE EDGE",
             ["N O", "YES"],
             ADDR.CONFIG_AUTO_PAGE_EDGE,
+        ),
+        Screen0ConfigEntry(
+            "AUTO SCROLL",
+            AUTO_SCROLL_LEVEL_CHOICES,
+            ADDR.CONFIG_AUTO_SCROLL,
         ),
         Screen0ConfigEntry(
             "VDP WAIT",
