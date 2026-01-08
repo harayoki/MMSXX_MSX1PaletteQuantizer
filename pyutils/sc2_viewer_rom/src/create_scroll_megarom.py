@@ -1022,7 +1022,10 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
 
 def build_config_scene_func(
-    *, update_input_func: Func, group: str = DEFAULT_FUNC_GROUP_NAME
+    *,
+    update_input_func: Func,
+    bgm_on_change_func: Func | None = None,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> tuple[Func, Sequence[Func]]:
     """設定メニューシーンを生成する。"""
 
@@ -1036,6 +1039,7 @@ def build_config_scene_func(
             "BGM",
             ["OFF", "O N"],
             ADDR.CONFIG_BGM_ENABLED,
+            on_change_addr=bgm_on_change_func,
         ),
         Screen0ConfigEntry(
             "AUTO PAGE",
@@ -1076,9 +1080,6 @@ def build_config_scene_func(
 
 
 SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
-CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNCS = build_config_scene_func(
-    update_input_func=UPDATE_INPUT_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
-)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -1123,17 +1124,34 @@ def build_boot_bank(
     def init_interrupt_hook_macro(block: Block) -> None:
         pass
 
+    print("Building BGM playback function... bgm_start_bank:", bgm_start_bank)
+    _, psg_isr_macro, mute_psg_macro = build_play_vgm_frame_func(
+        ADDR.BGM_PTR_ADDR,
+        ADDR.BGM_LOOP_ADDR,
+        ADDR.VGM_TIMER_FLAG,
+        ADDR.CONFIG_BGM_ENABLED,
+        vgm_bank_num=bgm_start_bank,
+        current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
+        page2_bank_reg_addr=ASCII16_PAGE2_REG,
+    )
+
+    def bgm_setting_changed(block: Block) -> None:
+        # BGMがOFFならPSGをミュート
+        LD.A_mn16(block, ADDR.CONFIG_BGM_ENABLED)
+        OR.A(block)
+        LABEL_SKIP_MUTE = unique_label("BGM_SKIP_MUTE")
+        JR_NZ(block, LABEL_SKIP_MUTE)
+        mute_psg_macro(block)
+        block.label(LABEL_SKIP_MUTE)
+        RET(block)
+
+    BGM_SETTING_CHANGED_FUNC = Func(
+        "BGM_SETTING_CHANGED",
+        bgm_setting_changed,
+        group=SCROLL_VIEWER_FUNC_GROUP,
+    )
+
     if bgm_start_bank is not None:
-        print("Building BGM playback function... bgm_start_bank:", bgm_start_bank)
-        _, psg_isr_macro, _ = build_play_vgm_frame_func(
-            ADDR.BGM_PTR_ADDR,
-            ADDR.BGM_LOOP_ADDR,
-            ADDR.VGM_TIMER_FLAG,
-            ADDR.CONFIG_BGM_ENABLED,
-            vgm_bank_num=bgm_start_bank,
-            current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
-            page2_bank_reg_addr=ASCII16_PAGE2_REG,
-        )
 
         def interrupt_handler(block: Block) -> None:
             PUSH.AF(block)
@@ -1183,6 +1201,12 @@ def build_boot_bank(
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
 
     b = Block(debug=debug_build)
+
+    CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNCS = build_config_scene_func(
+        update_input_func=UPDATE_INPUT_FUNC,
+        bgm_on_change_func=BGM_SETTING_CHANGED_FUNC,
+        group=SCROLL_VIEWER_FUNC_GROUP,
+    )
 
     config_table_dump = io.StringIO()
     dump_func_bytes_on_finalize(
