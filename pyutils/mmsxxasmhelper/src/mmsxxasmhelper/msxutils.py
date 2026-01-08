@@ -967,3 +967,57 @@ def build_scroll_name_table_func(
         RET(block)
 
     return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
+
+
+def build_scroll_name_table_func2(
+        SET_VRAM_WRITE_FUNC: Func, OUTI_256_FUNC: Func, *, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """
+    build_scroll_name_table_funcのテーブル転送高速版
+    :param SET_VRAM_WRITE_FUNC:
+    :param OUTI_256_FUNC: 256回のOUTIを実行するFunc
+    """
+    def scroll_name_table(block: Block) -> None:
+        # 入力: A = CURRENT_SCROLL_ROW (0-23)
+
+        # 1. オフセット計算: HL = (A % 8) * 32
+        # ネームテーブルは256枚(8行分)で一周するため、A & 7 でオフセットを決める
+        AND.n8(block, 0x07)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        for _ in range(5):  # HL = HL * 32
+            ADD.HL_HL(block)
+
+        # 2. テーブルの物理アドレスを加算
+        LD.DE_label(block, "NAME_TABLE_512_LUT")
+        ADD.HL_DE(block)
+        PUSH.HL(block)  # 計算済み開始アドレスを保存
+
+        # 3. VRAMアドレスセット (0x1800: SCREEN 2 名前テーブル基地局)
+        LD.HL_n16(block, 0x1800)
+        SET_VRAM_WRITE_FUNC.call(block)
+
+        # 4. 256バイト × 3ブロック分を連続転送
+        # 上・中・下段で同じパターン配置(0-255)を繰り返すため同じHLから3回送る
+        LD.C_n8(block, 0x98)
+
+        POP.HL(block)  # アドレス復帰
+        PUSH.HL(block)
+        OUTI_256_FUNC.call(block)  # 上段転送
+
+        POP.HL(block)  # アドレス復帰
+        PUSH.HL(block)
+        OUTI_256_FUNC.call(block)  # 中段転送
+
+        POP.HL(block)  # アドレス復帰
+        OUTI_256_FUNC.call(block)  # 下段転送
+
+        RET(block)
+
+        # --- 関数内部にデータテーブルを配置 ---
+        block.label("NAME_TABLE_512_LUT")
+        # 0-255 を2回繰り返すことで、どの位置から256バイト読んでも連続性が保たれる
+        lut_data = [i for i in range(256)] * 2
+        DB(block, *lut_data)
+
+    return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
