@@ -436,6 +436,9 @@ class ADDR:
     AUTO_SCROLL_DIR = madd(
         "AUTO_SCROLL_DIR", 1, description="自動スクロール方向 (1=下,255=上)"
     )
+    AUTO_SCROLL_TURN_STATE = madd(
+        "AUTO_SCROLL_TURN_STATE", 1, description="自動スクロール折返し状態 (0=なし,1=待機,2=開始)"
+    )
     CONFIG_WORK_BASE = madd(
         "CONFIG_WORK_BASE",
         get_work_byte_length_for_screen0_config_menu(),
@@ -999,6 +1002,8 @@ def build_update_image_display_func(
         LD.mn16_HL(block, ADDR.AUTO_SCROLL_EDGE_WAIT)
         LD.A_n8(block, 1)
         LD.mn16_A(block, ADDR.AUTO_SCROLL_DIR)
+        XOR.A(block)
+        LD.mn16_A(block, ADDR.AUTO_SCROLL_TURN_STATE)
 
         RET(block)
 
@@ -1597,6 +1602,8 @@ def build_boot_bank(
     LD.A_H(b)
     OR.L(b)
     JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_n8(b, 2)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
 
     b.label("AUTO_SCROLL_COUNTER_CHECK")
@@ -1655,6 +1662,8 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
 
     b.label("AUTO_SCROLL_DOWN")
@@ -1704,6 +1713,8 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_n8(b, 0xFF)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
 
     # --- 自動切り替え判定 ---
@@ -1728,24 +1739,12 @@ def build_boot_bank(
     JR(b, "CHECK_GRAPH")
 
     b.label("AUTO_PAGE_EDGE_CHECK")
-    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    LD.A_H(b)
-    OR.L(b)
-    JR_Z(b, "AUTO_NEXT_IMAGE")
-
-    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
-    LD.BC_n16(b, 24)
-    OR.A(b)
-    SBC.HL_BC(b)  # HL = limit
-    JR_NC(b, "AUTO_PAGE_EDGE_LIMIT_OK")
-    LD.HL_n16(b, 0)
-
-    b.label("AUTO_PAGE_EDGE_LIMIT_OK")
-    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    OR.A(b)
-    SBC.HL_DE(b)
-    JR_Z(b, "AUTO_NEXT_IMAGE")
-    JR(b, "CHECK_GRAPH")
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    CP.n8(b, 2)
+    JR_NZ(b, "CHECK_GRAPH")
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    JR(b, "AUTO_NEXT_IMAGE")
 
     b.label("AUTO_PAGE_COUNTER_CHECK")
     LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
