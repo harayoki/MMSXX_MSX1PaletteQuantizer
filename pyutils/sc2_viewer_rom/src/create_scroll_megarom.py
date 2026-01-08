@@ -119,7 +119,6 @@ from mmsxxasmhelper.msxutils import (
     INPUT_KEY_BIT,
     build_beep_control_utils,
     build_set_vram_write_func,
-    build_scroll_name_table_func,
     build_scroll_name_table_func2,
     build_outi_repeat_func,
     set_screen_colors_macro,
@@ -594,41 +593,41 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
     return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
 
 
-def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
-    def reset_name_table_call(block: Block) -> None:
-        # VRAMアドレスセット (NAME_BASE = 0x1800)
-        # 0x1800 を書き込みモードでセット
-        LD.A_n8(block, 0x00)     # 下位8bit
-        OUT(block, 0x99)
-        LD.A_n8(block, 0x18 | 0x40) # 上位8bit + Write Mode(0x40)
-        OUT(block, 0x99)
-
-        # 0~255 の出力を3回繰り返す
-        LD.D_n8(block, 3)        # 3ブロック分
-        LD.C_n8(block, 0x98)     # VDPデータポート
-
-        OUTER_LOOP = unique_label()
-        INNER_LOOP = unique_label()
-
-        block.label(OUTER_LOOP)
-        LD.A_n8(block, 0)        # 0から開始
-
-        block.label(INNER_LOOP)
-        OUT_C.A(block)          # VDPへ A を出力 (OUT (C), A)
-        # ※名前テーブルはデータが疎(1byte/1char)なので
-        # ウェイト(JR $+2)がなくてもMSX1のVDPなら追いつくことが多いですが、
-        # 念のため入れるならここに NOP や INC A を置きます。
-        NOP(block)
-        INC.A(block)             # 次のキャラクタ番号
-        JR_NZ(block, INNER_LOOP) # 255を超えて0になるまでループ
-
-        DEC.D(block)             # 残りブロック数を減らす
-        JR_NZ(block, OUTER_LOOP)
-
-    return Func("init_name_table_call", reset_name_table_call, group=group)
-
-
-RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
+# def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+#     def reset_name_table_call(block: Block) -> None:
+#         # VRAMアドレスセット (NAME_BASE = 0x1800)
+#         # 0x1800 を書き込みモードでセット
+#         LD.A_n8(block, 0x00)     # 下位8bit
+#         OUT(block, 0x99)
+#         LD.A_n8(block, 0x18 | 0x40) # 上位8bit + Write Mode(0x40)
+#         OUT(block, 0x99)
+#
+#         # 0~255 の出力を3回繰り返す
+#         LD.D_n8(block, 3)        # 3ブロック分
+#         LD.C_n8(block, 0x98)     # VDPデータポート
+#
+#         OUTER_LOOP = unique_label()
+#         INNER_LOOP = unique_label()
+#
+#         block.label(OUTER_LOOP)
+#         LD.A_n8(block, 0)        # 0から開始
+#
+#         block.label(INNER_LOOP)
+#         OUT_C.A(block)          # VDPへ A を出力 (OUT (C), A)
+#         # ※名前テーブルはデータが疎(1byte/1char)なので
+#         # ウェイト(JR $+2)がなくてもMSX1のVDPなら追いつくことが多いですが、
+#         # 念のため入れるならここに NOP や INC A を置きます。
+#         NOP(block)
+#         INC.A(block)             # 次のキャラクタ番号
+#         JR_NZ(block, INNER_LOOP) # 255を超えて0になるまでループ
+#
+#         DEC.D(block)             # 残りブロック数を減らす
+#         JR_NZ(block, OUTER_LOOP)
+#
+#     return Func("init_name_table_call", reset_name_table_call, group=group)
+#
+#
+# RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
 def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
@@ -755,7 +754,8 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             JR(b, NORM_LOOP)
             b.label(NORM_DONE)
 
-        RESET_NAME_TABLE_FUNC.call(block)
+        XOR.A(block)
+        SCROLL_NAME_TABLE_FUNC.call(block)
 
         # --- パターンジェネレータ転送 ---
         calc_scroll_ptr(block, is_color=False)
@@ -1260,7 +1260,8 @@ def build_boot_bank(
 
     b.label(AFTER_TITLE_CONFIG)
 
-    RESET_NAME_TABLE_FUNC.call(b)
+    XOR.A(b)
+    SCROLL_NAME_TABLE_FUNC.call(b)
 
     # 現在のページを記憶
     LD.A_n8(b, 0)
