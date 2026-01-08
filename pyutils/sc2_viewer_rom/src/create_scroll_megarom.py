@@ -760,16 +760,18 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             JR(b, NORM_LOOP)
             b.label(NORM_DONE)
 
-        XOR.A(block)
-        HALT(block)  # VBLANK待ち
         SCROLL_NOWAIT_ALL = unique_label("SCROLL_NOWAIT_ALL")
         SCROLL_NOWAIT_DONE = unique_label("SCROLL_NOWAIT_DONE")
         LD.A_mn16(block, ADDR.CONFIG_VDP_WAIT)
         OR.A(block)
         JR_Z(block, SCROLL_NOWAIT_ALL)
+        XOR.A(block)
+        HALT(block)  # VBLANK待ち
         SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK.call(block)
         JR(block, SCROLL_NOWAIT_DONE)
         block.label(SCROLL_NOWAIT_ALL)
+        XOR.A(block)
+        HALT(block)  # VBLANK待ち
         SCROLL_NAME_TABLE_FUNC_NOWAIT.call(block)  # VBLANK中はＶＤＰウェイトをなくせる
         block.label(SCROLL_NOWAIT_DONE)
 
@@ -1487,16 +1489,18 @@ def build_boot_bank(
     LD.H_n8(b, 0)
     LD.DE_label(b, "TABLE_MOD24")
     ADD.HL_DE(b)
-    LD.A_mHL(b)
-    HALT(b)  # ここでVBLANKを待つ
     SCROLL_NOWAIT_ALL = unique_label("SCROLL_NOWAIT_ALL")
     SCROLL_NOWAIT_DONE = unique_label("SCROLL_NOWAIT_DONE")
     LD.A_mn16(b, ADDR.CONFIG_VDP_WAIT)
     OR.A(b)
     JR_Z(b, SCROLL_NOWAIT_ALL)
+    LD.A_mHL(b)
+    HALT(b)  # ここでVBLANKを待つ
     SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK.call(b)  # 1ブロック分だけ非同期で転送 VBLANK中のみ可能
     JR(b, SCROLL_NOWAIT_DONE)
     b.label(SCROLL_NOWAIT_ALL)
+    LD.A_mHL(b)
+    HALT(b)  # ここでVBLANKを待つ
     SCROLL_NAME_TABLE_FUNC_NOWAIT.call(b)  # VBLANK中はＶＤＰウェイトをなくせる
     b.label(SCROLL_NOWAIT_DONE)
 
