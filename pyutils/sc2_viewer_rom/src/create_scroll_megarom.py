@@ -1602,8 +1602,6 @@ def build_boot_bank(
     LD.A_H(b)
     OR.L(b)
     JP_NZ(b, "CHECK_AUTO_PAGE")
-    LD.A_n8(b, 2)
-    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
 
     b.label("AUTO_SCROLL_COUNTER_CHECK")
@@ -1628,7 +1626,14 @@ def build_boot_bank(
     EX.DE_HL(b)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
 
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    CP.n8(b, 1)
+    JR_NZ(b, "AUTO_SCROLL_STEP_DIR")
+    LD.A_n8(b, 2)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+
     # 方向に応じて端判定と移動
+    b.label("AUTO_SCROLL_STEP_DIR")
     LD.A_mn16(b, ADDR.AUTO_SCROLL_DIR)
     CP.n8(b, 1)
     JP_Z(b, "AUTO_SCROLL_DOWN")
