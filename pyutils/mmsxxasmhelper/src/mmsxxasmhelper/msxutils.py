@@ -22,6 +22,7 @@ __all__ = [
     "init_screen2_macro",
     "set_screen_mode_macro",
     "set_screen_display_macro",
+    "set_screen_display_status_flag_macro",
     "set_text_cursor_macro",
     "write_text_with_cursor_macro",
     "write_text_with_cursor_macro_with_bios",
@@ -411,6 +412,15 @@ def set_screen_display_macro(b: Block, display_on: bool) -> None:
     LD.mn16_A(b, RG1SAV)
     OUT(b, VDP_CTRL)
     OUT_A(b, VDP_CTRL, 0x80 + 1)
+
+
+def set_screen_display_status_flag_macro(b: Block) -> None:
+    """VDPレジスタ1のBit6を取得して画面表示状態でフラグを立てるマクロ
+    画面表示中ならＮＺ、非表示中ならＺフラグがセットされる。
+    レジスタ変更: A
+    """
+    LD.A_mn16(b, RG1SAV)
+    AND.n8(b, 6)
 
 
 def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
@@ -992,7 +1002,7 @@ def build_scroll_name_table_func2(
     OUTI_256_FUNC: Func,
     OUTI_256_FUNC_NO_WAIT: Func | None = None,  # Noneを許容
     *,
-    use_no_wait_if_possible: bool = False,                  # 生成時のフラグ
+    use_no_wait: Literal["NO", "ONE_BLOCK", "ALL"] = "NO",                  # 生成時のフラグ
     group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
     """
@@ -1000,8 +1010,8 @@ def build_scroll_name_table_func2(
     生成時に use_no_wait=True かつ NO_WAIT関数がない場合はエラーを出す。
     """
     # エラーチェック
-    if use_no_wait_if_possible and OUTI_256_FUNC_NO_WAIT is None:
-        raise ValueError("use_no_wait=True requires OUTI_256_FUNC_NO_WAIT to be provided.")
+    if use_no_wait != "NO" and OUTI_256_FUNC_NO_WAIT is None:
+        raise ValueError(f"use_no_wait[{use_no_wait}] requires OUTI_256_FUNC_NO_WAIT to be provided.")
 
     def scroll_name_table(block: Block) -> None:
         # 入力: A = CURRENT_SCROLL_ROW (0-23)
@@ -1028,8 +1038,7 @@ def build_scroll_name_table_func2(
         # --- 第1ブロック (上段) ---
         POP.HL(block)
         PUSH.HL(block)
-        if use_no_wait_if_possible and OUTI_256_FUNC_NO_WAIT:
-            # Python側でフラグが立っており、かつ関数が存在する場合のみNO_WAIT版を実体化
+        if use_no_wait != "NO":
             OUTI_256_FUNC_NO_WAIT.call(block)
         else:
             OUTI_256_FUNC.call(block)
@@ -1038,10 +1047,16 @@ def build_scroll_name_table_func2(
         # 表示期間に食い込むため常に通常版を使用
         POP.HL(block)
         PUSH.HL(block)
-        OUTI_256_FUNC.call(block)
+        if use_no_wait == "ALL":
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
 
         POP.HL(block)
-        OUTI_256_FUNC.call(block)
+        if use_no_wait == "ALL":
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
 
         RET(block)
 

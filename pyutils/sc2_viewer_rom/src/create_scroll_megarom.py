@@ -124,6 +124,8 @@ from mmsxxasmhelper.msxutils import (
     set_screen_colors_macro,
     set_text_cursor_macro,
     write_text_with_cursor_macro,
+    set_screen_display_macro,
+    set_screen_display_status_flag_macro,
 )
 from mmsxxasmhelper.config_scene import (
     Screen0ConfigEntry,
@@ -630,7 +632,7 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
 # RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
-def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+def build_scroll_vram_xfer_func(with_wait: bool = True, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def scroll_vram_xfer(block: Block) -> None:
         # --- 入力規定 ---
         # HL: 計算済みのROM開始アドレス (0x8000 - 0xBFFF)
@@ -657,9 +659,9 @@ def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             # 1バイト転送 (18T)
             OUTI(block)  # (HL)->(C), HL++, B--
 
-            # ウェイト無しでは画面が崩れた
-            # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
-            NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
+            if with_wait:
+                # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
+                NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
         JP_NZ(block, "VRAM_BYTE_LOOP")
 
         # --- バンク境界チェック ---
@@ -703,7 +705,8 @@ def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
     CALL scroll_vram_xfer
     """
 
-    return Func("scroll_vram_xfer", scroll_vram_xfer, group=group)
+    func_name = "scroll_vram_xfer" if with_wait else "sscroll_vram_xfer_no_wait"
+    return Func(func_name, scroll_vram_xfer, group=group)
 
 
 def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
@@ -802,16 +805,23 @@ SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func2(
     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     OUTI_256_FUNC=OUTI_256_FUNC,
-    use_no_wait_if_possible=False,
+    use_no_wait="NO",
     group=SCROLL_VIEWER_FUNC_GROUP
 )
-SCROLL_NAME_TABLE_FUNC_NOWAIT_IF_POSSIBLE = build_scroll_name_table_func2(
+SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK = build_scroll_name_table_func2(
     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     OUTI_256_FUNC=OUTI_256_FUNC,
     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
-    use_no_wait_if_possible=True,
+    use_no_wait="ONE_BLOCK",
     group=SCROLL_VIEWER_FUNC_GROUP
 )
+# SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
+#     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+#     OUTI_256_FUNC=OUTI_256_FUNC,
+#     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
+#     use_no_wait="ALL",
+#     group=SCROLL_VIEWER_FUNC_GROUP
+# )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
