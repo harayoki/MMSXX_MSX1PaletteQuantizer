@@ -320,6 +320,28 @@ AUTO_ADVANCE_INTERVAL_FRAMES = [
     1 * 60,
     1,
 ]
+AUTO_SCROLL_INTERVAL_FRAMES = [
+    0,
+    30,
+    26,
+    22,
+    18,
+    14,
+    10,
+    6,
+    2,
+]
+AUTO_SCROLL_EDGE_WAIT_FRAMES = [
+    0,
+    300,
+    266,
+    232,
+    198,
+    164,
+    130,
+    96,
+    60,
+]
 AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 3s", " 1s", "MAX"]
 AUTO_SCROLL_LEVEL_CHOICES = ["NONE", "1", "2", "3", "4", "5", "6", "7", "8"]
 H_TIMI_HOOK_ADDR = 0xFD9F
@@ -399,6 +421,12 @@ class ADDR:
     )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
+    )
+    AUTO_SCROLL_COUNTER = madd(
+        "AUTO_SCROLL_COUNTER", 2, description="自動スクロールの残りフレーム"
+    )
+    AUTO_SCROLL_EDGE_WAIT = madd(
+        "AUTO_SCROLL_EDGE_WAIT", 2, description="自動スクロール端待ちフレーム"
     )
     CONFIG_WORK_BASE = madd(
         "CONFIG_WORK_BASE",
@@ -947,6 +975,21 @@ def build_update_image_display_func(
         EX.DE_HL(block)
         LD.mn16_HL(block, ADDR.AUTO_ADVANCE_COUNTER)
 
+        # 自動スクロール用カウンタを初期化
+        LD.A_mn16(block, ADDR.CONFIG_AUTO_SCROLL)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, "AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        EX.DE_HL(block)
+        LD.mn16_HL(block, ADDR.AUTO_SCROLL_COUNTER)
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, ADDR.AUTO_SCROLL_EDGE_WAIT)
+
         RET(block)
 
     return Func(
@@ -1408,7 +1451,7 @@ def build_boot_bank(
     b.label("SHIFT_UP_STORE")
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
-    JP(b, "CHECK_AUTO")
+    JP(b, "CHECK_AUTO_SCROLL")
 
     b.label("SCROLL_UP_SINGLE")
 
@@ -1429,7 +1472,7 @@ def build_boot_bank(
     # 下キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
-    JP_Z(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO_SCROLL")
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1446,8 +1489,8 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JP_Z(b, "CHECK_AUTO")  # 下限到達
-    JP_C(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO_SCROLL")  # 下限到達
+    JP_C(b, "CHECK_AUTO_SCROLL")
 
     EX.DE_HL(b)  # HL = current, DE = limit
     LD.BC_n16(b, 8)
@@ -1467,7 +1510,7 @@ def build_boot_bank(
     b.label("SHIFT_DOWN_STORE")
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
-    JP(b, "CHECK_AUTO")
+    JP(b, "CHECK_AUTO_SCROLL")
 
     b.label("SCROLL_DOWN_SINGLE")
 
@@ -1482,8 +1525,8 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JP_Z(b, "CHECK_AUTO")  # 下限到達
-    JP_C(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO_SCROLL")  # 下限到達
+    JP_C(b, "CHECK_AUTO_SCROLL")
 
     # 1行下へ移動
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
@@ -1521,8 +1564,110 @@ def build_boot_bank(
     # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
     SYNC_SCROLL_ROW_FUNC.call(b)
 
+    JP(b, "CHECK_AUTO_PAGE")
+
+    # --- 自動スクロール判定 ---
+    b.label("CHECK_AUTO_SCROLL")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    OR.A(b)
+    JR_Z(b, "CHECK_AUTO_PAGE")
+
+    # 端待ちカウンタが動作中なら優先して処理
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_SCROLL_COUNTER_CHECK")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JR_NZ(b, "CHECK_AUTO_PAGE")
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    DRAW_SCROLL_VIEW_FUNC.call(b)
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
+    JR(b, "CHECK_AUTO_PAGE")
+
+    b.label("AUTO_SCROLL_COUNTER_CHECK")
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_COUNTER)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_SCROLL_STEP")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
+    JR(b, "CHECK_AUTO_PAGE")
+
+    b.label("AUTO_SCROLL_STEP")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
+
+    # 最大値 (総行数 - 24) チェック
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)  # HL = limit
+
+    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    PUSH.HL(b)
+    OR.A(b)
+    SBC.HL_DE(b)
+    POP.HL(b)
+    JR_Z(b, "AUTO_SCROLL_EDGE")
+    JR_C(b, "AUTO_SCROLL_EDGE")
+
+    # 端待ちを解除して 1行下へ移動
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    INC.HL(b)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+
+    # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
+    LD.BC_n16(b, 23)
+    ADD.HL_BC(b)
+    LD.A_L(b)
+    LD.mn16_A(b, ADDR.TARGET_ROW)
+    JR(b, "DO_UPDATE_SCROLL")
+
+    b.label("AUTO_SCROLL_EDGE")
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JR_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_EDGE_WAIT_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    JR(b, "CHECK_AUTO_PAGE")
+
     # --- 自動切り替え判定 ---
-    b.label("CHECK_AUTO")
+    b.label("CHECK_AUTO_PAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
     OR.A(b)
     JR_Z(b, "CHECK_GRAPH")
@@ -1596,6 +1741,10 @@ def build_boot_bank(
     # 0: 無効, 1-7: 数値が大きいほど高速になる自動切り替え秒数
     b.label("AUTO_ADVANCE_INTERVAL_FRAMES_TABLE")
     DW(b, *AUTO_ADVANCE_INTERVAL_FRAMES)
+    b.label("AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+    DW(b, *AUTO_SCROLL_INTERVAL_FRAMES)
+    b.label("AUTO_SCROLL_EDGE_WAIT_FRAMES_TABLE")
+    DW(b, *AUTO_SCROLL_EDGE_WAIT_FRAMES)
 
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
     # タイル番号のオフセット計算用。
