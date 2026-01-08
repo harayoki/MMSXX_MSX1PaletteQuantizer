@@ -428,6 +428,9 @@ class ADDR:
     AUTO_SCROLL_EDGE_WAIT = madd(
         "AUTO_SCROLL_EDGE_WAIT", 2, description="自動スクロール端待ちフレーム"
     )
+    AUTO_SCROLL_DIR = madd(
+        "AUTO_SCROLL_DIR", 1, description="自動スクロール方向 (1=下,255=上)"
+    )
     CONFIG_WORK_BASE = madd(
         "CONFIG_WORK_BASE",
         get_work_byte_length_for_screen0_config_menu(),
@@ -989,6 +992,8 @@ def build_update_image_display_func(
         LD.mn16_HL(block, ADDR.AUTO_SCROLL_COUNTER)
         LD.HL_n16(block, 0)
         LD.mn16_HL(block, ADDR.AUTO_SCROLL_EDGE_WAIT)
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, ADDR.AUTO_SCROLL_DIR)
 
         RET(block)
 
@@ -1582,20 +1587,6 @@ def build_boot_bank(
     LD.A_H(b)
     OR.L(b)
     JP_NZ(b, "CHECK_AUTO_PAGE")
-    LD.HL_n16(b, 0)
-    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
-    DRAW_SCROLL_VIEW_FUNC.call(b)
-    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
-    LD.L_A(b)
-    LD.H_n8(b, 0)
-    ADD.HL_HL(b)
-    LD.DE_label(b, "AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
-    ADD.HL_DE(b)
-    LD.E_mHL(b)
-    INC.HL(b)
-    LD.D_mHL(b)
-    EX.DE_HL(b)
-    LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
     JP(b, "CHECK_AUTO_PAGE")
 
     b.label("AUTO_SCROLL_COUNTER_CHECK")
@@ -1620,35 +1611,23 @@ def build_boot_bank(
     EX.DE_HL(b)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
 
-    # 最大値 (総行数 - 24) チェック
-    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
-    LD.BC_n16(b, 24)
-    OR.A(b)
-    SBC.HL_BC(b)  # HL = limit
+    # 方向に応じて端判定と移動
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_DIR)
+    CP.n8(b, 1)
+    JP_Z(b, "AUTO_SCROLL_DOWN")
 
-    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    PUSH.HL(b)
-    OR.A(b)
-    SBC.HL_DE(b)
-    POP.HL(b)
-    JR_Z(b, "AUTO_SCROLL_EDGE")
-    JR_C(b, "AUTO_SCROLL_EDGE")
-
-    # 端待ちを解除して 1行下へ移動
-    LD.HL_n16(b, 0)
-    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    # 上方向
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
-    INC.HL(b)
+    LD.A_H(b)
+    OR.L(b)
+    JP_Z(b, "AUTO_SCROLL_EDGE_TOP")
+    DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
-
-    # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
-    LD.BC_n16(b, 23)
-    ADD.HL_BC(b)
     LD.A_L(b)
     LD.mn16_A(b, ADDR.TARGET_ROW)
     JP(b, "DO_UPDATE_SCROLL")
 
-    b.label("AUTO_SCROLL_EDGE")
+    b.label("AUTO_SCROLL_EDGE_TOP")
     LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_H(b)
     OR.L(b)
@@ -1664,6 +1643,57 @@ def build_boot_bank(
     LD.D_mHL(b)
     EX.DE_HL(b)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    JP(b, "CHECK_AUTO_PAGE")
+
+    b.label("AUTO_SCROLL_DOWN")
+    # 最大値 (総行数 - 24) チェック
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)  # HL = limit
+
+    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    PUSH.HL(b)
+    OR.A(b)
+    SBC.HL_DE(b)
+    POP.HL(b)
+    JR_Z(b, "AUTO_SCROLL_EDGE_BOTTOM")
+    JR_C(b, "AUTO_SCROLL_EDGE_BOTTOM")
+
+    # 端待ちを解除して 1行下へ移動
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    INC.HL(b)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+
+    # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
+    LD.BC_n16(b, 23)
+    ADD.HL_BC(b)
+    LD.A_L(b)
+    LD.mn16_A(b, ADDR.TARGET_ROW)
+    JP(b, "DO_UPDATE_SCROLL")
+
+    b.label("AUTO_SCROLL_EDGE_BOTTOM")
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_EDGE_WAIT_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_n8(b, 0xFF)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
     JP(b, "CHECK_AUTO_PAGE")
 
     # --- 自動切り替え判定 ---
