@@ -1466,7 +1466,7 @@ def build_boot_bank(
     # ターゲット行は「新しく入ってきた上端の行」
     LD.A_L(b)
     LD.mn16_A(b, ADDR.TARGET_ROW)
-    JR(b, "DO_UPDATE_SCROLL")
+    JP(b, "DO_UPDATE_SCROLL")
 
     b.label("CHECK_DOWN")
     # 下キー判定
@@ -1646,7 +1646,7 @@ def build_boot_bank(
     ADD.HL_BC(b)
     LD.A_L(b)
     LD.mn16_A(b, ADDR.TARGET_ROW)
-    JR(b, "DO_UPDATE_SCROLL")
+    JP(b, "DO_UPDATE_SCROLL")
 
     b.label("AUTO_SCROLL_EDGE")
     LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
