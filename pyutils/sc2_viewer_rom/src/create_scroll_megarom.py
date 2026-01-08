@@ -17,7 +17,7 @@ MSX1 SCREEN2 の縦スクロール ROM ビルダー。
   を付与する。
 - ビューアーは SCREEN 2 を初期化し、画像ヘッダーに埋め込まれた初期スクロール方向に応じて
   初期スクロール位置を設定。上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送
-  する。スペースで次の画像、SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易
+  する。スペースで次の画像、GRAPHキーで前の画像に循環切り替えし、切り替え時に簡易
   Beep を鳴らす。
 - `--use-debug-image` を指定するとテスト用パターンを生成し、それ以外ではビルド結果を
   ROM として出力、必要に応じてログを rominfo に書き出す。
@@ -1057,7 +1057,7 @@ def build_config_scene_func(
             "",
             "ESC : ENTER | EXIT THIS HELP",
             "SPACE: NEXT IMAGE",
-            "SHIFT+SPACE: PREV IMAGE",
+            "GRAPH: PREV IMAGE",
             "UP/DOWN: SCROLL",
             "SHIFT+UP/DOWN: FAST SCROLL",
         ],
@@ -1407,14 +1407,14 @@ def build_boot_bank(
     b.label("CHECK_AUTO")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
     OR.A(b)
-    JR_Z(b, "CHECK_SPACE")
+    JR_Z(b, "CHECK_GRAPH")
     LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
     LD.A_H(b)
     OR.L(b)
     JR_Z(b, "AUTO_NEXT_IMAGE")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
-    JR(b, "CHECK_SPACE")
+    JR(b, "CHECK_GRAPH")
 
     b.label("AUTO_NEXT_IMAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
@@ -1430,17 +1430,16 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
     JR(b, "NEXT_IMAGE")
 
-    # --- スペースキー判定 (画像切り替え) ---
-    b.label("CHECK_SPACE")
+    # --- グラフキー判定 (前の画像へ) ---
+    b.label("CHECK_GRAPH")
     LD.A_mn16(b, ADDR.INPUT_TRG)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_EXTRA)
+    JP_NZ(b, "PREV_IMAGE")
+
+    # --- スペースキー判定 (次の画像へ) ---
+    b.label("CHECK_SPACE")
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
     JP_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
-
-    # SPACEが押された場合のみここに来る
-    # 次に SHIFT (L_BTN_B) の状態を確認
-    LD.A_mn16(b, ADDR.INPUT_HOLD)
-    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
-    JR_NZ(b, "PREV_IMAGE")  # SHIFTありなら PREV へ
 
     # --- [NEXT_IMAGE: 次へ] ---
     b.label("NEXT_IMAGE")
