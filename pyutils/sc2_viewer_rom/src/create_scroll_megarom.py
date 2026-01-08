@@ -245,8 +245,8 @@ def parse_args() -> argparse.Namespace:
         "--bgm-fps",
         type=int,
         choices=[30, 60],
-        default=30,
-        help="BGM再生FPS (default: 30)",
+        default=60,
+        help="BGM再生FPS (default: 60)",
     )
     parser.add_argument(
         "--start-at",
@@ -376,9 +376,12 @@ class ADDR:
     BGM_LOOP_ADDR = madd(
         "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
     )
-    # BGM_BANK_ADDR = madd(
-    #     "BGM_BANK_ADDR", 1, description="BGMストリームのバンク番号"
-    # )
+    BGM_BANK_ADDR = madd(
+        "BGM_BANK_ADDR", 1, description="BGMストリームの現在バンク番号"
+    )
+    BGM_LOOP_BANK_ADDR = madd(
+        "BGM_LOOP_BANK_ADDR", 1, description="BGMストリームのループ先頭バンク番号"
+    )
     CURRENT_PAGE2_BANK_ADDR = madd(
         "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
     )
@@ -1197,6 +1200,8 @@ def build_boot_bank(
         ADDR.VGM_TIMER_FLAG,
         ADDR.CONFIG_BGM_ENABLED,
         vgm_bank_num=bgm_start_bank,
+        vgm_bank_addr=ADDR.BGM_BANK_ADDR,
+        vgm_loop_bank_addr=ADDR.BGM_LOOP_BANK_ADDR,
         current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
         page2_bank_reg_addr=ASCII16_PAGE2_REG,
         fps30=bgm_fps == 30,
@@ -1293,7 +1298,8 @@ def build_boot_bank(
     mem_addr_allocator.emit_initial_value_loader(b)
     if bgm_start_bank is not None:
         LD.A_n8(b, bgm_start_bank & 0xFF)
-        # LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
+        LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
+        LD.mn16_A(b, ADDR.BGM_LOOP_BANK_ADDR)
         LD.HL_n16(b, DATA_BANK_ADDR)
         LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
         LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
@@ -1738,7 +1744,7 @@ def build(
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
     bgm_enabled_default: bool = False,
-    bgm_fps: int = 30,
+    bgm_fps: int = 60,
     bgm_data: bytes | None = None,
     log_lines: list[str] | None = None,
     debug_build: bool = False,
@@ -1776,13 +1782,13 @@ def build(
     bgm_bank_count = 0
     bgm_start_bank: int | None = None
     if bgm_data is not None:
-        if len(bgm_data) > PAGE_SIZE:
-            bgm_data = bgm_data[:PAGE_SIZE]
         bgm_start_bank = next_bank
-        bgm_payload = bytearray([fill_byte] * PAGE_SIZE)
-        bgm_payload[: len(bgm_data)] = bgm_data
-        data_banks.append(bytes(bgm_payload))
-        bgm_bank_count = 1
+        bgm_bank_count = (len(bgm_data) + PAGE_SIZE - 1) // PAGE_SIZE
+        total_size = bgm_bank_count * PAGE_SIZE
+        padded = bytes(pad_bytes(list(bgm_data), total_size, fill_byte))
+        data_banks.extend(
+            padded[i : i + PAGE_SIZE] for i in range(0, total_size, PAGE_SIZE)
+        )
         next_bank += bgm_bank_count
 
     if start_positions is None:
@@ -2061,9 +2067,6 @@ def main() -> None:
         if not args.bgm_path.is_file():
             raise SystemExit(f"BGM file not found: {args.bgm_path}")
         bgm_data = args.bgm_path.read_bytes()
-        if len(bgm_data) > PAGE_SIZE:
-            log_and_store("BGM file size exceeds 16KB; truncating to 16KB", log_lines)
-            bgm_data = bgm_data[:PAGE_SIZE]
 
     rom = build(
         image_data_list,
