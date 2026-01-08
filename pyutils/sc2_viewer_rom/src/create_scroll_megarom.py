@@ -436,6 +436,9 @@ class ADDR:
     AUTO_SCROLL_DIR = madd(
         "AUTO_SCROLL_DIR", 1, description="自動スクロール方向 (1=下,255=上)"
     )
+    SCROLL_MOVE_DIR = madd(
+        "SCROLL_MOVE_DIR", 1, description="スクロール方向 (1=下,255=上)"
+    )
     AUTO_SCROLL_TURN_STATE = madd(
         "AUTO_SCROLL_TURN_STATE", 1, description="自動スクロール折返し状態 (0=なし,1=待機,2=開始)"
     )
@@ -961,12 +964,16 @@ def build_update_image_display_func(
         LD.HL_n16(block, 0)
         block.label(INIT_POS_OK)
         LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+        LD.A_n8(block, 0xFF)
+        LD.mn16_A(block, ADDR.SCROLL_MOVE_DIR)
         JR(block, "_INIT_POS_DONE")
 
         # 上端開始: 常に 0
         block.label(INIT_FROM_TOP)
         LD.HL_n16(block, 0)
         LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, ADDR.SCROLL_MOVE_DIR)
 
         block.label("_INIT_POS_DONE")
 
@@ -1000,7 +1007,7 @@ def build_update_image_display_func(
         LD.mn16_HL(block, ADDR.AUTO_SCROLL_COUNTER)
         LD.HL_n16(block, 0)
         LD.mn16_HL(block, ADDR.AUTO_SCROLL_EDGE_WAIT)
-        LD.A_n8(block, 1)
+        LD.A_mn16(block, ADDR.SCROLL_MOVE_DIR)
         LD.mn16_A(block, ADDR.AUTO_SCROLL_DIR)
         XOR.A(block)
         LD.mn16_A(block, ADDR.AUTO_SCROLL_TURN_STATE)
@@ -1469,6 +1476,8 @@ def build_boot_bank(
     LD.HL_n16(b, 0)
 
     b.label("SHIFT_UP_STORE")
+    LD.A_n8(b, 0xFF)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
     JP(b, "CHECK_AUTO_SCROLL")
@@ -1480,6 +1489,8 @@ def build_boot_bank(
     LD.A_H(b)
     OR.L(b)
     JR_Z(b, "CHECK_DOWN")
+    LD.A_n8(b, 0xFF)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
@@ -1528,6 +1539,8 @@ def build_boot_bank(
     POP.HL(b)
 
     b.label("SHIFT_DOWN_STORE")
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
     JP(b, "CHECK_AUTO_SCROLL")
@@ -1550,6 +1563,8 @@ def build_boot_bank(
 
     # 1行下へ移動
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
@@ -1648,6 +1663,8 @@ def build_boot_bank(
     LD.A_H(b)
     OR.L(b)
     JP_Z(b, "AUTO_SCROLL_EDGE_TOP")
+    LD.A_n8(b, 0xFF)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     LD.A_L(b)
@@ -1672,6 +1689,7 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
@@ -1695,6 +1713,8 @@ def build_boot_bank(
     LD.HL_n16(b, 0)
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
@@ -1723,6 +1743,7 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
     LD.A_n8(b, 0xFF)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    LD.mn16_A(b, ADDR.SCROLL_MOVE_DIR)
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
