@@ -774,7 +774,7 @@ def build_beep_control_utils(
     beep_active_addr: int = 0xC111,
     tone_period: int = 30,  # 0-4095
     duration_frames: int = 1,  # 1/60秒単位
-    volume: int = 8,
+    volume: int = 10,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ):
