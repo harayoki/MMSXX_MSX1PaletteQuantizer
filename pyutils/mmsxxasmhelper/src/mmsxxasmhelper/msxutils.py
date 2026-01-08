@@ -21,6 +21,7 @@ __all__ = [
     "set_msx2_palette_default_macro",
     "init_screen2_macro",
     "set_screen_mode_macro",
+    "set_screen_display_macro",
     "set_text_cursor_macro",
     "write_text_with_cursor_macro",
     "write_text_with_cursor_macro_with_bios",
@@ -70,6 +71,7 @@ FORCLR = 0xF3E9  # 前景色
 BAKCLR = 0xF3EA  # 背景色
 BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
+RG1SAV = 0xF3E0  # VDPレジスタ1のミラー
 
 VDP_DATA = 0x98   # VDPデータポート
 VDP_CTRL = 0x99   # VDPコントロールポート
@@ -393,6 +395,21 @@ def set_screen_mode_macro(b: Block, mode: int) -> None:
     """
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
+
+
+def set_screen_display_macro(b: Block, display_on: bool) -> None:
+    """VDPレジスタ1のBit6を 0/1 に設定して画面表示を切り替えるマクロ。
+
+    レジスタ変更: A
+    """
+    LD.A_mn16(b, RG1SAV)
+    if display_on:
+        OR.n8(b, 0x40)
+    else:
+        AND.n8(b, 0xBF)
+    LD.mn16_A(b, RG1SAV)
+    OUT(b, VDP_CTRL)
+    OUT_A(b, VDP_CTRL, 0x80 + 1)
 
 
 def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
