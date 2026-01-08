@@ -43,6 +43,7 @@ def build_play_vgm_frame_func(
     vgm_bank_num: int | None = None,
     current_bank_addr: int | None = None,
     page2_bank_reg_addr: int = 0x7000,
+    fps30: bool = False,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> tuple[Func, Func]:
@@ -127,10 +128,11 @@ def build_play_vgm_frame_func(
 
         block.label(process_play)
 
-        LD.A_mn16(block, vgm_timer_flag_addr)
-        XOR.n8(block, 1)
-        LD.mn16_A(block, vgm_timer_flag_addr)
-        JR_Z(block, skip_play)
+        if fps30:
+            LD.A_mn16(block, vgm_timer_flag_addr)
+            XOR.n8(block, 1)
+            LD.mn16_A(block, vgm_timer_flag_addr)
+            JR_Z(block, skip_play)
 
         PUSH.BC(block)
         PUSH.DE(block)
