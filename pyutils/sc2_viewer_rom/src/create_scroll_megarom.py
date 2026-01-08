@@ -242,6 +242,13 @@ def parse_args() -> argparse.Namespace:
         help="BGMのbinファイルパス (未指定の場合はBGM設定は強制OFF)",
     )
     parser.add_argument(
+        "--bgm-fps",
+        type=int,
+        choices=[30, 60],
+        default=30,
+        help="BGM再生FPS (default: 30)",
+    )
+    parser.add_argument(
         "--start-at",
         choices=["top", "bottom"],
         default="top",
@@ -1159,6 +1166,7 @@ def build_boot_bank(
     beep_enabled_default: bool,
     bgm_enabled_default: bool,
     bgm_start_bank: int | None,
+    bgm_fps: int,
     log_lines: List[str] | None = None,
     debug_build: bool = False,
 ) -> bytes:
@@ -1190,6 +1198,7 @@ def build_boot_bank(
         vgm_bank_num=bgm_start_bank,
         current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
         page2_bank_reg_addr=ASCII16_PAGE2_REG,
+        fps30=bgm_fps == 30,
     )
 
     def bgm_setting_changed(block: Block) -> None:
@@ -1728,6 +1737,7 @@ def build(
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
     bgm_enabled_default: bool = False,
+    bgm_fps: int = 30,
     bgm_data: bytes | None = None,
     log_lines: list[str] | None = None,
     debug_build: bool = False,
@@ -1748,6 +1758,7 @@ def build(
         f"BGM default: {'ON' if bgm_enabled_default else 'OFF'}",
         log_lines,
     )
+    log_and_store(f"BGM FPS: {bgm_fps}", log_lines)
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
@@ -1851,6 +1862,7 @@ def build(
             beep_enabled_default,
             bgm_enabled_default,
             bgm_start_bank,
+            bgm_fps,
             log_lines,
             debug_build,
         )
@@ -2059,6 +2071,7 @@ def main() -> None:
         title_wait_seconds=args.title_wait_seconds,
         beep_enabled_default=args.beep,
         bgm_enabled_default=bgm_enabled_default,
+        bgm_fps=args.bgm_fps,
         bgm_data=bgm_data,
         log_lines=log_lines,
         debug_build=args.debug_build,
