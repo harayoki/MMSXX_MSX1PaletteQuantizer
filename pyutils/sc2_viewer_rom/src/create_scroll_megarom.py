@@ -1604,7 +1604,7 @@ def build_boot_bank(
     JP_NZ(b, "CHECK_AUTO_PAGE")
     LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
     CP.n8(b, 1)
-    JR_NZ(b, "CHECK_AUTO_PAGE")
+    JP_NZ(b, "CHECK_AUTO_PAGE")
     LD.A_n8(b, 2)
     LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
     JP(b, "CHECK_AUTO_PAGE")
