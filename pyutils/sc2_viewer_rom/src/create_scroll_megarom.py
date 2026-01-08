@@ -263,6 +263,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="デバッグ用ビルドモードを有効にする。",
     )
+    parser.add_argument(
+        "--vdp-wait",
+        type=int_from_str,
+        choices=[0, 1],
+        default=0,
+        help="VDP WAITの設定 (0=NOWAIT, 1=WAIT)",
+    )
     return parser.parse_args()
 
 args = parse_args()
@@ -371,7 +378,10 @@ class ADDR:
         "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロールの有効/無効"
     )
     CONFIG_VDP_WAIT = madd(
-        "CONFIG_VDP_WAIT", 1, initial_value=bytes([1]), description="VDP WAITの設定"
+        "CONFIG_VDP_WAIT",
+        1,
+        initial_value=bytes([args.vdp_wait]),
+        description="VDP WAITの設定",
     )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
