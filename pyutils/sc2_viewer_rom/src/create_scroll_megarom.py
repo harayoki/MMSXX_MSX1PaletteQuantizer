@@ -351,10 +351,16 @@ class ADDR:
     TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
     CONFIG_BEEP_ENABLED = madd(
-        "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
+        "CONFIG_BEEP_ENABLED",
+        1,
+        initial_value=bytes([1 if args.beep else 0]),
+        description="BEEPの有効/無効",
     )
     CONFIG_BGM_ENABLED = madd(
-        "CONFIG_BGM_ENABLED", 1, description="BGMの有効/無効"
+        "CONFIG_BGM_ENABLED",
+        1,
+        initial_value=bytes([1 if args.bgm and args.bgm_path is not None else 0]),
+        description="BGMの有効/無効",
     )
     BGM_PTR_ADDR = madd(
         "BGM_PTR_ADDR", 2, description="BGMストリームの現在位置"
@@ -1275,18 +1281,6 @@ def build_boot_bank(
 
     # コンフィグの初期値を設定
     mem_addr_allocator.emit_initial_value_loader(b)
-    if beep_enabled_default:
-        LD.A_n8(b, 1)
-        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
-    else:
-        LD.A_n8(b, 0)
-        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
-    if bgm_enabled_default:
-        LD.A_n8(b, 1)
-        LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
-    else:
-        LD.A_n8(b, 0)
-        LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     if bgm_start_bank is not None:
         LD.A_n8(b, bgm_start_bank & 0xFF)
         # LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
