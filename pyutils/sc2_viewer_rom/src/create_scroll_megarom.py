@@ -330,6 +330,7 @@ AUTO_SCROLL_INTERVAL_FRAMES = [
     10,
     6,
     2,
+    1,
 ]
 AUTO_SCROLL_EDGE_WAIT_FRAMES = [
     0,
@@ -341,9 +342,10 @@ AUTO_SCROLL_EDGE_WAIT_FRAMES = [
     130,
     96,
     60,
+    30,
 ]
 AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 3s", " 1s", "MAX"]
-AUTO_SCROLL_LEVEL_CHOICES = ["NONE", "1", "2", "3", "4", "5", "6", "7", "8"]
+AUTO_SCROLL_LEVEL_CHOICES = ["NONE", "1", "2", "3", "4", "5", "6", "7", "8", "MAX"]
 H_TIMI_HOOK_ADDR = 0xFD9F
 
 # 状況を保存するメモリアドレス
@@ -411,7 +413,10 @@ class ADDR:
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
     )
     CONFIG_AUTO_SCROLL = madd(
-        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロール速度 (0-8)"
+        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロール速度 (0-9)"
+    )
+    CONFIG_AUTO_PAGE_EDGE = madd(
+        "CONFIG_AUTO_PAGE_EDGE", 1, initial_value=bytes([0]), description="自動スクロール中のページ端遷移"
     )
     CONFIG_VDP_WAIT = madd(
         "CONFIG_VDP_WAIT",
@@ -1160,6 +1165,11 @@ def build_config_scene_func(
             ADDR.CONFIG_AUTO_SCROLL,
         ),
         Screen0ConfigEntry(
+            "AUTO PAGE EDGE",
+            ["N O", "YES"],
+            ADDR.CONFIG_AUTO_PAGE_EDGE,
+        ),
+        Screen0ConfigEntry(
             "VDP WAIT",
             ["N O", "YES"],
             ADDR.CONFIG_VDP_WAIT,
@@ -1701,6 +1711,43 @@ def build_boot_bank(
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
     OR.A(b)
     JR_Z(b, "CHECK_GRAPH")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    OR.A(b)
+    JR_Z(b, "AUTO_PAGE_COUNTER_CHECK")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_PAGE_EDGE)
+    OR.A(b)
+    JR_Z(b, "AUTO_PAGE_COUNTER_CHECK")
+
+    b.label("AUTO_PAGE_COUNTER_CHECK_EDGE")
+    LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_PAGE_EDGE_CHECK")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
+    JR(b, "CHECK_GRAPH")
+
+    b.label("AUTO_PAGE_EDGE_CHECK")
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_NEXT_IMAGE")
+
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)  # HL = limit
+    JR_NC(b, "AUTO_PAGE_EDGE_LIMIT_OK")
+    LD.HL_n16(b, 0)
+
+    b.label("AUTO_PAGE_EDGE_LIMIT_OK")
+    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    OR.A(b)
+    SBC.HL_DE(b)
+    JR_Z(b, "AUTO_NEXT_IMAGE")
+    JR(b, "CHECK_GRAPH")
+
+    b.label("AUTO_PAGE_COUNTER_CHECK")
     LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
     LD.A_H(b)
     OR.L(b)
