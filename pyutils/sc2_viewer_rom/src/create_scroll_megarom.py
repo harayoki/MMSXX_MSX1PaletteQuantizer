@@ -1177,11 +1177,13 @@ def build_boot_bank(
         LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
     else:
+        LD.A_n8(b, 0)
         LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
     if bgm_enabled_default:
         LD.A_n8(b, 1)
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     else:
+        LD.A_n8(b, 0)
         LD.mn16_A(b, ADDR.CONFIG_BGM_ENABLED)
     if bgm_start_bank is not None:
         LD.A_n8(b, bgm_start_bank & 0xFF)
