@@ -815,13 +815,13 @@ SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK = build_scroll_name_table_func2(
     use_no_wait="ONE_BLOCK",
     group=SCROLL_VIEWER_FUNC_GROUP
 )
-# SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
-#     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
-#     OUTI_256_FUNC=OUTI_256_FUNC,
-#     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
-#     use_no_wait="ALL",
-#     group=SCROLL_VIEWER_FUNC_GROUP
-# )
+SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
+    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+    OUTI_256_FUNC=OUTI_256_FUNC,
+    OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
+    use_no_wait="ALL",
+    group=SCROLL_VIEWER_FUNC_GROUP
+)
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
@@ -995,7 +995,6 @@ def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
 
             LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
-
 
         # --- PG コピー ---
         # 画面横32タイル分のパターンデータを3ブロックぶんそのまま転送する。
@@ -1464,17 +1463,19 @@ def build_boot_bank(
     LD.mn16_A(b, ADDR.TARGET_ROW)
 
     b.label("DO_UPDATE_SCROLL")
-    # 1. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
-    SYNC_SCROLL_ROW_FUNC.call(b)
-
-    # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
+    # 1. 名前テーブルをずらす (TABLE_MOD24 を使用)
     LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     LD.L_A(b)
     LD.H_n8(b, 0)
     LD.DE_label(b, "TABLE_MOD24")
     ADD.HL_DE(b)
     LD.A_mHL(b)
-    SCROLL_NAME_TABLE_FUNC.call(b)
+    HALT(b)  # ここでVBLANKを待つ
+    # SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK.call(b)  # 1ブロック分だけ非同期で転送 VBLANK中のみ可能
+    SCROLL_NAME_TABLE_FUNC_NOWAIT.call(b)  # 1ブロック分だけ非同期で転送 VBLANK中のみ可能
+
+    # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
+    SYNC_SCROLL_ROW_FUNC.call(b)
 
     # --- 自動切り替え判定 ---
     b.label("CHECK_AUTO")
