@@ -62,6 +62,7 @@ from mmsxxasmhelper.core import (
     JR_n8,
     DJNZ,
     LD,
+    DI,
     OR,
     POP,
     PUSH,
@@ -85,6 +86,7 @@ from mmsxxasmhelper.core import (
     RLCA,
     BIT,
     HALT,
+    EI,
     unique_label,
     define_created_funcs,
     define_all_created_funcs_label_only,
@@ -1118,22 +1120,47 @@ def build_boot_bank(
         update_input_func=UPDATE_INPUT_FUNC,
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
-    INIT_MUSIC_FUNC = None
+    def init_interrupt_hook_macro(block: Block) -> None:
+        pass
+
     if bgm_start_bank is not None:
         print("Building BGM playback function... bgm_start_bank:", bgm_start_bank)
-        INIT_MUSIC_FUNC, _ = (
-            build_play_vgm_frame_func(
-                ADDR.BGM_PTR_ADDR,
-                ADDR.BGM_LOOP_ADDR,
-                H_TIMI_HOOK_ADDR,
-                ADDR.VGM_TIMER_FLAG,
-                ADDR.CONFIG_BGM_ENABLED,
-                vgm_bank_num=bgm_start_bank,
-                current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
-                page2_bank_reg_addr=ASCII16_PAGE2_REG,
-                group=SCROLL_VIEWER_FUNC_GROUP,
-            )
+        _, psg_isr_macro, _ = build_play_vgm_frame_func(
+            ADDR.BGM_PTR_ADDR,
+            ADDR.BGM_LOOP_ADDR,
+            ADDR.VGM_TIMER_FLAG,
+            ADDR.CONFIG_BGM_ENABLED,
+            vgm_bank_num=bgm_start_bank,
+            current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
+            page2_bank_reg_addr=ASCII16_PAGE2_REG,
         )
+
+        def interrupt_handler(block: Block) -> None:
+            PUSH.AF(block)
+            PUSH.BC(block)
+            PUSH.DE(block)
+            PUSH.HL(block)
+            PUSH.IX(block)
+            PUSH.IY(block)
+            psg_isr_macro(block)
+            POP.IY(block)
+            POP.IX(block)
+            POP.HL(block)
+            POP.DE(block)
+            POP.BC(block)
+            POP.AF(block)
+
+        Func("INTERRUPT_HANDLER", interrupt_handler, group=SCROLL_VIEWER_FUNC_GROUP)
+
+        def init_interrupt_hook(block: Block) -> None:
+            DI(block)
+            LD.A_n8(block, 0xC3)
+            LD.mn16_A(block, H_TIMI_HOOK_ADDR)
+            LD.HL_label(block, "INTERRUPT_HANDLER")
+            LD.mn16_HL(block, (H_TIMI_HOOK_ADDR + 1) & 0xFFFF)
+            EI(block)
+
+        init_interrupt_hook_macro = init_interrupt_hook
 
     def apply_viewer_screen_settings(block: Block) -> None:
         LD.A_n8(block, 2)
@@ -1257,8 +1284,7 @@ def build_boot_bank(
     XOR.A(b)
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
 
-    if INIT_MUSIC_FUNC:
-        INIT_MUSIC_FUNC.call(b)
+    init_interrupt_hook_macro(b)
 
     # --- [メインループ] ---
     b.label("MAIN_LOOP")
