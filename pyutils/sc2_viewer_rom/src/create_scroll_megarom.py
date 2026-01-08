@@ -758,7 +758,8 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             b.label(NORM_DONE)
 
         XOR.A(block)
-        SCROLL_NAME_TABLE_FUNC.call(block)
+        HALT(block)  # VBLANK待ち
+        SCROLL_NAME_TABLE_FUNC_NOWAIT.call(block)  # VBLANK中はＶＤＰウェイトをなくせる
 
         # --- パターンジェネレータ転送 ---
         calc_scroll_ptr(block, is_color=False)
