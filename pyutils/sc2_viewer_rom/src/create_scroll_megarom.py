@@ -1624,12 +1624,12 @@ def build_boot_bank(
     # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
     LD.A_mn16(b, ADDR.AUTO_SCROLL_DIR)
     CP.n8(b, 1)
-    JR_Z(b, "SYNC_SCROLL_ROW_DOWN")
+    JR_Z(b, "SYNC_SCROLL_ROW_UP_DOWN")
     SYNC_UP_SCROLL_ROW_FUNC.call(b)
-    JR(b, "SYNC_SCROLL_ROW_DONE")
-    b.label("SYNC_SCROLL_ROW_DOWN")
+    JR(b, "SYNC_SCROLL_ROW_UP_DOWN_DONE")
+    b.label("SYNC_SCROLL_ROW_UP_DOWN")
     SYNC_DOWN_SCROLL_ROW_FUNC.call(b)
-    b.label("SYNC_SCROLL_ROW_DONE")
+    b.label("SYNC_SCROLL_ROW_UP_DOWN_DONE")
 
     JP(b, "CHECK_AUTO_PAGE")
 
@@ -2397,3 +2397,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
