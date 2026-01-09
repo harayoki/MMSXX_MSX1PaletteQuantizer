@@ -1046,69 +1046,69 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
 
             # --- A: パターン(PG)転送 ---
             # バンク切り替え
-            RLCA(block);
-            RLCA(block);
-            AND.n8(block, 0x03);
+            RLCA(block)
+            RLCA(block)
+            AND.n8(block, 0x03)
             LD.C_A(block)
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-            ADD.A_C(block);
+            ADD.A_C(block)
             set_page2_bank(block)
             # ROMアドレス確定
-            POP.AF(block);
+            POP.AF(block)
             PUSH.AF(block)
-            AND.n8(block, 0x3F);
-            ADD.A_n8(block, 0x80);
-            LD.H_A(block);
+            AND.n8(block, 0x3F)
+            ADD.A_n8(block, 0x80)
+            LD.H_A(block)
             LD.L_n8(block, 0)
 
             # VRAM書き込み先
             PUSH.HL(block)
             LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, line_idx);
-            LD.H_A(block);
+            ADD.A_n8(block, line_idx)
+            LD.H_A(block)
             LD.L_n8(block, 0)
             SET_VRAM_WRITE_FUNC.call(block)
             # 転送
             POP.HL(block)
-            LD.C_n8(block, 0x98);
+            LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
 
             # --- B: カラー(CT)転送 ---
-            POP.AF(block);
+            POP.AF(block)
             PUSH.AF(block)
-            LD.L_A(block);
+            LD.L_A(block)
             LD.H_n8(block, 0)
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)
-            ADD.A_L(block);
+            ADD.A_L(block)
             LD.H_A(block)
-            LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR);
+            LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
             LD.E_A(block)
 
             # バンク正規化
             l_norm = unique_label(f"NORM_{direction}_{line_idx}")
             block.label(l_norm)
-            LD.A_H(block);
-            CP.n8(block, 0xC0);
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
             JR_C(block, l_norm + "D")
-            SUB.n8(block, 0x40);
-            LD.H_A(block);
-            INC.E(block);
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.E(block)
             JR(block, l_norm)
             block.label(l_norm + "D")
-            LD.A_E(block);
-            set_page2_bank(block);
+            LD.A_E(block)
+            set_page2_bank(block)
             LD.L_n8(block, 0)
 
             # VRAM書き込み先
             PUSH.HL(block)
             LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, 0x20 + line_idx);
-            LD.H_A(block);
+            ADD.A_n8(block, 0x20 + line_idx)
+            LD.H_A(block)
             LD.L_n8(block, 0)
             SET_VRAM_WRITE_FUNC.call(block)
             # 転送
             POP.HL(block)
-            LD.C_n8(block, 0x98);
+            LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
 
             POP.AF(block)  # スタック掃除
