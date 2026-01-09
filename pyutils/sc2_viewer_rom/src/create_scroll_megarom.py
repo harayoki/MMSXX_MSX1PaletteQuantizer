@@ -1442,7 +1442,7 @@ def build_boot_bank(
     OR.L(b)
     JR_Z(b, "CHECK_DOWN")
 
-    LD.BC_n16(b, 8)
+    LD.BC_n16(b, 4)
     OR.A(b)
     SBC.HL_BC(b)
     JR_NC(b, "SHIFT_UP_STORE")
@@ -1497,7 +1497,7 @@ def build_boot_bank(
     JP_C(b, "CHECK_AUTO_SCROLL")
 
     EX.DE_HL(b)  # HL = current, DE = limit
-    LD.BC_n16(b, 8)
+    LD.BC_n16(b, 4)
     ADD.HL_BC(b)
 
     PUSH.HL(b)
