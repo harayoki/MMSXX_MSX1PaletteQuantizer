@@ -1650,6 +1650,9 @@ def build_boot_bank(
     JP_Z(b, "AUTO_SCROLL_EDGE_TOP")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    # --- 自動スクロール時の方向フラグ(0=上)をセット ---
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
     LD.A_L(b)
     LD.mn16_A(b, ADDR.TARGET_ROW)
     JP(b, "DO_UPDATE_SCROLL")
@@ -1697,6 +1700,9 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    # --- 自動スクロール時の方向フラグ(1=下)をセット ---
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
 
     # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
     LD.BC_n16(b, 23)
