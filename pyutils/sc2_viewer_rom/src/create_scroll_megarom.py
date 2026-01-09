@@ -1031,7 +1031,18 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
 def build_sync_scroll_row_func(
     *, scroll_dir: str, group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
+    scroll_configs = {
+        "up": ((0, 0), (8, 8), (16, 16)),
+        "down": ((0, -16), (8, -8), (16, 0)),
+    }
+    scroll_config = scroll_configs[scroll_dir]
+
     def sync_scroll_row(block: Block) -> None:
+        # VRAM内の物理行 (0-7) を計算して保存
+        LD.A_mn16(block, ADDR.TARGET_ROW)
+        AND.n8(block, 0x07)
+        LD.mn16_A(block, ADDR.VRAM_ROW_OFFSET)
+
         # --- ① パターン (PG) 転送準備 ---
         # 行番号から2bit分を切り出してパターンバンク番号として使い、
         # タイルデータが格納されているROMバンクをページ2に接続する。
@@ -1056,10 +1067,12 @@ def build_sync_scroll_row_func(
 
         # --- カラー (CT) 転送 ---
         # 表示行に対応するカラー定義を 0/8/16 ライン先頭で VRAM へ直接出力する。
-        for line_offset in [0, 8, 16]:
+        for line_offset, img_adjust in scroll_config:
             LD.A_mn16(block, ADDR.TARGET_ROW)
-            if line_offset:
-                ADD.A_n8(block, line_offset)
+            if img_adjust > 0:
+                ADD.A_n8(block, img_adjust)
+            elif img_adjust < 0:
+                SUB.n8(block, -img_adjust)
             LD.D_A(block)
 
             # カラーデータのバンクを初期化
@@ -1091,8 +1104,7 @@ def build_sync_scroll_row_func(
             LD.L_n8(block, 0)
 
             PUSH.HL(block)
-            LD.A_mn16(block, ADDR.TARGET_ROW)
-            AND.n8(block, 0x07)
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
             ADD.A_n8(block, 0x20 + line_offset)
             LD.H_A(block)
             LD.L_n8(block, 0)
@@ -1106,11 +1118,13 @@ def build_sync_scroll_row_func(
         # 画面横32タイル分のパターンデータを3ブロックぶんそのまま転送する。
         # スクロール位置が1ライン進むとそれぞれ8ライン間隔で参照先がずれるため、
         # 0/8/16 ライン先頭を VRAM の各ミラー領域へ直接出力する。
-        for line_offset in [0, 8, 16]:
+        for line_offset, img_adjust in scroll_config:
             # 行番号にオフセットを加味し、対象バンクを決定。
             LD.A_mn16(block, ADDR.TARGET_ROW)
-            if line_offset:
-                ADD.A_n8(block, line_offset)
+            if img_adjust > 0:
+                ADD.A_n8(block, img_adjust)
+            elif img_adjust < 0:
+                SUB.n8(block, -img_adjust)
             LD.D_A(block)  # 後続のアドレス計算用に保持
 
             RLCA(block)
@@ -1132,8 +1146,7 @@ def build_sync_scroll_row_func(
 
             # 行オフセットを加味した VRAM 書き込みアドレスをセット
             PUSH.HL(block)
-            LD.A_mn16(block, ADDR.TARGET_ROW)
-            AND.n8(block, 0x07)
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
             if line_offset:
                 ADD.A_n8(block, line_offset)
             LD.H_A(block)
