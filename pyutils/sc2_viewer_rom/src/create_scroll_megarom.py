@@ -369,6 +369,7 @@ class ADDR:
 
     INPUT_HOLD = madd("INPUT_HOLD", 1, description="現在押されている全入力")
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
+    SKIP_AUTO_SCROLL = madd("SKIP_AUTO_SCROLL", 1, description="手動スクロール時は自動スクロールを抑止")
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
     TITLE_SECONDS_REMAINING = madd(
@@ -1414,6 +1415,8 @@ def build_boot_bank(
     HALT(b)  # V-Sync 待ち
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
 
     # ESC でコンフィグ（ヘルプ）シーンへ遷移
     LD.A_mn16(b, ADDR.INPUT_TRG)
@@ -1431,6 +1434,8 @@ def build_boot_bank(
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_UP)
     JR_Z(b, "CHECK_DOWN")
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1477,6 +1482,8 @@ def build_boot_bank(
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
     JP_Z(b, "CHECK_AUTO_SCROLL")
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1588,6 +1595,9 @@ def build_boot_bank(
 
     # --- 自動スクロール判定 ---
     b.label("CHECK_AUTO_SCROLL")
+    LD.A_mn16(b, ADDR.SKIP_AUTO_SCROLL)
+    OR.A(b)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
     OR.A(b)
     JP_Z(b, "CHECK_AUTO_PAGE")
