@@ -11,14 +11,16 @@ MSX1 SCREEN2 の縦スクロール ROM ビルダー。
   あれば再利用し、--no-cache 指定時のみ再生成する。
 - 量子化済み画像を 256 バイト × tile_rows のパターン／カラーデータに変換し、ASCII16
   MegaROM のデータバンクへバンク境界をまたぎながら隙間なく配置する。
+- BGM が指定されていれば 1 バンクに格納し、タイトル／ビューアーで再生できるようにする。
 - ブートバンクにスクロールビューアーを配置し、プログラム直後に各画像 7 バイトのヘッダー
-  （開始バンク、行数、初期スクロール方向、カラーデータのバンクとアドレス）を並べ、末尾
-  に 0xFF × 4 の終端情報
-  を付与する。
-- ビューアーは SCREEN 2 を初期化し、画像ヘッダーに埋め込まれた初期スクロール方向に応じて
-  初期スクロール位置を設定。上下キーで 1 行スクロールし、24 行ぶんの PG/CT を VRAM に転送
-  する。スペースで次の画像、SHIFT+スペースで前の画像に循環切り替えし、切り替え時に簡易
-  Beep を鳴らす。
+  （開始バンク、行数、初期表示位置(top/bottom)、カラーデータのバンクとアドレス）を並べ、
+  末尾に 0xFF × 4 の終端情報を付与する。
+- ビューアーは SCREEN 2 を初期化し、画像ヘッダーに基づいた初期表示位置からスタートする。
+  上下キーで 1 タイル行(8px)スクロールし、SHIFT+上下で 4 タイル行スクロールする。
+  自動スクロール／自動ページ送り／BEEP／BGM／VDP wait は ESC で開く SCREEN 0 の
+  設定メニューから切り替えられる。スペースで次の画像、GRAPHキーで前の画像に循環
+  切り替えし、切り替え時に簡易 Beep を鳴らす。
+- タイトル画面はカウントダウン付きで表示し、SPACE で開始、ESC で設定メニューへ遷移する。
 - `--use-debug-image` を指定するとテスト用パターンを生成し、それ以外ではビルド結果を
   ROM として出力、必要に応じてログを rominfo に書き出す。
 
@@ -53,6 +55,7 @@ from mmsxxasmhelper.core import (
     JP_NZ,
     JP_Z,
     JP_C,
+    JP_PE,
     JR,
     JR_C,
     JR_NC,
@@ -61,6 +64,7 @@ from mmsxxasmhelper.core import (
     JR_n8,
     DJNZ,
     LD,
+    DI,
     OR,
     POP,
     PUSH,
@@ -72,6 +76,9 @@ from mmsxxasmhelper.core import (
     NOP,
     OUT,
     OUT_A,
+    LDD,
+    LDI,
+    LDIR,
     EX,
     SBC,
     OUT_C,
@@ -81,6 +88,7 @@ from mmsxxasmhelper.core import (
     RLCA,
     BIT,
     HALT,
+    EI,
     unique_label,
     define_created_funcs,
     define_all_created_funcs_label_only,
@@ -90,6 +98,9 @@ from mmsxxasmhelper.core import (
     set_funcs_call_offset,
     set_funcs_bank,
     dump_func_bytes_on_finalize,
+    register_dump_target,
+    dump_mem,
+    dump_regs,
 )
 from mmsxxasmhelper.msxutils import (
     CHGCLR,
@@ -111,16 +122,20 @@ from mmsxxasmhelper.msxutils import (
     build_beep_control_utils,
     build_set_vram_write_func,
     build_scroll_name_table_func,
+    build_scroll_name_table_func2,
     build_outi_repeat_func,
     set_screen_colors_macro,
     set_text_cursor_macro,
     write_text_with_cursor_macro,
+    set_screen_display_macro,
+    set_screen_display_status_flag_macro,
 )
 from mmsxxasmhelper.config_scene import (
     Screen0ConfigEntry,
     build_screen0_config_menu,
     get_work_byte_length_for_screen0_config_menu,
 )
+from mmsxxasmhelper.psgstream import build_play_vgm_frame_func
 from mmsxxasmhelper.title_scene import build_title_screen_func
 from mmsxxasmhelper.utils import (
     pad_bytes,
@@ -131,10 +146,157 @@ from mmsxxasmhelper.utils import (
     print_bytes,
     debug_print_labels,
     MemAddrAllocator,
+    debug_print_pc,
 )
 
 from PIL import Image
 from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
+
+
+def int_from_str(value: str) -> int:
+    return int(value, 0)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
+    )
+    parser.add_argument(
+        "-i",
+        "--input",
+        dest="input",
+        metavar="PNG",
+        type=Path,
+        nargs="+",
+        action="append",
+        required=True,
+        help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
+    )
+    parser.add_argument(
+        "--use-debug-image",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--debug-image-index",
+        type=int,
+        default=0,
+        help="--use-debug-image 時に埋め込む番号",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="出力 ROM ファイル名（未指定なら自動命名）",
+    )
+    parser.add_argument(
+        "--background",
+        type=str,
+        default="#000000",
+        help="右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
+    )
+    parser.add_argument(
+        "--msx1pq-cli",
+        type=Path,
+        help="msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
+    )
+    parser.add_argument(
+        "--workdir",
+        type=Path,
+        help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
+    )
+    parser.add_argument(
+        "--fill-byte",
+        type=int_from_str,
+        default=0xFF,
+        help="未使用領域の埋め値 (default: 0xFF)",
+    )
+    parser.add_argument(
+        "--title-wait-seconds",
+        type=int,
+        default=5,
+        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
+    )
+    parser.add_argument(
+        "--rom-info",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="ROM情報テキストを出力するかどうか (default: ON)",
+    )
+    parser.add_argument(
+        "--beep",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="起動時のBEEP設定 (default: ON)",
+    )
+    parser.add_argument(
+        "--bgm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="起動時のBGM設定 (default: OFF)",
+    )
+    parser.add_argument(
+        "--bgm-path",
+        type=Path,
+        help="BGMのbinファイルパス (未指定の場合はBGM設定は強制OFF)",
+    )
+    parser.add_argument(
+        "--bgm-fps",
+        type=int,
+        choices=[30, 60],
+        default=30,
+        help="BGM再生FPS (default: 30)",
+    )
+    parser.add_argument(
+        "--start-at",
+        choices=["top", "bottom"],
+        default="top",
+        help="全画像の初期表示位置デフォルト (default: top)",
+    )
+    parser.add_argument(
+        "--start-at-override",
+        nargs="+",
+        choices=["top", "bottom"],
+        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
+    )
+    parser.add_argument(
+        "--start-at-random",
+        action="store_true",
+        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
+    )
+    parser.add_argument(
+        "--debug-build",
+        action="store_true",
+        help="デバッグ用ビルドモードを有効にする。",
+    )
+    parser.add_argument(
+        "--vdp-wait-for-name-table",
+        type=int_from_str,
+        choices=[0, 1],
+        default=0,
+        help="VDP WAITの設定(name table) (0=YES, 1=PARTIAL)",
+    )
+    parser.add_argument(
+        "--vdp-wait-for-pattern-gen",
+        type=int_from_str,
+        choices=[0, 1],
+        default=0,
+        help="VDP WAITの設定(pattern gen) (0=YES, 1=PARTIAL)",
+    )
+    parser.add_argument(
+        "--vdp-wait-for-color-table",
+        type=int_from_str,
+        choices=[0, 1],
+        default=0,
+        help="VDP WAITの設定(color table) (0=YES, 1=PARTIAL)",
+    )
+    return parser.parse_args()
+
+args = parse_args()
 
 PAGE_SIZE = 0x4000
 ROM_BASE = 0x4000
@@ -158,9 +320,10 @@ SCREEN_TILE_ROWS = 24
 IMAGE_HEADER_ENTRY_SIZE = 7
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
-OUTI_FUNCS_GROUP = "outi_funcs"
 
-OUTI_FUNCS_BACK_NUM:int = 1
+# OUTI_FUNCS_GROUP = "outi_funcs"
+# OUTI_FUNCS_BACK_NUM:int = 1
+
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
 AUTO_ADVANCE_INTERVAL_FRAMES = [
@@ -174,7 +337,33 @@ AUTO_ADVANCE_INTERVAL_FRAMES = [
     1 * 60,
     1,
 ]
+AUTO_SCROLL_INTERVAL_FRAMES = [
+    0,
+    30,
+    26,
+    22,
+    18,
+    14,
+    10,
+    6,
+    2,
+    1,
+]
+AUTO_SCROLL_EDGE_WAIT_FRAMES = [
+    0,
+    300,
+    266,
+    232,
+    198,
+    164,
+    130,
+    96,
+    60,
+    30,
+]
 AUTO_ADVANCE_INTERVAL_CHOICES = ["NONE", "3min", "1min", "30s", "10s", " 5s", " 3s", " 1s", "MAX"]
+AUTO_SCROLL_LEVEL_CHOICES = ["NONE", "1", "2", "3", "4", "5", "6", "7", "8", "MAX"]
+H_TIMI_HOOK_ADDR = 0xFD9F
 
 # 状況を保存するメモリアドレス
 mem_addr_allocator = MemAddrAllocator(WORK_RAM_BASE)
@@ -197,6 +386,7 @@ class ADDR:
 
     INPUT_HOLD = madd("INPUT_HOLD", 1, description="現在押されている全入力")
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
+    SKIP_AUTO_SCROLL = madd("SKIP_AUTO_SCROLL", 1, description="手動スクロール時は自動スクロールを抑止")
     BEEP_CNT = madd("BEEP_CNT", 1, description="BEEPカウンタ")
     BEEP_ACTIVE = madd("BEEP_ACTIVE", 1 , description="BEEP状態")
     TITLE_SECONDS_REMAINING = madd(
@@ -206,21 +396,68 @@ class ADDR:
     TITLE_COUNTDOWN_DIGITS = madd(
         "TITLE_COUNTDOWN_DIGITS", 3, description="タイトルの残り秒数文字列")
 
-    PG_BUFFER = madd("PG_BUFFER", 256)
-    CT_BUFFER = madd("CT_BUFFER", 256)
-    TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
+    SCROLL_DIRECTION = madd("SCROLL_DIRECTION", 1, description="スクロール方向 (1=下,255=上)")
+
+    PG_BUFFER = madd("PG_BUFFER", 256 * 3, description="1行分PG(256B)×3行の作業バッファ")
+    CT_BUFFER = madd("CT_BUFFER", 256 * 3, description="1行分CT(256B)×3行の作業バッファ")
+    TARGET_ROW = madd("TARGET_ROW", 2)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
+    SYNC_SCROLL_PG_VRAM_ADDRS = madd(
+        "SYNC_SCROLL_PG_VRAM_ADDRS", 2 * 3, description="同期スクロールPG転送先VRAMアドレス(3行)"
+    )
+    SYNC_SCROLL_CT_VRAM_ADDRS = madd(
+        "SYNC_SCROLL_CT_VRAM_ADDRS", 2 * 3, description="同期スクロールCT転送先VRAMアドレス(3行)"
+    )
     CONFIG_BEEP_ENABLED = madd(
-        "CONFIG_BEEP_ENABLED", 1, description="BEEPの有効/無効"
+        "CONFIG_BEEP_ENABLED",
+        1,
+        initial_value=bytes([1 if args.beep else 0]),
+        description="BEEPの有効/無効",
+    )
+    CONFIG_BGM_ENABLED = madd(
+        "CONFIG_BGM_ENABLED",
+        1,
+        initial_value=bytes([1 if args.bgm and args.bgm_path is not None else 0]),
+        description="BGMの有効/無効",
+    )
+    BGM_PTR_ADDR = madd(
+        "BGM_PTR_ADDR", 2, description="BGMストリームの現在位置"
+    )
+    BGM_LOOP_ADDR = madd(
+        "BGM_LOOP_ADDR", 2, description="BGMストリームのループ先頭"
+    )
+    # BGM_BANK_ADDR = madd(
+    #     "BGM_BANK_ADDR", 1, description="BGMストリームのバンク番号"
+    # )
+    CURRENT_PAGE2_BANK_ADDR = madd(
+        "CURRENT_PAGE2_BANK_ADDR", 1, description="ページ2に設定中のバンク番号"
+    )
+    VGM_TIMER_FLAG = madd(
+        "VGM_TIMER_FLAG", 1, initial_value=bytes([0]), description="VGM再生の1/2フレーム切り替えフラグ"
     )
     CONFIG_AUTO_SPEED = madd(
-        "CONFIG_AUTO_SPEED", 1, initial_value=bytes([0]), description="自動切り替え速度 (0-7)"
+        "CONFIG_AUTO_SPEED", 1, initial_value=bytes([4]), description="自動切り替え速度 (0-7)"
     )
     CONFIG_AUTO_SCROLL = madd(
-        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([1]), description="自動スクロールの有効/無効"
+        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([4]), description="自動スクロール速度 (0-9)"
+    )
+    CONFIG_AUTO_PAGE_EDGE = madd(
+        "CONFIG_AUTO_PAGE_EDGE", 1, initial_value=bytes([1]), description="自動スクロール中のページ端遷移"
     )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
+    )
+    AUTO_SCROLL_COUNTER = madd(
+        "AUTO_SCROLL_COUNTER", 2, description="自動スクロールの残りフレーム"
+    )
+    AUTO_SCROLL_EDGE_WAIT = madd(
+        "AUTO_SCROLL_EDGE_WAIT", 2, description="自動スクロール端待ちフレーム"
+    )
+    AUTO_SCROLL_DIR = madd(
+        "AUTO_SCROLL_DIR", 1, description="自動スクロール方向 (1=下,255=上)"
+    )
+    AUTO_SCROLL_TURN_STATE = madd(
+        "AUTO_SCROLL_TURN_STATE", 1, description="自動スクロール折返し状態 (0=なし,1=待機,2=開始)"
     )
     CONFIG_WORK_BASE = madd(
         "CONFIG_WORK_BASE",
@@ -228,7 +465,22 @@ class ADDR:
         description="コンフィグ用ワークベース",
     )
 
-# mem_addr_allocator.debug_print()
+
+if args.debug_build:
+    TEMP = madd(
+        "TEMP",
+        1,
+        description="Padding",
+    )
+    DEBUG_DUMP_8BYTE_1 = madd("DEBUG_DUMP_8BYTE_1", 8, description="デバッグ用8バイトダンプ")
+    DEBUG_DUMP_8BYTE_2 = madd("DEBUG_DUMP_8BYTE_2", 8, description="デバッグ用8バイトダンプ")
+    register_dump_target("DEBUG_DUMP_8BYTE_1", DEBUG_DUMP_8BYTE_1, 8)
+    register_dump_target("DEBUG_DUMP_8BYTE_2", DEBUG_DUMP_8BYTE_2, 8)
+
+
+def set_page2_bank(block: Block) -> None:
+    LD.mn16_A(block, ADDR.CURRENT_PAGE2_BANK_ADDR)
+    LD.mn16_A(block, ASCII16_PAGE2_REG)
 
 
 @dataclass
@@ -244,11 +496,6 @@ class ImageData:
     pattern: bytes
     color: bytes
     tile_rows: int
-
-
-def int_from_str(value: str) -> int:
-    return int(value, 0)
-
 
 @contextmanager
 def open_workdir(path: Path | None):
@@ -434,44 +681,44 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
     return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
 
 
-def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
-    def reset_name_table_call(block: Block) -> None:
-        # VRAMアドレスセット (NAME_BASE = 0x1800)
-        # 0x1800 を書き込みモードでセット
-        LD.A_n8(block, 0x00)     # 下位8bit
-        OUT(block, 0x99)
-        LD.A_n8(block, 0x18 | 0x40) # 上位8bit + Write Mode(0x40)
-        OUT(block, 0x99)
+# def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+#     def reset_name_table_call(block: Block) -> None:
+#         # VRAMアドレスセット (NAME_BASE = 0x1800)
+#         # 0x1800 を書き込みモードでセット
+#         LD.A_n8(block, 0x00)     # 下位8bit
+#         OUT(block, 0x99)
+#         LD.A_n8(block, 0x18 | 0x40) # 上位8bit + Write Mode(0x40)
+#         OUT(block, 0x99)
+#
+#         # 0~255 の出力を3回繰り返す
+#         LD.D_n8(block, 3)        # 3ブロック分
+#         LD.C_n8(block, 0x98)     # VDPデータポート
+#
+#         OUTER_LOOP = unique_label()
+#         INNER_LOOP = unique_label()
+#
+#         block.label(OUTER_LOOP)
+#         LD.A_n8(block, 0)        # 0から開始
+#
+#         block.label(INNER_LOOP)
+#         OUT_C.A(block)          # VDPへ A を出力 (OUT (C), A)
+#         # ※名前テーブルはデータが疎(1byte/1char)なので
+#         # ウェイト(JR $+2)がなくてもMSX1のVDPなら追いつくことが多いですが、
+#         # 念のため入れるならここに NOP や INC A を置きます。
+#         NOP(block)
+#         INC.A(block)             # 次のキャラクタ番号
+#         JR_NZ(block, INNER_LOOP) # 255を超えて0になるまでループ
+#
+#         DEC.D(block)             # 残りブロック数を減らす
+#         JR_NZ(block, OUTER_LOOP)
+#
+#     return Func("init_name_table_call", reset_name_table_call, group=group)
+#
+#
+# RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
-        # 0~255 の出力を3回繰り返す
-        LD.D_n8(block, 3)        # 3ブロック分
-        LD.C_n8(block, 0x98)     # VDPデータポート
 
-        OUTER_LOOP = unique_label()
-        INNER_LOOP = unique_label()
-
-        block.label(OUTER_LOOP)
-        LD.A_n8(block, 0)        # 0から開始
-
-        block.label(INNER_LOOP)
-        OUT_C.A(block)          # VDPへ A を出力 (OUT (C), A)
-        # ※名前テーブルはデータが疎(1byte/1char)なので
-        # ウェイト(JR $+2)がなくてもMSX1のVDPなら追いつくことが多いですが、
-        # 念のため入れるならここに NOP や INC A を置きます。
-        NOP(block)
-        INC.A(block)             # 次のキャラクタ番号
-        JR_NZ(block, INNER_LOOP) # 255を超えて0になるまでループ
-
-        DEC.D(block)             # 残りブロック数を減らす
-        JR_NZ(block, OUTER_LOOP)
-
-    return Func("init_name_table_call", reset_name_table_call, group=group)
-
-
-RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
-
-
-def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+def build_scroll_vram_xfer_func(with_wait: bool = True, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def scroll_vram_xfer(block: Block) -> None:
         # --- 入力規定 ---
         # HL: 計算済みのROM開始アドレス (0x8000 - 0xBFFF)
@@ -486,7 +733,7 @@ def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
 
         # 現在のバンクをメガROMにセット (Eレジスタの値を使用)
         LD.A_E(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
+        set_page2_bank(block)
 
         LD.B_n8(block, 0)  # 1ページ(256byte)転送用
         LD.C_n8(block, 0x98)  # VDPデータポート
@@ -498,9 +745,9 @@ def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             # 1バイト転送 (18T)
             OUTI(block)  # (HL)->(C), HL++, B--
 
-            # ウェイト無しでは画面が崩れた
-            # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
-            NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
+            if with_wait:
+                # JR_n8(block, 0)  # ウェイト (12T)　3マイクロ秒強稼ぐ
+                NOP(block, 2)  # 4*2=8T ウェイトの場合 これでも動くが危険？
         JP_NZ(block, "VRAM_BYTE_LOOP")
 
         # --- バンク境界チェック ---
@@ -544,14 +791,8 @@ def build_scroll_vram_xfer_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
     CALL scroll_vram_xfer
     """
 
-    return Func("scroll_vram_xfer", scroll_vram_xfer, group=group)
-
-
-SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
-SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
-    SET_VRAM_WRITE_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
-)
-SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
+    func_name = "scroll_vram_xfer" if with_wait else "sscroll_vram_xfer_no_wait"
+    return Func(func_name, scroll_vram_xfer, group=group)
 
 
 def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
@@ -602,7 +843,9 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             JR(b, NORM_LOOP)
             b.label(NORM_DONE)
 
-        RESET_NAME_TABLE_FUNC.call(block)
+        XOR.A(block)
+        HALT(block)  # VBLANK待ち
+        SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED.call(block)  # VBLANK中はＶＤＰウェイトをなくせる
 
         # --- パターンジェネレータ転送 ---
         calc_scroll_ptr(block, is_color=False)
@@ -634,13 +877,43 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
 DRAW_SCROLL_VIEW_FUNC = build_draw_scroll_view_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
-OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
-OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
-OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
-OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
-OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
-OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
-set_funcs_call_offset(OUTI_FUNCS, 0x8000)
+# OUTI_128_FUNC = build_outi_repeat_func(128, group=OUTI_FUNCS_GROUP)
+# OUTI_256_FUNC = build_outi_repeat_func(256, group=OUTI_FUNCS_GROUP)
+# OUTI_512_FUNC = build_outi_repeat_func(512, group=OUTI_FUNCS_GROUP)
+# OUTI_1024_FUNC = build_outi_repeat_func(1024, group=OUTI_FUNCS_GROUP)
+# OUTI_2048_FUNC = build_outi_repeat_func(2048, group=OUTI_FUNCS_GROUP)
+# OUTI_FUNCS: tuple[Func, ...] = get_funcs_by_group(OUTI_FUNCS_GROUP)
+# set_funcs_call_offset(OUTI_FUNCS, 0x8000)
+
+OUTI_256_FUNC = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
+OUTI_256_FUNC_NO_WAIT = build_outi_repeat_func(256, weight=0, group=SCROLL_VIEWER_FUNC_GROUP)
+
+SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
+SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
+    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+    group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL = build_scroll_name_table_func2(
+    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+    OUTI_256_FUNC=OUTI_256_FUNC,
+    OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
+    use_no_wait="PARTIAL",
+    group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
+    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
+    OUTI_256_FUNC=OUTI_256_FUNC,
+    OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
+    use_no_wait="YES",
+    group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED = (
+    SCROLL_NAME_TABLE_FUNC_NOWAIT
+    if args.vdp_wait_for_name_table == 0
+    else SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
+)
+SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
+
 
 def build_update_image_display_func(
     image_entries_count: int, *, group: str = DEFAULT_FUNC_GROUP_NAME
@@ -725,6 +998,25 @@ def build_update_image_display_func(
         EX.DE_HL(block)
         LD.mn16_HL(block, ADDR.AUTO_ADVANCE_COUNTER)
 
+        # 自動スクロール用カウンタを初期化
+        LD.A_mn16(block, ADDR.CONFIG_AUTO_SCROLL)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, "AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        EX.DE_HL(block)
+        LD.mn16_HL(block, ADDR.AUTO_SCROLL_COUNTER)
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, ADDR.AUTO_SCROLL_EDGE_WAIT)
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, ADDR.AUTO_SCROLL_DIR)
+        XOR.A(block)
+        LD.mn16_A(block, ADDR.AUTO_SCROLL_TURN_STATE)
+
         RET(block)
 
     return Func(
@@ -740,187 +1032,179 @@ BEEP_WRITE_FUNC, SIMPLE_BEEP_FUNC, UPDATE_BEEP_FUNC = build_beep_control_utils(
     ADDR.BEEP_CNT, ADDR.BEEP_ACTIVE, group=SCROLL_VIEWER_FUNC_GROUP
 )
 
+# 上下それぞれで異なるオフセット設定を定義
+SCROLL_CONFIGS = {
+    "UP": [(0, 0), (8, 8), (16, 16)],  # VRAM上段にTARGET_ROW、下段に+16
+    "DOWN": [(0, -16), (8, -8), (16, 0)],  # VRAM下段にTARGET_ROW、上段に-16
+}
 
-def build_sync_scroll_row_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
-    def sync_scroll_row(block: Block) -> None:
-        # --- ① パターン (PG) 転送準備 ---
-        # (バンク切り替えと初期アドレス計算はそのまま)
-        LD.A_mn16(block, ADDR.TARGET_ROW)
-        RLCA(block)
-        RLCA(block)
-        AND.n8(block, 0x03)
-        LD.C_A(block)
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-        ADD.A_C(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
-        LD.B_A(block)
 
-        LD.A_mn16(block, ADDR.TARGET_ROW)
-        AND.n8(block, 0x3F)
-        ADD.A_n8(block, 0x80)
-        LD.H_A(block)
-        LD.L_n8(block, 0)
+def build_sync_scroll_prepare_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+    def sync_scroll_prepare(block: Block) -> None:
+        # --- 1. VRAM内の物理行 (0-7) を計算して保存 ---
+        LD.HL_mn16(block, ADDR.TARGET_ROW)
+        LD.A_L(block)
+        AND.n8(block, 0x07)
+        LD.mn16_A(block, ADDR.VRAM_ROW_OFFSET)
 
-        # --- PG 並べ替え読み込み (Z80ループ版) ---
-        LD.DE_n16(block, ADDR.PG_BUFFER)
-        LD.A_n8(block, 32)  # タイル数カウンタ
-
-        TILE_LOOP_PG = unique_label("TILE_LOOP_PG")
-        block.label(TILE_LOOP_PG)
-        PUSH.AF(block)  # カウンタ保存
-        PUSH.HL(block)
-        PUSH.BC(block)
-
-        # 1タイル(8ライン)の読み込み
-        for _ in range(8):
-            lbl_skip = unique_label("PG_SKIP")
-            LD.A_H(block)
-            CP.n8(block, 0xC0)
-            JR_C(block, lbl_skip)
-            SUB.n8(block, 0x40)
-            LD.H_A(block)
-            INC.B(block)
-            LD.A_B(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)
-            block.label(lbl_skip)
-
-            LD.A_mHL(block)
-            LD.mDE_A(block)
-            INC.DE(block)
-            LD.BC_n16(block, 32)
-            ADD.HL_BC(block)
-
-        POP.BC(block)
-        LD.A_B(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)  # バンク戻す
-        POP.HL(block)
-        INC.HL(block)  # 次のタイルアドレスへ
-
-        POP.AF(block)
-        DEC.A(block)
-        JP_NZ(block, TILE_LOOP_PG)  # 32回繰り返す
-
-        # --- ② カラー (CT) 転送準備 ---
-        # (CT用のアドレス計算)
-        LD.A_mn16(block, ADDR.TARGET_ROW)
-        LD.L_A(block)
-        LD.H_n8(block, 0)
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)
-        ADD.A_L(block)
-        LD.H_A(block)
-        LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
-        LD.E_A(block)
-
-        lbl_ct_norm = unique_label("CT_NORM")
-        lbl_ct_done = unique_label("CT_DONE")
-        block.label(lbl_ct_norm)
-        LD.A_H(block)
-        CP.n8(block, 0xC0)
-        JR_C(block, lbl_ct_done)
-        SUB.n8(block, 0x40)
-        LD.H_A(block)
-        INC.E(block)
-        JR(block, lbl_ct_norm)
-        block.label(lbl_ct_done)
-
-        LD.A_E(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
-        LD.B_A(block)
-        LD.L_n8(block, 0)
-
-        # --- CT 並べ替え読み込み (Z80ループ版) ---
-        LD.DE_n16(block, ADDR.CT_BUFFER)
-        LD.A_n8(block, 32)
-
-        TILE_LOOP_CT = unique_label("TILE_LOOP_CT")
-        block.label(TILE_LOOP_CT)
-        PUSH.AF(block)
-        PUSH.HL(block)
-        PUSH.BC(block)
-
-        for _ in range(8):
-            lbl_ct_skip = unique_label("CT_SKIP")
-            LD.A_H(block)
-            CP.n8(block, 0xC0)
-            JR_C(block, lbl_ct_skip)
-            SUB.n8(block, 0x40)
-            LD.H_A(block)
-            INC.B(block)
-            LD.A_B(block)
-            LD.mn16_A(block, ASCII16_PAGE2_REG)
-            block.label(lbl_ct_skip)
-
-            LD.A_mHL(block)
-            LD.mDE_A(block)
-            INC.DE(block)
-            LD.BC_n16(block, 32)
-            ADD.HL_BC(block)
-
-        POP.BC(block)
-        LD.A_B(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
-        POP.HL(block)
-        INC.HL(block)
-
-        POP.AF(block)
-        DEC.A(block)
-        JP_NZ(block, TILE_LOOP_CT)
-
-        # --- ③ VRAM 転送 (ミラーリング) ---
-        # ページ2に高速転送関数が入っているバンクを接続
-        LD.A_n8(block, OUTI_FUNCS_BACK_NUM)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
-
-        LD.A_mn16(block, ADDR.TARGET_ROW)
-        AND.n8(block, 0x07)  # A = 行オフセット(0-7)
-        LD.B_A(block)  # Bレジスタに行オフセットを保持
-
-        # パターン転送 (0x00, 0x08, 0x10)
-        for base_h in [0x00, 0x08, 0x10]:
-            LD.A_B(block)
-            ADD.A_n8(block, base_h)
+        # 方向に応じたオフセットでループ
+        for buf_index, (line_idx, img_adj) in enumerate(SCROLL_CONFIGS[direction]):
+            # --- VRAM転送先を事前計算 ---
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            if line_idx != 0:
+                ADD.A_n8(block, line_idx)
             LD.H_A(block)
             LD.L_n8(block, 0)
-            SET_VRAM_WRITE_FUNC.call(block)
-            LD.HL_n16(block, ADDR.PG_BUFFER)  # 転送元RAMアドレス
-            LD.C_n8(block, 0x98)
-            # 256個の OUTI 羅列関数を呼び出し
-            OUTI_256_FUNC.call(block)
-            # for _ in range(256):
-            #     OUTI(block)
+            LD.mn16_HL(block, ADDR.SYNC_SCROLL_PG_VRAM_ADDRS + (2 * buf_index))
 
-        # カラー転送 (0x20, 0x28, 0x30)
-        for base_h in [0x20, 0x28, 0x30]:
-            LD.A_B(block)
-            ADD.A_n8(block, base_h)
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            ADD.A_n8(block, 0x20 + line_idx)
             LD.H_A(block)
             LD.L_n8(block, 0)
-            SET_VRAM_WRITE_FUNC.call(block)
-            LD.HL_n16(block, ADDR.CT_BUFFER)  # 転送元RAMアドレス
-            LD.C_n8(block, 0x98)
-            # 256個の OUTI 羅列関数を呼び出し
-            OUTI_256_FUNC.call(block)
-            # for _ in range(256):
-            #     OUTI(block)
+            LD.mn16_HL(block, ADDR.SYNC_SCROLL_CT_VRAM_ADDRS + (2 * buf_index))
 
-        # 最後にページ2をメインバンク(0)に戻しておく
-        XOR.A(block)
-        LD.mn16_A(block, ASCII16_PAGE2_REG)
+            # --- 画像上の参照行 A = TARGET_ROW + img_adj ---
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
+            if img_adj != 0:
+                if img_adj > 0:
+                    LD.BC_n16(block, img_adj)
+                    ADD.HL_BC(block)
+                else:
+                    LD.BC_n16(block, -img_adj)
+                    OR.A(block)
+                    SBC.HL_BC(block)
+            PUSH.HL(block)  # 画像行を保存
+
+            # --- A: パターン(PG)準備 ---
+            # バンク切り替え
+            POP.HL(block)
+            PUSH.HL(block)
+            LD.B_H(block)
+            LD.C_L(block)
+            LD.HL_n16(block, DATA_BANK_ADDR)
+            LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
+            LD.E_A(block)
+
+            LD.A_C(block)
+            ADD.A_H(block)
+            LD.H_A(block)
+
+            LD.A_B(block)
+            ADD.A_A(block)
+            ADD.A_A(block)
+            ADD.A_E(block)
+            LD.E_A(block)
+
+            l_norm_pg = unique_label(f"NORM_PG_{direction}_{line_idx}")
+            block.label(l_norm_pg)
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, l_norm_pg + "D")
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.E(block)
+            JR(block, l_norm_pg)
+            block.label(l_norm_pg + "D")
+
+            LD.A_E(block)
+            set_page2_bank(block)
+
+            LD.DE_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
+            LD.BC_n16(block, 256)
+            LDIR(block)
+
+            # --- B: カラー(CT)準備 ---
+            POP.HL(block)
+            LD.B_H(block)
+            LD.C_L(block)
+            LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
+            LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
+            LD.E_A(block)
+
+            LD.A_C(block)
+            ADD.A_H(block)
+            LD.H_A(block)
+
+            LD.A_B(block)
+            ADD.A_A(block)
+            ADD.A_A(block)
+            ADD.A_E(block)
+            LD.E_A(block)
+
+            # バンク正規化
+            l_norm = unique_label(f"NORM_CT_{direction}_{line_idx}")
+            block.label(l_norm)
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, l_norm + "D")
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.E(block)
+            JR(block, l_norm)
+            block.label(l_norm + "D")
+            LD.A_E(block)
+            set_page2_bank(block)
+            LD.L_n8(block, 0)
+
+            LD.DE_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
+            LD.BC_n16(block, 256)
+            LDIR(block)
 
         RET(block)
-    return Func("SYNC_SCROLL_ROW", sync_scroll_row, no_auto_ret=True, group=group)
+
+    return Func(f"SYNC_SCROLL_PREPARE_{direction}", sync_scroll_prepare, no_auto_ret=True, group=group)
+
+
+def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+    def sync_scroll_transfer(block: Block) -> None:
+        # 方向に応じたオフセットでループ
+        for buf_index, (line_idx, _img_adj) in enumerate(SCROLL_CONFIGS[direction]):
+            # --- A: パターン(PG)転送 ---
+            LD.DE_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
+            LD.HL_mn16(block, ADDR.SYNC_SCROLL_PG_VRAM_ADDRS + (2 * buf_index))
+            SET_VRAM_WRITE_FUNC.call(block)
+            EX.DE_HL(block)
+            LD.C_n8(block, 0x98)
+            if args.vdp_wait_for_pattern_gen == 0:
+                OUTI_256_FUNC_NO_WAIT.call(block)
+            else:
+                OUTI_256_FUNC.call(block)
+
+            # --- B: カラー(CT)転送 ---
+            LD.DE_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
+            LD.HL_mn16(block, ADDR.SYNC_SCROLL_CT_VRAM_ADDRS + (2 * buf_index))
+            SET_VRAM_WRITE_FUNC.call(block)
+            EX.DE_HL(block)
+            LD.C_n8(block, 0x98)
+            if args.vdp_wait_for_color_table == 0:
+                OUTI_256_FUNC_NO_WAIT.call(block)
+            else:
+                OUTI_256_FUNC.call(block)
+
+        RET(block)
+
+    return Func(f"SYNC_SCROLL_TRANSFER_{direction}", sync_scroll_transfer, no_auto_ret=True, group=group)
 
 
 def build_config_scene_func(
-    *, update_input_func: Func, group: str = DEFAULT_FUNC_GROUP_NAME
+    *,
+    update_input_func: Func,
+    bgm_on_change_func: Func | None = None,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
 ) -> tuple[Func, Sequence[Func]]:
     """設定メニューシーンを生成する。"""
 
     entries = [
         Screen0ConfigEntry(
             "BEEP",
-            ["O N", "OFF"],
+            ["OFF", "O N"],
             ADDR.CONFIG_BEEP_ENABLED,
+        ),
+        Screen0ConfigEntry(
+            "BGM",
+            ["OFF", "O N"],
+            ADDR.CONFIG_BGM_ENABLED,
+            on_change_addr=bgm_on_change_func,
         ),
         Screen0ConfigEntry(
             "AUTO PAGE",
@@ -928,8 +1212,13 @@ def build_config_scene_func(
             ADDR.CONFIG_AUTO_SPEED,
         ),
         Screen0ConfigEntry(
+            "AUTO PAGE EDGE",
+            ["N O", "YES"],
+            ADDR.CONFIG_AUTO_PAGE_EDGE,
+        ),
+        Screen0ConfigEntry(
             "AUTO SCROLL",
-            ["O N", "OFF"],
+            AUTO_SCROLL_LEVEL_CHOICES,
             ADDR.CONFIG_AUTO_SCROLL,
         ),
     ]
@@ -944,7 +1233,7 @@ def build_config_scene_func(
             "",
             "ESC : ENTER | EXIT THIS HELP",
             "SPACE: NEXT IMAGE",
-            "SHIFT+SPACE: PREV IMAGE",
+            "GRAPH: PREV IMAGE",
             "UP/DOWN: SCROLL",
             "SHIFT+UP/DOWN: FAST SCROLL",
         ],
@@ -960,9 +1249,17 @@ def build_config_scene_func(
     return Func("CONFIG_SCENE", config_scene, group=group), table_funcs
 
 
-SYNC_SCROLL_ROW_FUNC = build_sync_scroll_row_func(group=SCROLL_VIEWER_FUNC_GROUP)
-CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNCS = build_config_scene_func(
-    update_input_func=UPDATE_INPUT_FUNC, group=SCROLL_VIEWER_FUNC_GROUP
+SYNC_SCROLL_UP_PREP_FUNC = build_sync_scroll_prepare_func(
+    direction="UP", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_SCROLL_DOWN_PREP_FUNC = build_sync_scroll_prepare_func(
+    direction="DOWN", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_SCROLL_UP_TRANSFER_FUNC = build_sync_scroll_transfer_func(
+    direction="UP", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_SCROLL_DOWN_TRANSFER_FUNC = build_sync_scroll_transfer_func(
+    direction="DOWN", group=SCROLL_VIEWER_FUNC_GROUP
 )
 
 
@@ -984,7 +1281,11 @@ def build_boot_bank(
     fill_byte: int,
     title_wait_seconds: int,
     beep_enabled_default: bool,
+    bgm_enabled_default: bool,
+    bgm_start_bank: int | None,
+    bgm_fps: int,
     log_lines: List[str] | None = None,
+    debug_build: bool = False,
 ) -> bytes:
     if not image_entries:
         raise ValueError("image_entries must not be empty")
@@ -1002,6 +1303,65 @@ def build_boot_bank(
         update_input_func=UPDATE_INPUT_FUNC,
         group=SCROLL_VIEWER_FUNC_GROUP,
     )
+    def init_interrupt_hook_macro(block: Block) -> None:
+        pass
+
+    print("Building BGM playback function... bgm_start_bank:", bgm_start_bank)
+    _, psg_isr_macro, mute_psg_macro = build_play_vgm_frame_func(
+        ADDR.BGM_PTR_ADDR,
+        ADDR.BGM_LOOP_ADDR,
+        ADDR.VGM_TIMER_FLAG,
+        ADDR.CONFIG_BGM_ENABLED,
+        vgm_bank_num=bgm_start_bank,
+        current_bank_addr=ADDR.CURRENT_PAGE2_BANK_ADDR,
+        page2_bank_reg_addr=ASCII16_PAGE2_REG,
+        fps30=bgm_fps == 30,
+    )
+
+    def bgm_setting_changed(block: Block) -> None:
+        # BGMがOFFならPSGをミュート
+        LD.A_mn16(block, ADDR.CONFIG_BGM_ENABLED)
+        OR.A(block)
+        LABEL_SKIP_MUTE = unique_label("BGM_SKIP_MUTE")
+        JR_NZ(block, LABEL_SKIP_MUTE)
+        mute_psg_macro(block)
+        block.label(LABEL_SKIP_MUTE)
+        RET(block)
+
+    BGM_SETTING_CHANGED_FUNC = Func(
+        "BGM_SETTING_CHANGED",
+        bgm_setting_changed,
+        group=SCROLL_VIEWER_FUNC_GROUP,
+    )
+
+    if bgm_start_bank is not None:
+
+        def interrupt_handler(block: Block) -> None:
+            PUSH.AF(block)
+            PUSH.BC(block)
+            PUSH.DE(block)
+            PUSH.HL(block)
+            PUSH.IX(block)
+            PUSH.IY(block)
+            psg_isr_macro(block)
+            POP.IY(block)
+            POP.IX(block)
+            POP.HL(block)
+            POP.DE(block)
+            POP.BC(block)
+            POP.AF(block)
+
+        Func("INTERRUPT_HANDLER", interrupt_handler, group=SCROLL_VIEWER_FUNC_GROUP)
+
+        def init_interrupt_hook(block: Block) -> None:
+            DI(block)
+            LD.A_n8(block, 0xC3)
+            LD.mn16_A(block, H_TIMI_HOOK_ADDR)
+            LD.HL_label(block, "INTERRUPT_HANDLER")
+            LD.mn16_HL(block, (H_TIMI_HOOK_ADDR + 1) & 0xFFFF)
+            EI(block)
+
+        init_interrupt_hook_macro = init_interrupt_hook
 
     def apply_viewer_screen_settings(block: Block) -> None:
         LD.A_n8(block, 2)
@@ -1015,14 +1375,21 @@ def build_boot_bank(
         LD.mn16_A(block, BDRCLR)
         CALL(block, CHGCLR)
 
-    set_debug(True)
+    if debug_build:
+        set_debug(True)
 
-    ensure_funcs_defined(OUTI_FUNCS)
+    # ensure_funcs_defined(OUTI_FUNCS)
 
     if any(entry.start_bank < 1 or entry.start_bank > 0xFF for entry in image_entries):
         raise ValueError("start_bank must fit in 1 byte and be >= 1")
 
-    b = Block()
+    b = Block(debug=debug_build)
+
+    CONFIG_SCENE_FUNC, CONFIG_TABLE_FUNCS = build_config_scene_func(
+        update_input_func=UPDATE_INPUT_FUNC,
+        bgm_on_change_func=BGM_SETTING_CHANGED_FUNC,
+        group=SCROLL_VIEWER_FUNC_GROUP,
+    )
 
     config_table_dump = io.StringIO()
     dump_func_bytes_on_finalize(
@@ -1040,11 +1407,12 @@ def build_boot_bank(
 
     # コンフィグの初期値を設定
     mem_addr_allocator.emit_initial_value_loader(b)
-    if beep_enabled_default:
-        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
-    else:
-        LD.A_n8(b, 1)
-        LD.mn16_A(b, ADDR.CONFIG_BEEP_ENABLED)
+    if bgm_start_bank is not None:
+        LD.A_n8(b, bgm_start_bank & 0xFF)
+        # LD.mn16_A(b, ADDR.BGM_BANK_ADDR)
+        LD.HL_n16(b, DATA_BANK_ADDR)
+        LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
+        LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
 
     TITLE_SCREEN_FUNC.call(b)
 
@@ -1062,7 +1430,8 @@ def build_boot_bank(
 
     b.label(AFTER_TITLE_CONFIG)
 
-    RESET_NAME_TABLE_FUNC.call(b)
+    XOR.A(b)
+    SCROLL_NAME_TABLE_FUNC.call(b)
 
     # 現在のページを記憶
     LD.A_n8(b, 0)
@@ -1072,7 +1441,7 @@ def build_boot_bank(
     LD.HL_label(b, "IMAGE_HEADER_TABLE")  # 各埋め込み画像のバンク番号やアドレスが書き込まれているアドレス
     LD.A_mHL(b)
     LD.mn16_A(b, ADDR.CURRENT_IMAGE_START_BANK_ADDR)  # 保存
-    LD.mn16_A(b, ASCII16_PAGE2_REG)  # バンク切り替え
+    set_page2_bank(b)  # バンク切り替え
 
     # DE = パターンジェネレータアドレス
     INC.HL(b)
@@ -1111,11 +1480,15 @@ def build_boot_bank(
     XOR.A(b)
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
 
+    init_interrupt_hook_macro(b)
+
     # --- [メインループ] ---
     b.label("MAIN_LOOP")
     HALT(b)  # V-Sync 待ち
     UPDATE_BEEP_FUNC.call(b)
     UPDATE_INPUT_FUNC.call(b)
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
 
     # ESC でコンフィグ（ヘルプ）シーンへ遷移
     LD.A_mn16(b, ADDR.INPUT_TRG)
@@ -1133,6 +1506,8 @@ def build_boot_bank(
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_UP)
     JR_Z(b, "CHECK_DOWN")
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1144,7 +1519,7 @@ def build_boot_bank(
     OR.L(b)
     JR_Z(b, "CHECK_DOWN")
 
-    LD.BC_n16(b, 8)
+    LD.BC_n16(b, 4)
     OR.A(b)
     SBC.HL_BC(b)
     JR_NC(b, "SHIFT_UP_STORE")
@@ -1153,7 +1528,7 @@ def build_boot_bank(
     b.label("SHIFT_UP_STORE")
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
-    JP(b, "CHECK_AUTO")
+    JP(b, "CHECK_AUTO_SCROLL")
 
     b.label("SCROLL_UP_SINGLE")
 
@@ -1165,16 +1540,21 @@ def build_boot_bank(
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
+    # --- 追記：方向フラグ(0=上)をセット ---
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
+
     # ターゲット行は「新しく入ってきた上端の行」
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
-    JR(b, "DO_UPDATE_SCROLL")
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
+    JP(b, "DO_UPDATE_SCROLL")
 
     b.label("CHECK_DOWN")
     # 下キー判定
     LD.A_mn16(b, ADDR.INPUT_HOLD)
     BIT.n8_A(b, INPUT_KEY_BIT.L_DOWN)
-    JP_Z(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO_SCROLL")
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1191,11 +1571,11 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JP_Z(b, "CHECK_AUTO")  # 下限到達
-    JP_C(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO_SCROLL")  # 下限到達
+    JP_C(b, "CHECK_AUTO_SCROLL")
 
     EX.DE_HL(b)  # HL = current, DE = limit
-    LD.BC_n16(b, 8)
+    LD.BC_n16(b, 4)
     ADD.HL_BC(b)
 
     PUSH.HL(b)
@@ -1212,7 +1592,7 @@ def build_boot_bank(
     b.label("SHIFT_DOWN_STORE")
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
     DRAW_SCROLL_VIEW_FUNC.call(b)
-    JP(b, "CHECK_AUTO")
+    JP(b, "CHECK_AUTO_SCROLL")
 
     b.label("SCROLL_DOWN_SINGLE")
 
@@ -1227,46 +1607,258 @@ def build_boot_bank(
     OR.A(b)
     SBC.HL_DE(b)
     POP.HL(b)
-    JP_Z(b, "CHECK_AUTO")  # 下限到達
-    JP_C(b, "CHECK_AUTO")
+    JP_Z(b, "CHECK_AUTO_SCROLL")  # 下限到達
+    JP_C(b, "CHECK_AUTO_SCROLL")
 
     # 1行下へ移動
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
 
+    # --- 追記：方向フラグ(1=下)をセット ---
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
+
     # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
     LD.BC_n16(b, 23)
     ADD.HL_BC(b)
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
 
     b.label("DO_UPDATE_SCROLL")
-    # 1. 新しい行の PG/CT を転送
-    SYNC_SCROLL_ROW_FUNC.call(b)
-
-    # 2. 名前テーブルをずらす (TABLE_MOD24 を使用)
+    # 1. 名前テーブルをずらす (TABLE_MOD24 を使用)
     LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     LD.L_A(b)
     LD.H_n8(b, 0)
     LD.DE_label(b, "TABLE_MOD24")
     ADD.HL_DE(b)
+    PUSH.HL(b)
+    # 1. 新しい行の PG/CT を準備 (バッファ展開)
+    LD.A_mn16(b, ADDR.SCROLL_DIRECTION)
+    OR.A(b)
+    JR_NZ(b, "DO_SYNC_PREP_DOWN")
+
+    # 上スクロール用
+    SYNC_SCROLL_UP_PREP_FUNC.call(b)
+    JR(b, "SYNC_PREP_DONE")
+
+    b.label("DO_SYNC_PREP_DOWN")
+    # 下スクロール用
+    SYNC_SCROLL_DOWN_PREP_FUNC.call(b)
+
+    b.label("SYNC_PREP_DONE")
+    POP.HL(b)
+
     LD.A_mHL(b)
-    SCROLL_NAME_TABLE_FUNC.call(b)
-    # --- [差し替えここまで] ---
+    HALT(b)  # ここでVBLANKを待つ
+    SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED.call(b)  # VBLANK中はＶＤＰウェイトをなくせる
+
+    # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
+    LD.A_mn16(b, ADDR.SCROLL_DIRECTION)
+    OR.A(b)
+    JR_NZ(b, "DO_SYNC_XFER_DOWN")
+
+    # 上スクロール用
+    SYNC_SCROLL_UP_TRANSFER_FUNC.call(b)
+    JR(b, "SYNC_XFER_DONE")
+
+    b.label("DO_SYNC_XFER_DOWN")
+    # 下スクロール用
+    SYNC_SCROLL_DOWN_TRANSFER_FUNC.call(b)
+
+    b.label("SYNC_XFER_DONE")
+
+    JP(b, "CHECK_AUTO_PAGE")
+
+    # --- 自動スクロール判定 ---
+    b.label("CHECK_AUTO_SCROLL")
+    LD.A_mn16(b, ADDR.SKIP_AUTO_SCROLL)
+    OR.A(b)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    OR.A(b)
+    JP_Z(b, "CHECK_AUTO_PAGE")
+
+    # 端待ちカウンタが動作中なら優先して処理
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_SCROLL_COUNTER_CHECK")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    CP.n8(b, 1)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_n8(b, 2)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    JP(b, "CHECK_AUTO_PAGE")
+
+    b.label("AUTO_SCROLL_COUNTER_CHECK")
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_COUNTER)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_SCROLL_STEP")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
+    JP(b, "CHECK_AUTO_PAGE")
+
+    b.label("AUTO_SCROLL_STEP")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_COUNTER)
+
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    CP.n8(b, 1)
+    JR_NZ(b, "AUTO_SCROLL_STEP_DIR")
+    LD.A_n8(b, 2)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+
+    # 方向に応じて端判定と移動
+    b.label("AUTO_SCROLL_STEP_DIR")
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_DIR)
+    CP.n8(b, 1)
+    JP_Z(b, "AUTO_SCROLL_DOWN")
+
+    # 上方向
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_H(b)
+    OR.L(b)
+    JP_Z(b, "AUTO_SCROLL_EDGE_TOP")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    # --- 自動スクロール時の方向フラグ(0=上)をセット ---
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
+    JP(b, "DO_UPDATE_SCROLL")
+
+    b.label("AUTO_SCROLL_EDGE_TOP")
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_EDGE_WAIT_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    JP(b, "CHECK_AUTO_PAGE")
+
+    b.label("AUTO_SCROLL_DOWN")
+    # 最大値 (総行数 - 24) チェック
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)  # HL = limit
+
+    LD.DE_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    PUSH.HL(b)
+    OR.A(b)
+    SBC.HL_DE(b)
+    POP.HL(b)
+    JR_Z(b, "AUTO_SCROLL_EDGE_BOTTOM")
+    JR_C(b, "AUTO_SCROLL_EDGE_BOTTOM")
+
+    # 端待ちを解除して 1行下へ移動
+    LD.HL_n16(b, 0)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    INC.HL(b)
+    LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    # --- 自動スクロール時の方向フラグ(1=下)をセット ---
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
+
+    # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
+    LD.BC_n16(b, 23)
+    ADD.HL_BC(b)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
+    JP(b, "DO_UPDATE_SCROLL")
+
+    b.label("AUTO_SCROLL_EDGE_BOTTOM")
+    LD.HL_mn16(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_H(b)
+    OR.L(b)
+    JP_NZ(b, "CHECK_AUTO_PAGE")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    LD.L_A(b)
+    LD.H_n8(b, 0)
+    ADD.HL_HL(b)
+    LD.DE_label(b, "AUTO_SCROLL_EDGE_WAIT_FRAMES_TABLE")
+    ADD.HL_DE(b)
+    LD.E_mHL(b)
+    INC.HL(b)
+    LD.D_mHL(b)
+    EX.DE_HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_SCROLL_EDGE_WAIT)
+    LD.A_n8(b, 0xFF)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    JP(b, "CHECK_AUTO_PAGE")
 
     # --- 自動切り替え判定 ---
-    b.label("CHECK_AUTO")
+    b.label("CHECK_AUTO_PAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
     OR.A(b)
-    JR_Z(b, "CHECK_SPACE")
+    JR_Z(b, "CHECK_GRAPH")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_SCROLL)
+    OR.A(b)
+    JR_Z(b, "AUTO_PAGE_COUNTER_CHECK")
+    LD.A_mn16(b, ADDR.CONFIG_AUTO_PAGE_EDGE)
+    OR.A(b)
+    JR_Z(b, "AUTO_PAGE_COUNTER_CHECK")
+
+    b.label("AUTO_PAGE_COUNTER_CHECK_EDGE")
+    LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
+    LD.A_H(b)
+    OR.L(b)
+    JR_Z(b, "AUTO_PAGE_EDGE_CHECK")
+    DEC.HL(b)
+    LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
+    JR(b, "CHECK_GRAPH")
+
+    b.label("AUTO_PAGE_EDGE_CHECK")
+    LD.HL_mn16(b, ADDR.CURRENT_IMAGE_ROW_COUNT_ADDR)
+    LD.BC_n16(b, 24)
+    OR.A(b)
+    SBC.HL_BC(b)
+    JR_C(b, "AUTO_NEXT_IMAGE")
+    LD.A_mn16(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    CP.n8(b, 2)
+    JR_NZ(b, "CHECK_GRAPH")
+    XOR.A(b)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_TURN_STATE)
+    JR(b, "AUTO_NEXT_IMAGE")
+
+    b.label("AUTO_PAGE_COUNTER_CHECK")
     LD.HL_mn16(b, ADDR.AUTO_ADVANCE_COUNTER)
     LD.A_H(b)
     OR.L(b)
     JR_Z(b, "AUTO_NEXT_IMAGE")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
-    JR(b, "CHECK_SPACE")
+    JR(b, "CHECK_GRAPH")
 
     b.label("AUTO_NEXT_IMAGE")
     LD.A_mn16(b, ADDR.CONFIG_AUTO_SPEED)
@@ -1282,17 +1874,16 @@ def build_boot_bank(
     LD.mn16_HL(b, ADDR.AUTO_ADVANCE_COUNTER)
     JR(b, "NEXT_IMAGE")
 
-    # --- スペースキー判定 (画像切り替え) ---
-    b.label("CHECK_SPACE")
+    # --- グラフキー判定 (前の画像へ) ---
+    b.label("CHECK_GRAPH")
     LD.A_mn16(b, ADDR.INPUT_TRG)
+    BIT.n8_A(b, INPUT_KEY_BIT.L_EXTRA)
+    JP_NZ(b, "PREV_IMAGE")
+
+    # --- スペースキー判定 (次の画像へ) ---
+    b.label("CHECK_SPACE")
     BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_A)
     JP_Z(b, "MAIN_LOOP")  # 押されていなければループの先頭へ
-
-    # SPACEが押された場合のみここに来る
-    # 次に SHIFT (L_BTN_B) の状態を確認
-    LD.A_mn16(b, ADDR.INPUT_HOLD)
-    BIT.n8_A(b, INPUT_KEY_BIT.L_BTN_B)
-    JR_NZ(b, "PREV_IMAGE")  # SHIFTありなら PREV へ
 
     # --- [NEXT_IMAGE: 次へ] ---
     b.label("NEXT_IMAGE")
@@ -1318,7 +1909,7 @@ def build_boot_bank(
     UPDATE_IMAGE_DISPLAY_FUNC.call(b)
     LD.A_mn16(b, ADDR.CONFIG_BEEP_ENABLED)
     OR.A(b)
-    JR_NZ(b, "__SKIP_BEEP__")
+    JR_Z(b, "__SKIP_BEEP__")
     SIMPLE_BEEP_FUNC.call(b)
     JP(b, "MAIN_LOOP")
 
@@ -1331,6 +1922,10 @@ def build_boot_bank(
     # 0: 無効, 1-7: 数値が大きいほど高速になる自動切り替え秒数
     b.label("AUTO_ADVANCE_INTERVAL_FRAMES_TABLE")
     DW(b, *AUTO_ADVANCE_INTERVAL_FRAMES)
+    b.label("AUTO_SCROLL_INTERVAL_FRAMES_TABLE")
+    DW(b, *AUTO_SCROLL_INTERVAL_FRAMES)
+    b.label("AUTO_SCROLL_EDGE_WAIT_FRAMES_TABLE")
+    DW(b, *AUTO_SCROLL_EDGE_WAIT_FRAMES)
 
     # 1. 名前テーブル用 MOD 24 テーブル (行数 0-255 -> 0-23)
     # タイル番号のオフセット計算用。
@@ -1376,38 +1971,38 @@ def build_boot_bank(
     return data
 
 
-def build_outi_funcs_bank(
-    fill_byte: int, log_lines: list[str] | None = None
-) -> list[bytes]:
-    b = Block()
-
-    define_created_funcs(b, group=OUTI_FUNCS_GROUP)
-    assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
-    bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
-    if bank_count > 1:
-        raise ValueError(
-            "OUTI funcs bank must fit within a single bank; actual: "
-            f"{bank_count} banks"
-        )
-    total_size = bank_count * PAGE_SIZE
-    data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
-    used_percent = len(assembled) / PAGE_SIZE * 100
-    log_and_store(
-        "OUTI funcs bank usage: "
-        f"{len(assembled)} bytes across {bank_count} bank(s) "
-        f"({used_percent:.2f}% of first bank)",
-        log_lines,
-    )
-    log_and_store("---- labels ----", log_lines)
-    log_and_store(
-        debug_print_labels(b, origin=0, no_print=True, include_offset=True),
-        log_lines,
-    )
-
-    banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
-    ensure_funcs_defined(OUTI_FUNCS)
-
-    return banks
+# def build_outi_funcs_bank(
+#     fill_byte: int, log_lines: list[str] | None = None, debug_build: bool = False
+# ) -> list[bytes]:
+#     b = Block(debug=debug_build)
+#
+#     define_created_funcs(b, group=OUTI_FUNCS_GROUP)
+#     assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
+#     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
+#     if bank_count > 1:
+#         raise ValueError(
+#             "OUTI funcs bank must fit within a single bank; actual: "
+#             f"{bank_count} banks"
+#         )
+#     total_size = bank_count * PAGE_SIZE
+#     data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
+#     used_percent = len(assembled) / PAGE_SIZE * 100
+#     log_and_store(
+#         "OUTI funcs bank usage: "
+#         f"{len(assembled)} bytes across {bank_count} bank(s) "
+#         f"({used_percent:.2f}% of first bank)",
+#         log_lines,
+#     )
+#     log_and_store("---- labels ----", log_lines)
+#     log_and_store(
+#         debug_print_labels(b, origin=0, no_print=True, include_offset=True),
+#         log_lines,
+#     )
+#
+#     banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
+#     # ensure_funcs_defined(OUTI_FUNCS)
+#
+#     return banks
 
 
 def validate_image_data(image: ImageData) -> None:
@@ -1472,7 +2067,11 @@ def build(
     fill_byte: int = 0xFF,
     title_wait_seconds: int = 3,
     beep_enabled_default: bool = True,
+    bgm_enabled_default: bool = False,
+    bgm_fps: int = 30,
+    bgm_data: bytes | None = None,
     log_lines: list[str] | None = None,
+    debug_build: bool = False,
 ) -> bytes:
     if not 0 <= fill_byte <= 0xFF:
         raise ValueError("fill_byte must be 0..255")
@@ -1486,18 +2085,35 @@ def build(
         f"BEEP default: {'ON' if beep_enabled_default else 'OFF'}",
         log_lines,
     )
+    log_and_store(
+        f"BGM default: {'ON' if bgm_enabled_default else 'OFF'}",
+        log_lines,
+    )
+    log_and_store(f"BGM FPS: {bgm_fps}", log_lines)
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines)
-    OUTI_FUNCS_BACK_NUM = 1
-    log_and_store(
-        f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
-        log_lines,
-    )
-    set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
-    next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
+    # outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines, debug_build=debug_build)
+    # OUTI_FUNCS_BACK_NUM = 1
+    # log_and_store(
+    #     f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
+    #     log_lines,
+    # )
+    # set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
+    # next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
+    next_bank = 1
     header_bytes: list[int] = []
+    bgm_bank_count = 0
+    bgm_start_bank: int | None = None
+    if bgm_data is not None:
+        if len(bgm_data) > PAGE_SIZE:
+            bgm_data = bgm_data[:PAGE_SIZE]
+        bgm_start_bank = next_bank
+        bgm_payload = bytearray([fill_byte] * PAGE_SIZE)
+        bgm_payload[: len(bgm_data)] = bgm_data
+        data_banks.append(bytes(bgm_payload))
+        bgm_bank_count = 1
+        next_bank += bgm_bank_count
 
     if start_positions is None:
         start_positions = ["top"] * len(images)
@@ -1575,108 +2191,17 @@ def build(
             fill_byte,
             title_wait_seconds,
             beep_enabled_default,
+            bgm_enabled_default,
+            bgm_start_bank,
+            bgm_fps,
             log_lines,
+            debug_build,
         )
     ]
-    banks.extend(outi_funcs_banks)
+    # banks.extend(outi_funcs_banks)
     banks.extend(data_banks)
     return b"".join(banks)
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
-    )
-    parser.add_argument(
-        "-i",
-        "--input",
-        dest="input",
-        metavar="PNG",
-        type=Path,
-        nargs="+",
-        action="append",
-        required=True,
-        help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
-    )
-    parser.add_argument(
-        "--use-debug-image",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--debug-image-index",
-        type=int,
-        default=0,
-        help="--use-debug-image 時に埋め込む番号",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        help="出力 ROM ファイル名（未指定なら自動命名）",
-    )
-    parser.add_argument(
-        "--background",
-        type=str,
-        default="#000000",
-        help="右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
-    )
-    parser.add_argument(
-        "--msx1pq-cli",
-        type=Path,
-        help="msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
-    )
-    parser.add_argument(
-        "--workdir",
-        type=Path,
-        help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
-    )
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
-    )
-    parser.add_argument(
-        "--fill-byte",
-        type=int_from_str,
-        default=0xFF,
-        help="未使用領域の埋め値 (default: 0xFF)",
-    )
-    parser.add_argument(
-        "--title-wait-seconds",
-        type=int,
-        default=5,
-        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
-    )
-    parser.add_argument(
-        "--rom-info",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="ROM情報テキストを出力するかどうか (default: ON)",
-    )
-    parser.add_argument(
-        "--beep",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="起動時のBEEP設定 (default: ON)",
-    )
-    parser.add_argument(
-        "--start-at",
-        choices=["top", "bottom"],
-        default="top",
-        help="全画像の初期表示位置デフォルト (default: top)",
-    )
-    parser.add_argument(
-        "--start-at-override",
-        nargs="+",
-        choices=["top", "bottom"],
-        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
-    )
-    parser.add_argument(
-        "--start-at-random",
-        action="store_true",
-        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
-    )
-    return parser.parse_args()
 
 
 def concatenate_images_vertically(images: Sequence[Image.Image]) -> Image.Image:
@@ -1759,10 +2284,12 @@ def ensure_output_writable(path: Path) -> None:
 
 
 def main() -> None:
-    args = parse_args()
 
     background = parse_color(args.background)
     msx1pq_cli = find_msx1pq_cli(args.msx1pq_cli)
+    mem_addr_allocator.debug = args.debug_build
+    bgm_data: bytes | None = None
+    bgm_enabled_default = args.bgm
 
     if args.output is not None:
         ensure_output_writable(args.output)
@@ -1858,13 +2385,27 @@ def main() -> None:
     else:
         start_positions = [args.start_at] * len(image_data_list)
 
+    if args.bgm_path is None:
+        bgm_enabled_default = False
+    else:
+        if not args.bgm_path.is_file():
+            raise SystemExit(f"BGM file not found: {args.bgm_path}")
+        bgm_data = args.bgm_path.read_bytes()
+        if len(bgm_data) > PAGE_SIZE:
+            log_and_store("BGM file size exceeds 16KB; truncating to 16KB", log_lines)
+            bgm_data = bgm_data[:PAGE_SIZE]
+
     rom = build(
         image_data_list,
         start_positions=start_positions,
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
         beep_enabled_default=args.beep,
+        bgm_enabled_default=bgm_enabled_default,
+        bgm_fps=args.bgm_fps,
+        bgm_data=bgm_data,
         log_lines=log_lines,
+        debug_build=args.debug_build,
     )
 
     out = args.output

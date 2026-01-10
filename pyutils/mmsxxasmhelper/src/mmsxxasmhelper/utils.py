@@ -261,7 +261,7 @@ def debug_print_pc(b: Block, name: str) -> None:
             return
 
         absolute = origin + pos
-        print(f"BP {name}: {absolute:04X} (+{pos:04X})")
+        print(f"[BP] {name}: {absolute:04X} (+{pos:04X})")
 
     b._finalize_callbacks.append(_print_pc)
 
@@ -329,7 +329,7 @@ def print_bytes(data: bytes, step: int = 16, address: int | None = 0, title: str
 class MemAddrAllocator:
     """メモリアドレスを順次管理するユーティリティ。"""
 
-    def __init__(self, base_address: int) -> None:
+    def __init__(self, base_address: int, *, debug: bool = False) -> None:
         self._base_address = base_address
         self._current_address = base_address
         self._allocated: list[str] = []
@@ -337,6 +337,8 @@ class MemAddrAllocator:
 
         self._initial_bytes = bytearray()
         self._initial_value_names: list[str] = []
+
+        self.debug = debug
 
     def _ensure_capacity(self, address: int, size: int) -> int:
         offset = address - self._base_address
@@ -415,11 +417,20 @@ class MemAddrAllocator:
 
         return address
 
-    def get(self, name: str) -> int:
+    def get_address(self, name: str) -> int:
         """登録済みの名前を指定してアドレスを取得する。"""
 
         try:
             return self._lookup[name]["address"]  # type: ignore[index]
+        except KeyError as exc:  # pragma: no cover - simple passthrough
+            raise KeyError(name) from exc
+
+    def get_size(self, name: str) -> int:
+        """登録済みの名前を指定してサイズを取得する。"""
+
+        try:
+            print(self._lookup[name])
+            return self._lookup[name]["size"]  # type: ignore[index]
         except KeyError as exc:  # pragma: no cover - simple passthrough
             raise KeyError(name) from exc
 

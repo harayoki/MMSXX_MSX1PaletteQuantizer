@@ -101,5 +101,6 @@ def test_lookup_contains_metadata_and_debug_output() -> None:
 
     debug_str = allocator.as_str()
     assert "[00] 07000h: BUFFER (size=2, initial=[01 02]) # buf" in debug_str
-    assert "[01] 07002h: FLAG (size=1, initial=[00]) # flag" in debug_str
+    assert "[01] 07002h: FLAG (size=1) # flag" in debug_str
+
 

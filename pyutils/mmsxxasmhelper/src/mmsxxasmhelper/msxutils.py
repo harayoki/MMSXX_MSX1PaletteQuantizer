@@ -21,6 +21,8 @@ __all__ = [
     "set_msx2_palette_default_macro",
     "init_screen2_macro",
     "set_screen_mode_macro",
+    "set_screen_display_macro",
+    "set_screen_display_status_flag_macro",
     "set_text_cursor_macro",
     "write_text_with_cursor_macro",
     "write_text_with_cursor_macro_with_bios",
@@ -39,6 +41,7 @@ __all__ = [
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
+    "enable_turbor_high_speed_macro",
 ]
 P = ParamSpec("P")
 
@@ -54,6 +57,8 @@ CHPUT = 0x00A2  # 1文字出力（SCREEN0/1/2 text??、その他未対応）
 INITXT = 0x006C  # SCREEN 0 初期化
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
+# turboR 専用
+CHGCPU = 0x0180  # CPU 切り替え (A=0: Z80, 1: R800 ROM, 2: R800 DRAM)
 # EXPTBL = 0xFCC1  # 拡張スロット情報
 # EXPTBL_MINUS_1 = EXPTBL -1
 # CALSLT = 0x001C  # インタースロットCALL（任意スロットの任意アドレスを呼ぶ）
@@ -67,6 +72,7 @@ FORCLR = 0xF3E9  # 前景色
 BAKCLR = 0xF3EA  # 背景色
 BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
+RG1SAV = 0xF3E0  # VDPレジスタ1のミラー
 
 VDP_DATA = 0x98   # VDPデータポート
 VDP_CTRL = 0x99   # VDPコントロールポート
@@ -358,6 +364,29 @@ def set_msx2_palette_default_macro(b: Block) -> None:
 
     # print("-----")
     # print(_MSX2_PALETTE_BYTES)
+
+
+def enable_turbor_high_speed_macro(b: Block) -> None:
+    """turboR の場合に R800 DRAM モードへ切り替える。
+
+    - MSXVER で turboR かを判定し、それ以外では何もしない。
+    - R800 DRAM を指定するため、A=2 をセットして CHGCPU を呼び出す。
+
+    レジスタ変更: A
+    """
+
+    end_label = unique_label("__TURBOR_HIGH_SPEED_END__")
+
+    # turboR 以外ではスキップ
+    get_msxver_macro(b)
+    CP.n8(b, 0x03)
+    JP_NZ(b, end_label)
+
+    # A=2 (R800 DRAM) で高速モードへ
+    LD.A_n8(b, 0x02)
+    CALL(b, CHGCPU)
+
+    b.label(end_label)
     # print("-----")
 
 
@@ -367,6 +396,31 @@ def set_screen_mode_macro(b: Block, mode: int) -> None:
     """
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
+
+
+def set_screen_display_macro(b: Block, display_on: bool) -> None:
+    """VDPレジスタ1のBit6を 0/1 に設定して画面表示を切り替えるマクロ。
+    画面非表示中は VDP アクセスをウェイト無しで行えるため、高速化に利用できる。
+
+    レジスタ変更: A
+    """
+    LD.A_mn16(b, RG1SAV)
+    if display_on:
+        OR.n8(b, 0x40)
+    else:
+        AND.n8(b, 0xBF)
+    LD.mn16_A(b, RG1SAV)
+    OUT(b, VDP_CTRL)
+    OUT_A(b, VDP_CTRL, 0x80 + 1)
+
+
+def set_screen_display_status_flag_macro(b: Block) -> None:
+    """VDPレジスタ1のBit6を取得して画面表示状態でフラグを立てるマクロ
+    画面表示中ならＮＺ、非表示中ならＺフラグがセットされる。
+    レジスタ変更: A
+    """
+    LD.A_mn16(b, RG1SAV)
+    AND.n8(b, 6)
 
 
 def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
@@ -671,15 +725,27 @@ def build_update_input_func(
         LD.IXL_A(block)
         block.label("_SKIP_SPACE")
 
-        # SHIFT (Matrix 6, Bit 0)
+        # --- Matrix 6 (SHIFT, CTRL, GRAPH, etc.) ---
         LD.A_n8(block, 6)
         CALL(block, SNSMAT)
+        LD.B_A(block)  # Aレジスタの内容をBに保持
+
+        # SHIFT (Bit 0)
         BIT.n8_A(block, 0)
         JR_NZ(block, "_SKIP_SHIFT")
         LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_B)
         OR.IXL(block)
         LD.IXL_A(block)
         block.label("_SKIP_SHIFT")
+
+        # GRAPH (Bit 2)       # Bit 2 が GRAPH です
+        LD.A_B(block)  # Bから読み込み直す
+        BIT.n8_A(block, 2)
+        JR_NZ(block, "_SKIP_GRAPH")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_EXTRA)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_GRAPH")
 
         # ESC キー (キーボードバッファ)
         CALL(block, CHSNS)
@@ -748,7 +814,7 @@ def build_beep_control_utils(
     beep_active_addr: int = 0xC111,
     tone_period: int = 30,  # 0-4095
     duration_frames: int = 1,  # 1/60秒単位
-    volume: int = 8,
+    volume: int = 10,
     *,
     group: str = DEFAULT_FUNC_GROUP_NAME,
 ):
@@ -871,7 +937,8 @@ def build_outi_repeat_func(
     if count <= 0:
         raise ValueError("count must be positive")
 
-    func_name = name or f"OUTI_REPEAT_{count}"
+    func_name = name or f"OUTI_REPEAT{count}"
+    func_name = unique_label(func_name)
 
     def outi_repeat(block: Block) -> None:
         for _ in range(count):
@@ -930,3 +997,69 @@ def build_scroll_name_table_func(
     return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
 
 
+def build_scroll_name_table_func2(
+    SET_VRAM_WRITE_FUNC: Func,
+    OUTI_256_FUNC: Func,
+    OUTI_256_FUNC_NO_WAIT: Func | None = None,  # Noneを許容
+    *,
+    use_no_wait: Literal["PARTIAL", "YES"] = "PARTIAL",                     # 生成時のフラグ
+    group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """
+    名前テーブル転送の高速版。
+    生成時に use_no_wait=True かつ NO_WAIT関数がない場合はエラーを出す。
+    """
+    # エラーチェック
+    if OUTI_256_FUNC_NO_WAIT is None:
+        raise ValueError(f"use_no_wait[{use_no_wait}] requires OUTI_256_FUNC_NO_WAIT to be provided.")
+
+    def scroll_name_table(block: Block) -> None:
+        # 入力: A = CURRENT_SCROLL_ROW (0-23)
+
+        # 1. オフセット計算: HL = (A % 8) * 32
+        AND.n8(block, 0x07)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        for _ in range(5):  # HL = HL * 32
+            ADD.HL_HL(block)
+
+        # 2. テーブルの物理アドレスを加算
+        LD.DE_label(block, "NAME_TABLE_512_LUT")
+        ADD.HL_DE(block)
+        PUSH.HL(block)
+
+        # 3. VRAMアドレスセット (0x1800)
+        LD.HL_n16(block, 0x1800)
+        SET_VRAM_WRITE_FUNC.call(block)
+
+        # 4. 256バイト × 3ブロック分を転送
+        LD.C_n8(block, 0x98)
+
+        # --- 第1ブロック (上段) ---
+        POP.HL(block)
+        PUSH.HL(block)
+        OUTI_256_FUNC_NO_WAIT.call(block)
+
+        # --- 第2・3ブロック (中・下段) ---
+        # 表示期間に食い込むため常に通常版を使用
+        POP.HL(block)
+        PUSH.HL(block)
+        if use_no_wait == "YES":
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
+
+        POP.HL(block)
+        if use_no_wait == "YES":
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
+
+        RET(block)
+
+        # --- 512バイト LUT ---
+        block.label("NAME_TABLE_512_LUT")
+        lut_data = [i for i in range(256)] * 2
+        DB(block, *lut_data)
+
+    return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)

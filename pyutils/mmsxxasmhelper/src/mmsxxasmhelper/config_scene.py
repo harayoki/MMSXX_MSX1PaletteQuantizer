@@ -58,6 +58,7 @@ class Screen0ConfigEntry:
     name: str
     options: Sequence[str]
     store_addr: int
+    on_change_addr: int | str | Func | None = None
 
 
 def get_work_byte_length_for_screen0_config_menu() -> int:
@@ -95,6 +96,7 @@ def build_screen0_config_menu(
             for key, value in raw_entries.items():
                 options = value.get("options") if isinstance(value, dict) else None
                 addr = value.get("addr") if isinstance(value, dict) else None
+                on_change_addr = value.get("on_change") if isinstance(value, dict) else None
                 if options is None or addr is None:
                     raise ValueError(
                         "dict 定義は {'<name>': {'options': [...], 'addr': 0xC200}} の形式にしてください"
@@ -104,6 +106,7 @@ def build_screen0_config_menu(
                         name=str(key),
                         options=[str(opt) for opt in options],
                         store_addr=int(addr),
+                        on_change_addr=on_change_addr,
                     )
                 )
             return normalized
@@ -157,6 +160,7 @@ def build_screen0_config_menu(
     ENTRY_OPTION_COUNT_LABEL = unique_label("__ENTRY_OPTION_COUNT__")
     ENTRY_OPTION_WIDTH_LABEL = unique_label("__ENTRY_OPTION_WIDTH__")
     ENTRY_ROW_ADDR_LABEL = unique_label("__ENTRY_ROW_ADDR__")
+    ENTRY_ON_CHANGE_ADDR_LABEL = unique_label("__ENTRY_ON_CHANGE_ADDR__")
     OPTION_POINTER_LABELS = [unique_label("__OPT_PTR__") for _ in config_entries]
 
     SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=group)
@@ -413,8 +417,7 @@ def build_screen0_config_menu(
         LD.D_mHL(block)
 
         # [ブロック4] 左インジケータ描画: 行アドレスを復元し、オプション列の直前にカーソルを置く。
-        # 「オプション値が 0 ではない（左に進める）」かつ「点滅フラグが 0」の場合だけ "<" を出し、
-        # それ以外は空白で消す。
+        # 点滅フラグが 0 の場合だけ "<" を出し、それ以外は空白で消す。
         PUSH.DE(block)
         POP.HL(block)
         PUSH.HL(block)
@@ -426,9 +429,6 @@ def build_screen0_config_menu(
         # LEFT_VISIBLE = unique_label("__LEFT_VISIBLE__")
         LABEL_LEFT_HIDDEN = unique_label("__LEFT_HIDDEN__")
         LABEL_LEFT_END = unique_label("__LEFT_END__")
-        LD.A_C(block)
-        OR.A(block)
-        JR_Z(block, LABEL_LEFT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_NZ(block, LABEL_LEFT_HIDDEN)
@@ -453,8 +453,7 @@ def build_screen0_config_menu(
         LD.E_A(block)
 
         # [ブロック6] 右インジケータ描画: 退避した行アドレスにオプション欄の幅を足し、
-        # 「最終オプションではない（まだ右がある）」かつ「点滅フラグが 1」の場合だけ ">" を出す。
-        # 右に進めない場合や点滅条件外では空白を出して消す。
+        # 点滅フラグが 1 の場合だけ ">" を出す。点滅条件外では空白で消す。
 
         POP.HL(block)
         LD.BC_n16(block, option_col)
@@ -470,11 +469,6 @@ def build_screen0_config_menu(
         LABEL_RIGHT_HIDDEN = unique_label("__RIGHT_HIDDEN__")
         LABEL_RIGHT_END = unique_label("__RIGHT_END__")
 
-        LD.A_B(block)
-        DEC.A(block)
-        CP.C(block)
-        JR_Z(block, LABEL_RIGHT_HIDDEN)
-        JP_M(block, LABEL_RIGHT_HIDDEN)
         LD.A_mn16(block, BLINK_STATE_ADDR)
         BIT.n8_A(block, 0)
         JR_Z(block, LABEL_RIGHT_HIDDEN)
@@ -501,6 +495,7 @@ def build_screen0_config_menu(
         # 入力: CURRENT_ENTRY_ADDR から項目インデックスを取得し、ENTRY_VALUE_ADDR_LABEL の値を書き換える。
         # 破壊: A/B/C/D/E/H/L を使用して範囲チェック・書き込み・再描画を行うため、戻り時に内容は保持されない。
         LABEL_ADJUST_END = unique_label("__ADJUST_END__")
+        LABEL_ADJUST_STORE = unique_label("__ADJUST_STORE__")
         LD.A_mn16(block, CURRENT_ENTRY_ADDR)
         LD.C_A(block)
 
@@ -536,19 +531,48 @@ def build_screen0_config_menu(
         if delta > 0:
             DEC.B(block)  # 最大インデックス
             CP.B(block)
-            # debug_print_pc(block," Adjust option plus: A vs B")
-            JR_NC(block, LABEL_ADJUST_END)
+            LABEL_ADJUST_PLUS_INCREMENT = unique_label("__ADJUST_PLUS_INCREMENT__")
+            JR_C(block, LABEL_ADJUST_PLUS_INCREMENT)
+            XOR.A(block)
+            JR(block, LABEL_ADJUST_STORE)
+            block.label(LABEL_ADJUST_PLUS_INCREMENT)
             INC.A(block)
         else:
             OR.A(block)
-            # debug_print_pc(block," Adjust option minus: A vs 0")
-            JR_Z(block, LABEL_ADJUST_END)
+            LABEL_ADJUST_MINUS_DECREMENT = unique_label("__ADJUST_MINUS_DECREMENT__")
+            JR_NZ(block, LABEL_ADJUST_MINUS_DECREMENT)
+            LD.A_B(block)
+            DEC.A(block)
+            JR(block, LABEL_ADJUST_STORE)
+            block.label(LABEL_ADJUST_MINUS_DECREMENT)
             DEC.A(block)
 
+        block.label(LABEL_ADJUST_STORE)
         # 更新した値をテーブルへ書き戻し、現在値インデックスも保存する。
         LD.mDE_A(block)
         LD.A_C(block)
         LD.mn16_A(block, CURRENT_ENTRY_ADDR)
+
+        # 設定値が変化したときのコールバックがあれば実行する。
+        LD.A_C(block)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)
+        LD.DE_label(block, ENTRY_ON_CHANGE_ADDR_LABEL)
+        ADD.HL_DE(block)
+        LD.E_mHL(block)
+        INC.HL(block)
+        LD.D_mHL(block)
+        LD.A_D(block)
+        OR.E(block)
+        LABEL_SKIP_ON_CHANGE = unique_label("__SKIP_ON_CHANGE__")
+        JR_Z(block, LABEL_SKIP_ON_CHANGE)
+        LD.HL_label(block, LABEL_SKIP_ON_CHANGE)
+        PUSH.HL(block)
+        PUSH.DE(block)
+        POP.HL(block)
+        JP_mHL(block)
+        block.label(LABEL_SKIP_ON_CHANGE)
 
         # 値の描画とカーソル形状を再描画する。
         LD.A_C(block)
@@ -727,6 +751,21 @@ def build_screen0_config_menu(
             DW(block, row_addr & 0xFFFF)  # 2 x エントリ bytes
             print(f"Entry {idx} row addr: {row_addr:04X}h")
 
+    def emit_tables6(block: Block) -> None:
+
+        # 6) 設定が変化したときに呼ぶコールバック関数アドレスをテーブル化する。
+        block.label(ENTRY_ON_CHANGE_ADDR_LABEL)  # __ENTRY_ON_CHANGE_ADDR__
+        for entry in config_entries:
+            on_change = entry.on_change_addr
+            if on_change is None:
+                DW(block, 0)
+            elif isinstance(on_change, int):
+                DW(block, on_change & 0xFFFF)
+            else:
+                label = on_change.name if isinstance(on_change, Func) else str(on_change)
+                pos = block.emit(0, 0)
+                block.add_abs16_fixup(pos, label)
+
     # print(f"len(draw_option_funcs) = {len(draw_option_funcs)}")
     # print(f"len(entries) = {len(config_entries)}")
     # print(f"len(option_field_widths) = {len(option_field_widths)}")
@@ -781,10 +820,16 @@ def build_screen0_config_menu(
         no_auto_ret=True,
         group=group,
     )
+    TABLE_FUNC6 = Func(
+        "OPTION_ON_CHANGE_ADDR_TABLES",
+        emit_tables6,
+        no_auto_ret=True,
+        group=group,
+    )
 
-    # 6) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
+    # 7) オプション文字列のポインタテーブルを生成し、選択肢描画時に参照できるようにする。
     # アドレス2文字 * option数 + (選択肢文字数 + 終端文字(0h)) * option数
-    TABLE6_FUNCS = []
+    TABLE7_FUNCS = []
     for idx, entry in enumerate(config_entries):
         f = Func(
             f"OPTION_STRING_POINTER_TABLE [{entry.name}] #{idx}",
@@ -792,7 +837,7 @@ def build_screen0_config_menu(
             no_auto_ret=True,
             group=group,
         )
-        TABLE6_FUNCS.append(f)
+        TABLE7_FUNCS.append(f)
 
 
-    return INIT_FUNC, RUN_LOOP_FUNC, [TABLE_FUNC1, TABLE_FUNC2, TABLE_FUNC3, TABLE_FUNC4, TABLE_FUNC5] + TABLE6_FUNCS
+    return INIT_FUNC, RUN_LOOP_FUNC, [TABLE_FUNC1, TABLE_FUNC2, TABLE_FUNC3, TABLE_FUNC4, TABLE_FUNC5, TABLE_FUNC6] + TABLE7_FUNCS
