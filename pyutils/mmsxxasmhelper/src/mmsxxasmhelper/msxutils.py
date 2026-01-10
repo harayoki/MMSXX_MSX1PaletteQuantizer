@@ -1002,7 +1002,7 @@ def build_scroll_name_table_func2(
     OUTI_256_FUNC: Func,
     OUTI_256_FUNC_NO_WAIT: Func | None = None,  # Noneを許容
     *,
-    use_no_wait: Literal["NO", "ONE_BLOCK", "ALL"] = "NO",                  # 生成時のフラグ
+    use_no_wait: Literal["PARTIAL", "YES"] = "PARTIAL",                     # 生成時のフラグ
     group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
     """
@@ -1010,7 +1010,7 @@ def build_scroll_name_table_func2(
     生成時に use_no_wait=True かつ NO_WAIT関数がない場合はエラーを出す。
     """
     # エラーチェック
-    if use_no_wait != "NO" and OUTI_256_FUNC_NO_WAIT is None:
+    if OUTI_256_FUNC_NO_WAIT is None:
         raise ValueError(f"use_no_wait[{use_no_wait}] requires OUTI_256_FUNC_NO_WAIT to be provided.")
 
     def scroll_name_table(block: Block) -> None:
@@ -1038,22 +1038,19 @@ def build_scroll_name_table_func2(
         # --- 第1ブロック (上段) ---
         POP.HL(block)
         PUSH.HL(block)
-        if use_no_wait != "NO":
-            OUTI_256_FUNC_NO_WAIT.call(block)
-        else:
-            OUTI_256_FUNC.call(block)
+        OUTI_256_FUNC_NO_WAIT.call(block)
 
         # --- 第2・3ブロック (中・下段) ---
         # 表示期間に食い込むため常に通常版を使用
         POP.HL(block)
         PUSH.HL(block)
-        if use_no_wait == "ALL":
+        if use_no_wait == "YES":
             OUTI_256_FUNC_NO_WAIT.call(block)
         else:
             OUTI_256_FUNC.call(block)
 
         POP.HL(block)
-        if use_no_wait == "ALL":
+        if use_no_wait == "YES":
             OUTI_256_FUNC_NO_WAIT.call(block)
         else:
             OUTI_256_FUNC.call(block)
