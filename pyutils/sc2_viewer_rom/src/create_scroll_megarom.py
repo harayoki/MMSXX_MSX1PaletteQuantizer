@@ -274,11 +274,25 @@ def parse_args() -> argparse.Namespace:
         help="デバッグ用ビルドモードを有効にする。",
     )
     parser.add_argument(
-        "--vdp-wait",
+        "--vdp-wait-for-name-table",
         type=int_from_str,
         choices=[0, 1],
         default=0,
-        help="VDP WAITの設定 (0=YES, 1=PARTIAL)",
+        help="VDP WAITの設定(name table) (0=YES, 1=PARTIAL)",
+    )
+    parser.add_argument(
+        "--vdp-wait-for-pattern-gen",
+        type=int_from_str,
+        choices=[0, 1],
+        default=0,
+        help="VDP WAITの設定(pattern gen) (0=YES, 1=PARTIAL)",
+    )
+    parser.add_argument(
+        "--vdp-wait-for-color-table",
+        type=int_from_str,
+        choices=[0, 1],
+        default=0,
+        help="VDP WAITの設定(color table) (0=YES, 1=PARTIAL)",
     )
     return parser.parse_args()
 
@@ -895,7 +909,7 @@ SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
 )
 SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED = (
     SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
-    if args.vdp_wait
+    if args.vdp_wait_for_name_table
     else SCROLL_NAME_TABLE_FUNC_NOWAIT
 )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
