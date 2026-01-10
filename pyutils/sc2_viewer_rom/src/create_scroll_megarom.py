@@ -121,6 +121,7 @@ from mmsxxasmhelper.msxutils import (
     INPUT_KEY_BIT,
     build_beep_control_utils,
     build_set_vram_write_func,
+    build_scroll_name_table_func,
     build_scroll_name_table_func2,
     build_outi_repeat_func,
     set_screen_colors_macro,
@@ -277,7 +278,7 @@ def parse_args() -> argparse.Namespace:
         type=int_from_str,
         choices=[0, 1],
         default=0,
-        help="VDP WAITの設定 (0=NOWAIT, 1=WAIT)",
+        help="VDP WAITの設定 (0=YES, 1=PARTIAL)",
     )
     return parser.parse_args()
 
@@ -428,12 +429,6 @@ class ADDR:
     )
     CONFIG_AUTO_PAGE_EDGE = madd(
         "CONFIG_AUTO_PAGE_EDGE", 1, initial_value=bytes([1]), description="自動スクロール中のページ端遷移"
-    )
-    CONFIG_VDP_WAIT = madd(
-        "CONFIG_VDP_WAIT",
-        1,
-        initial_value=bytes([args.vdp_wait]),
-        description="VDP WAITの設定",
     )
     AUTO_ADVANCE_COUNTER = madd(
         "AUTO_ADVANCE_COUNTER", 2, description="自動切り替えまでの残りフレーム"
@@ -834,20 +829,9 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
             JR(b, NORM_LOOP)
             b.label(NORM_DONE)
 
-        SCROLL_NOWAIT_ALL = unique_label("SCROLL_NOWAIT_ALL")
-        SCROLL_NOWAIT_DONE = unique_label("SCROLL_NOWAIT_DONE")
-        LD.A_mn16(block, ADDR.CONFIG_VDP_WAIT)
-        OR.A(block)
-        JR_Z(block, SCROLL_NOWAIT_ALL)
         XOR.A(block)
         HALT(block)  # VBLANK待ち
-        SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK.call(block)
-        JR(block, SCROLL_NOWAIT_DONE)
-        block.label(SCROLL_NOWAIT_ALL)
-        XOR.A(block)
-        HALT(block)  # VBLANK待ち
-        SCROLL_NAME_TABLE_FUNC_NOWAIT.call(block)  # VBLANK中はＶＤＰウェイトをなくせる
-        block.label(SCROLL_NOWAIT_DONE)
+        SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED.call(block)  # VBLANK中はＶＤＰウェイトをなくせる
 
         # --- パターンジェネレータ転送 ---
         calc_scroll_ptr(block, is_color=False)
@@ -891,25 +875,28 @@ OUTI_256_FUNC = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
 OUTI_256_FUNC_NO_WAIT = build_outi_repeat_func(256, weight=0, group=SCROLL_VIEWER_FUNC_GROUP)
 
 SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
-SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func2(
+SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
-    OUTI_256_FUNC=OUTI_256_FUNC,
-    use_no_wait="NO",
     group=SCROLL_VIEWER_FUNC_GROUP
 )
-SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK = build_scroll_name_table_func2(
+SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL = build_scroll_name_table_func2(
     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     OUTI_256_FUNC=OUTI_256_FUNC,
     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
-    use_no_wait="ONE_BLOCK",
+    use_no_wait="PARTIAL",
     group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
     SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     OUTI_256_FUNC=OUTI_256_FUNC,
     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
-    use_no_wait="ALL",
+    use_no_wait="YES",
     group=SCROLL_VIEWER_FUNC_GROUP
+)
+SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED = (
+    SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
+    if args.vdp_wait
+    else SCROLL_NAME_TABLE_FUNC_NOWAIT
 )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
@@ -1213,11 +1200,6 @@ def build_config_scene_func(
             "AUTO SCROLL",
             AUTO_SCROLL_LEVEL_CHOICES,
             ADDR.CONFIG_AUTO_SCROLL,
-        ),
-        Screen0ConfigEntry(
-            "VDP WAIT",
-            ["N O", "YES"],
-            ADDR.CONFIG_VDP_WAIT,
         ),
     ]
 
@@ -1646,20 +1628,9 @@ def build_boot_bank(
     b.label("SYNC_PREP_DONE")
     POP.HL(b)
 
-    SCROLL_NOWAIT_ALL = unique_label("SCROLL_NOWAIT_ALL")
-    SCROLL_NOWAIT_DONE = unique_label("SCROLL_NOWAIT_DONE")
-    LD.A_mn16(b, ADDR.CONFIG_VDP_WAIT)
-    OR.A(b)
-    JR_Z(b, SCROLL_NOWAIT_ALL)
     LD.A_mHL(b)
     HALT(b)  # ここでVBLANKを待つ
-    SCROLL_NAME_TABLE_FUNC_NOWAIT_ONE_BLOCK.call(b)  # 1ブロック分だけ非同期で転送 VBLANK中のみ可能
-    JR(b, SCROLL_NOWAIT_DONE)
-    b.label(SCROLL_NOWAIT_ALL)
-    LD.A_mHL(b)
-    HALT(b)  # ここでVBLANKを待つ
-    SCROLL_NAME_TABLE_FUNC_NOWAIT.call(b)  # VBLANK中はＶＤＰウェイトをなくせる
-    b.label(SCROLL_NOWAIT_DONE)
+    SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED.call(b)  # VBLANK中はＶＤＰウェイトをなくせる
 
     # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
     LD.A_mn16(b, ADDR.SCROLL_DIRECTION)
