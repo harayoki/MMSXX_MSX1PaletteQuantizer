@@ -41,7 +41,8 @@ except ImportError:
     from mmsxxasmhelper.utils import pad_bytes
 
 
-ASCII16_PAGE2_REG = 0x7000  # 0x8000–0xBFFF を切替
+# ASCII16 mapper の 0x8000–0xBFFF (page2) 切替レジスタ
+ASCII16_PAGE2_REG = 0x7000
 CURRENT_BANK_ADDR = 0xC000  # 表示バンク番号の保存先 (RAM)
 PAGE_SIZE = 0x4000  # 16 KiB
 VRAM_DEST = 0x0000
@@ -60,10 +61,15 @@ def build_boot_bank() -> bytes:
     place_msx_rom_header_macro(b, entry_point=0x4010)
 
     # ---- ルーチン定義 ----
-    def load_and_show(block: Block) -> None:
-        # C = 表示したいデータバンク番号 (page2)
+    def set_page2_bank_from_c(block: Block) -> None:
+        """C レジスタに入っているバンク番号を ASCII16 page2(0x7000) に設定。"""
+
         LD.A_C(block)
         LD.mn16_A(block, ASCII16_PAGE2_REG)
+
+    def load_and_show(block: Block) -> None:
+        # C = 表示したいデータバンク番号 (page2)
+        set_page2_bank_from_c(block)
 
         PUSH.BC(b)
 
@@ -89,6 +95,10 @@ def build_boot_bank() -> bytes:
     # ENASLOT を呼び出してバンクアクセスを有効化
     enaslt_macro(b)
 
+    # コードを配置している page1 を確実に bank0 に固定しておく
+    LD.A_n8(b, 0)
+    LD.mn16_A(b, ASCII16_PAGE1_REG)
+
     # SCREEN 8 初期化
     LD.A_n8(b, 8)
     CALL(b, CHGMOD)
@@ -97,6 +107,7 @@ def build_boot_bank() -> bytes:
     LD.A_n8(b, BANK_DATA_RED)
     LD.mn16_A(b, CURRENT_BANK_ADDR)
     LD.rr(b, "C", "A")
+    set_page2_bank_from_c(b)
     LOAD_AND_SHOW.call(b)
 
     b.label("main_loop")

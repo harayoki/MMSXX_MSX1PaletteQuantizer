@@ -13,10 +13,14 @@ from __future__ import annotations
 import importlib
 import sys
 import types
+from pathlib import Path
 
 
 def _import_create_scroll_megarom(monkeypatch):
     """Import the ROM builder with minimal stubs for optional dependencies."""
+
+    # Ensure the repository root is importable when tests run from the tests directory.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
 
     # The assembler helper lives in the repository; make it importable.
     monkeypatch.syspath_prepend("pyutils/mmsxxasmhelper/src")
@@ -42,11 +46,13 @@ def test_debug_labels_include_lowercase(monkeypatch):
 
     rom = mod.build(mod.create_debug_image_data_list(2))
 
+    pattern_pos = rom.find(b"PATTERN[2] SCROLL VIEWER DEBUG")
+
     # Pattern label should be present near the start of the pattern bank
-    assert rom.find(b"PATTERN[2] SCROLL VIEWER DEBUG") >= mod.PAGE_SIZE
+    assert pattern_pos >= mod.PAGE_SIZE
 
     # Color label is lower-case and lives at the beginning of the color bank
     color_pos = rom.find(b"color[2] scroll viewer debug")
-    expected_color_pos = mod.PAGE_SIZE + mod.PATTERN_RAM_SIZE
+    expected_color_pos = pattern_pos + mod.PATTERN_RAM_SIZE
     assert color_pos == expected_color_pos
 

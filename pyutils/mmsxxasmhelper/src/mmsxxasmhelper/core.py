@@ -51,6 +51,8 @@ v0で入っている機能:
 
 from __future__ import annotations
 from collections.abc import Iterable
+import sys
+from typing import Tuple
 
 __all__ = [
     "Block", "Fixup", "const", "Const",
@@ -61,41 +63,58 @@ __all__ = [
     "pad_bytes", "const_bytes_padded",
     "pad_pattern",
     "unique_label",
+    "DEFAULT_FUNC_GROUP_NAME",
     "JP", "JP_Z", "JP_NZ", "JP_NC", "JP_C", "JP_PO", "JP_PE", "JP_P", "JP_M", "JP_mHL",
     "JR", "JR_NZ", "JR_Z", "JR_NC", "JR_C", "JR_n8", "DJNZ",
     "CALL_label", "CALL",
     "RET", "RET_NZ", "RET_Z", "RET_NC", "RET_C", "RET_PO", "RET_PE", "RET_P", "RET_M",
-    "Func",
+    "Func", "define_created_funcs", "define_all_created_funcs_label_only",
+    "get_funcs_by_group", "ensure_funcs_defined", "set_funcs_call_offset", "set_funcs_bank",
+    "dump_func_bytes", "dump_func_bytes_on_finalize",
     "DB", "DW",
-    "LD", "ADD", "SUB", "CP", "AND", "OR", "XOR",
-    "LDIR",
+    "LD", "ADD", "ADC", "SUB", "SBC", "CP", "AND", "OR", "XOR", "BIT",
+    "EX",
+    "CPL", "NEG",
+    "RR", "SRL",
+    "LDI", "LDD", "LDIR",
     "RLCA",
     "INC", "DEC",
     "OUT", "OUT_A", "OUT_C",
+    "INI", "IND", "INIR", "INDR",
+    "OUTI", "OUTD", "OUTIR", "OUTDR",
     "PUSH", "POP",
     "NOP", "HALT", "DI", "EI",
+    "dump_regs",
+    "dump_mem",
+    "register_dump_target",
 ]
 
 from dataclasses import dataclass
-from itertools import count
-from typing import Callable, Dict, List, Literal
+from typing import Callable, Dict, List, Literal, Optional, TextIO
 
 
 # ---------------------------------------------------------------------------
 # Block: コード構築の基本単位
 # ---------------------------------------------------------------------------
 
-_label_counter = count()
+_label_counters: Dict[str, int] = {}
+DEFAULT_FUNC_GROUP_NAME = "default"
+_created_funcs: Dict[str, "Func"] = {}
+_created_funcs_by_group: Dict[str, List["Func"]] = {}
+_dump_targets: Dict[str, Tuple[int, int]] = {}
 
 
 def unique_label(prefix: str = "__L") -> str:
     """衝突しないラベル名を生成するヘルパー。
 
-    マクロ内など同じラベル名を繰り返し使う状況で、
-    呼ぶたびにユニークな名前を得るために利用する。
+    プレフィックスごとにインデックスを持ち、最初の呼び出しでは
+    インデックスなしのラベル名を返す。以降は ``"{prefix}-<n>"``
+    の形式で連番を付与する。
     """
 
-    return f"{prefix}{next(_label_counter)}"
+    index = _label_counters.get(prefix, 0)
+    _label_counters[prefix] = index + 1
+    return prefix if index == 0 else f"{prefix}-{index}"
 
 FixupKind = Literal["abs16", "rel8"]  # v0では絶対16bitアドレスと相対8bitのみ扱う
 
@@ -107,26 +126,49 @@ class Fixup:
     kind:   "abs16" 固定 (JP/CALL 共通)
     pos:    下位バイトを書き込む位置(コード内インデックス)
     target: ラベル名
+    offset: 追加オフセット（アドレス解決時に足される定数）
     """
 
     kind: FixupKind
     pos: int
     target: str
+    offset: int = 0
 
 
 class Block:
     """Z80コード(とそのメタ情報)を貯める箱。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, debug: bool = False) -> None:
+        self.debug = debug
         self.code = bytearray()
         self.pc: int = 0
         self.labels: Dict[str, int] = {}
         self.fixups: List[Fixup] = []
+        self._finalize_callbacks: List[Callable[["Block", int], None]] = []
+        self._debug_section_depth = 0
+
+    def _debug_allows_output(self) -> bool:
+        return self._debug_section_depth == 0 or self.debug
+
+    def ifdebug(self) -> None:
+        """DEBUGセクションの開始を宣言する。"""
+
+        self._debug_section_depth += 1
+
+    def endifdebug(self) -> None:
+        """DEBUGセクションの終了を宣言する。"""
+
+        if self._debug_section_depth == 0:
+            raise ValueError("endifdebug without matching ifdebug")
+        self._debug_section_depth -= 1
 
     # --- 基本出力 ---
 
     def emit(self, *bs: int) -> int:
         """バイト列を追加し、先頭の位置(pc)を返す。"""
+
+        if not self._debug_allows_output():
+            return self.pc
 
         pos = self.pc
         for b in bs:
@@ -134,8 +176,16 @@ class Block:
             self.pc += 1
         return pos
 
+    def add_finalize_callback(self, callback: Callable[["Block", int], None]) -> None:
+        """``finalize`` 完了時に呼び出すコールバックを登録する。"""
+
+        self._finalize_callbacks.append(callback)
+
     def label(self, name: str) -> None:
         """現在位置にラベルを張る。再定義はエラー。"""
+
+        if not self._debug_allows_output():
+            return
 
         if name in self.labels:
             raise ValueError(f"label redefined: {name}")
@@ -143,13 +193,16 @@ class Block:
 
     # --- fixup 登録 ---
 
-    def add_abs16_fixup(self, pos: int, target: str) -> None:
+    def add_abs16_fixup(self, pos: int, target: str, offset: int = 0) -> None:
         """16bitアドレスを書き込むためのfixupを登録。
 
         pos: 下位バイトを書き込む位置
         """
 
-        self.fixups.append(Fixup(kind="abs16", pos=pos, target=target))
+        if not self._debug_allows_output():
+            return
+
+        self.fixups.append(Fixup(kind="abs16", pos=pos, target=target, offset=offset))
 
     def add_rel8_fixup(self, pos: int, target: str) -> None:
         """8bit相対オフセットを書き込むためのfixupを登録。
@@ -157,21 +210,40 @@ class Block:
         pos: オフセットを書き込む位置（この1バイトの直後が基準アドレス）。
         """
 
+        if not self._debug_allows_output():
+            return
+
         self.fixups.append(Fixup(kind="rel8", pos=pos, target=target))
 
     # --- 出力確定 ---
 
-    def finalize(self, origin: int = 0) -> bytes:
+    def finalize(self, origin: int = 0, groups: Optional[List[str]] = None, func_in_bunk: bool = False) -> bytes:
         """fixupを解決してバイト列を返す。
 
         origin はこの Block をメモリ上のどこに配置するかのベースアドレス。
         v0 では単一ブロック前提なので任意指定でOK。
+
+        # TODO func_in_bunkを用いた分岐
         """
+
+        if self._debug_section_depth != 0:
+            raise ValueError("ifdebug/endifdebug mismatch detected at finalize")
+
+        groups_to_check = groups or [DEFAULT_FUNC_GROUP_NAME]
+        undefined_funcs = [
+            func.name
+            for group in groups_to_check
+            for func in _created_funcs_by_group.get(group, [])
+            if func.name not in self.labels
+        ]
+        if undefined_funcs:
+            names = ", ".join(sorted(set(undefined_funcs)))
+            raise ValueError(f"undefined func(s): {names}")
 
         for fx in self.fixups:
             if fx.kind == "abs16":
                 # fx.pos が下位バイト、fx.pos+1 が上位バイト
-                addr = origin + self._get_label_addr(fx.target)
+                addr = origin + self._get_label_addr(fx.target) + fx.offset
                 lo = addr & 0xFF
                 hi = (addr >> 8) & 0xFF
                 self.code[fx.pos] = lo
@@ -186,6 +258,9 @@ class Block:
                 self.code[fx.pos] = offset & 0xFF
             else:
                 raise ValueError(f"unknown fixup kind: {fx.kind}")
+
+        for callback in self._finalize_callbacks:
+            callback(self, origin)
 
         return bytes(self.code)
 
@@ -353,9 +428,9 @@ def const_bytes_padded(name: str, size: int, fill: int = 0x00, *values: int) -> 
 # ---------------------------------------------------------------------------
 
 
-def _jp_abs16(b: Block, opcode: int, target: str) -> None:
+def _jp_abs16(b: Block, opcode: int, target: str, offset: int = 0) -> None:
     pos = b.emit(opcode, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, target)
+    b.add_abs16_fixup(pos + 1, target, offset=offset)
 
 
 def _jr_rel8(b: Block, opcode: int, target: str) -> None:
@@ -465,13 +540,13 @@ def DJNZ(b: Block, target: str) -> None:
     _jr_rel8(b, 0x10, target)
 
 
-def CALL_label(b: Block, target: str) -> None:
+def CALL_label(b: Block, target: str, *, offset: int = 0) -> None:
     """
     CALL（ラベル指定版）
     """
     # CALL nn (opcode 0xCD, nn = 16bit)
     pos = b.emit(0xCD, 0x00, 0x00)
-    b.add_abs16_fixup(pos + 1, target)
+    b.add_abs16_fixup(pos + 1, target, offset=offset)
 
 
 def CALL(b: Block, address: int) -> None:
@@ -543,22 +618,217 @@ Body = Callable[[Block], None]
 class Func:
     """CALL可能な関数を表す薄いラッパ。"""
 
-    def __init__(self, name: str, body: Body) -> None:
+    def __init__(
+        self,
+        name: str,
+        body: Body,
+        no_auto_ret: bool = False,
+        group: str = DEFAULT_FUNC_GROUP_NAME,
+        defined_pc: int | None = None,
+        call_offset: int = 0,
+        bank: int | None = None,
+    ) -> None:
         self.name = name
         self.body = body
+        self.no_auto_ret = no_auto_ret
+        self.defined_pc: int | None = defined_pc
+        self.defined_size: int | None = None
+        self.call_offset = call_offset
+        self.bank = bank
+        _created_funcs_by_group.setdefault(group, []).append(self)
+        _created_funcs[self.name] = self
+        print(f"Func created: {self.name} (group: {group})")
 
     def define(self, b: Block) -> None:
         """関数本体を配置する (label + body + RET)。"""
 
-        b.label(self.name)
+        self.define_label_only(b)
+        start_pc = b.pc
         self.body(b)
-        # RET
-        b.emit(0xC9)
+        if not self.no_auto_ret:
+            # RET
+            b.emit(0xC9)
 
-    def call(self, b: Block) -> None:
+        self.defined_pc = start_pc
+        self.defined_size = b.pc - start_pc
+        body_size = (self.defined_size if self.no_auto_ret else self.defined_size - 1)
+
+        print(f"Func defined: {self.name} (body_size={body_size})")
+
+    def define_label_only(self, b: Block) -> None:
+        """関数のラベルだけを配置する。"""
+
+        b.label(self.name)
+
+    def call(self, b: Block, *, offset: int = 0) -> None:
         """CALL命令を発行。"""
 
-        CALL_label(b, self.name)
+        effective_offset = offset if offset != 0 else self.call_offset
+
+        if effective_offset != 0 and self.defined_pc is not None:
+            CALL(b, self.defined_pc + effective_offset)
+            return
+
+        CALL_label(b, self.name, offset=offset)
+
+
+def define_created_funcs(
+    b: Block, group: str = DEFAULT_FUNC_GROUP_NAME, *except_funcs: str | Func
+) -> None:
+    """Func で作られた関数をまとめて define するヘルパー。
+
+    Func の生成時に内部で登録される一覧から、作成順に ``define`` を行う。
+    ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
+    渡すことができる。 ``group`` はどのグループに登録された ``Func`` を
+    define するかを指定する。 未指定の場合はデフォルトグループを対象とする。
+    """
+
+    funcs = _created_funcs_by_group.get(group, [])
+    excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
+    excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
+    defined_names: set[str] = set()
+
+    for func in funcs:
+        if func in excluded_by_ref or func.name in excluded_by_name:
+            continue
+        if func.name in defined_names:
+            continue
+        print(f"Defining created func: {func.name}")
+        func.define(b)
+        defined_names.add(func.name)
+
+
+def define_all_created_funcs_label_only(
+    b: Block, group: str = DEFAULT_FUNC_GROUP_NAME, *except_funcs: str | Func
+) -> None:
+    """Func で作られた関数のラベルだけをまとめて define するヘルパー。
+
+    Func の生成時に内部で登録される一覧から、作成順に ``define_label_only`` を
+    行う。 ``except_funcs`` にはスキップしたい関数名または ``Func`` インスタンスを
+    渡すことができる。
+    """
+    funcs = _created_funcs_by_group.get(group, [])
+    excluded_by_name = {exc for exc in except_funcs if isinstance(exc, str)}
+    excluded_by_ref = {exc for exc in except_funcs if isinstance(exc, Func)}
+    defined_names: set[str] = set()
+
+    for func in funcs:
+        if func in excluded_by_ref or func.name in excluded_by_name:
+            continue
+        if func.name in defined_names:
+            continue
+        func.define_label_only(b)
+        defined_names.add(func.name)
+
+
+def get_funcs_by_group(group: str = DEFAULT_FUNC_GROUP_NAME) -> tuple[Func, ...]:
+    """登録済み ``Func`` をグループ単位で取得する。"""
+
+    return tuple(_created_funcs_by_group.get(group, ()))
+
+
+def ensure_funcs_defined(funcs: Iterable[Func]) -> None:
+    """指定された ``Func`` のアドレスが確定していることを確認する。"""
+
+    undefined_funcs = [func.name for func in funcs if func.defined_pc is None]
+    if undefined_funcs:
+        names = ", ".join(sorted(undefined_funcs))
+        raise ValueError(f"Func address not defined for: {names}")
+
+
+def set_funcs_call_offset(funcs: Iterable[Func], offset: int) -> None:
+    """``Func`` 呼び出し時に自動で使用するベースオフセットを設定する。"""
+
+    for func in funcs:
+        func.call_offset = offset
+
+
+def set_funcs_bank(funcs: Iterable[Func], bank: int | None) -> None:
+    """``Func`` が配置されるバンク番号を記録する。"""
+
+    for func in funcs:
+        func.bank = bank
+
+
+# ---------------------------------------------------------------------------
+# Func 出力ダンプ
+# ---------------------------------------------------------------------------
+
+
+def dump_func_bytes(
+    b: Block,
+    *,
+    origin: int = 0,
+    groups: Optional[Iterable[str]] = None,
+    funcs: Optional[Iterable[str | "Func"]] = None,
+    bytes_per_line: int = 16,
+    stream: TextIO | None = None,
+) -> None:
+    """``finalize`` 後の ``Func`` 出力をダンプする。"""
+
+    out = stream or sys.stdout
+    group_names = list(groups) if groups is not None else [DEFAULT_FUNC_GROUP_NAME]
+    allowed_funcs = {f.name if isinstance(f, Func) else f for f in funcs} if funcs else None
+    seen: set[str] = set()
+
+    for group in group_names:
+        for func in _created_funcs_by_group.get(group, []):
+            if func.name in seen:
+                continue
+            if allowed_funcs is not None and func.name not in allowed_funcs:
+                continue
+            if func.defined_pc is None or func.defined_size is None:
+                continue
+
+            seen.add(func.name)
+            start = func.defined_pc
+            end = start + func.defined_size
+
+            if end > len(b.code):
+                print(
+                    f"[Func dump] {func.name} skipped (range out of code: {start}-{end})",
+                    file=out,
+                )
+                continue
+
+            code_slice = b.code[start:end]
+            base_addr = origin + start
+            size = len(code_slice)
+
+            print(
+                f"[Func dump] {func.name} @0x{base_addr:04X} size={size}",
+                file=out,
+            )
+
+            for offset in range(0, size, bytes_per_line):
+                chunk = code_slice[offset:offset + bytes_per_line]
+                addr = base_addr + offset
+                hex_bytes = " ".join(f"{byte:02X}" for byte in chunk)
+                print(f"  {addr:04X}: {hex_bytes}", file=out)
+
+
+def dump_func_bytes_on_finalize(
+    b: Block,
+    *,
+    groups: Optional[Iterable[str]] = None,
+    funcs: Optional[Iterable[str | "Func"]] = None,
+    bytes_per_line: int = 16,
+    stream: TextIO | None = None,
+) -> None:
+    """``finalize`` 完了時に ``Func`` 出力ダンプを実行する。"""
+
+    def _callback(block: Block, origin: int) -> None:
+        dump_func_bytes(
+            block,
+            origin=origin,
+            groups=groups,
+            funcs=funcs,
+            bytes_per_line=bytes_per_line,
+            stream=stream,
+        )
+
+    b.add_finalize_callback(_callback)
+
 
 
 # ---------------------------------------------------------------------------
@@ -1052,11 +1322,18 @@ class LD:
         b.emit(0x3A, lo, hi)
 
     @staticmethod
-    def mn16_A(b: Block, addr: int) -> None:
-        """LD (nn),A"""
+    def BC_mn16(b: Block, addr: int) -> None:
+        """LD BC,(nn)"""
         lo = addr & 0xFF
         hi = (addr >> 8) & 0xFF
-        b.emit(0x32, lo, hi)
+        b.emit(0xED, 0x4B, lo, hi)
+
+    @staticmethod
+    def DE_mn16(b: Block, addr: int) -> None:
+        """LD DE,(nn)"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x5B, lo, hi)
 
     @staticmethod
     def HL_mn16(b: Block, addr: int) -> None:
@@ -1066,11 +1343,46 @@ class LD:
         b.emit(0x2A, lo, hi)
 
     @staticmethod
+    def SP_mn16(b: Block, addr: int) -> None:
+        """LD SP,(nn)"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x7B, lo, hi)
+
+    @staticmethod
+    def mn16_A(b: Block, addr: int) -> None:
+        """LD (nn),A"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0x32, lo, hi)
+
+    @staticmethod
+    def mn16_BC(b: Block, addr: int) -> None:
+        """LD (nn),BC"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x43, lo, hi)
+
+    @staticmethod
+    def mn16_DE(b: Block, addr: int) -> None:
+        """LD (nn),DE"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x53, lo, hi)
+
+    @staticmethod
     def mn16_HL(b: Block, addr: int) -> None:
         """LD (nn),HL"""
         lo = addr & 0xFF
         hi = (addr >> 8) & 0xFF
         b.emit(0x22, lo, hi)
+
+    @staticmethod
+    def mn16_SP(b: Block, addr: int) -> None:
+        """LD (nn),SP"""
+        lo = addr & 0xFF
+        hi = (addr >> 8) & 0xFF
+        b.emit(0xED, 0x73, lo, hi)
 
     @staticmethod
     def IX_mn16(b: Block, addr: int) -> None:
@@ -1206,7 +1518,40 @@ class LD:
         pos = b.emit(0x21, 0x00, 0x00)
         b.add_abs16_fixup(pos + 1, label)
 
+    # ---------------------------------------------------------
+    # IXL / IXH 系 必要時に足す
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def IXL_A(b: Block) -> None:
+        b.emit(0xDD, 0x6F)
+
+
+    @staticmethod
+    def A_IXL(b: Block) -> None:
+        b.emit(0xDD, 0x7D)
+
+
+def LDI(b: Block) -> None:
+    """
+    ブロック転送(Load and Increment)、(HL)の内容を(DE)にコピーし、HL, DEを+1、BCを-1する。
+    """
+    b.emit(0xED, 0xA0)
+
+
+def LDD(b: Block) -> None:
+    """
+    逆方向ブロック転送(Load and Decrement)、(HL)の内容を(DE)にコピーし、HL, DEを-1、BCを-1する。
+    """
+    b.emit(0xED, 0xA8)
+
+
 def LDIR(b: Block) -> None:
+    """
+　  HLレジスタに転送元のメモリーのアドレス、DEレジスタに転送先のアドレス、BCレジスタに適当な数をセットしておく
+    HLレジスタの指しているアドレスからDEレジスタの指しているアドレスにデータをコピーした後に、HLレジスタとDEレジスタのの値を＋１して、
+    BCレジスタの値を－１、BCレジスタの値が０になるまで上の動作を繰り返します。
+    """
     b.emit(0xED, 0xB0)
 
 
@@ -1357,6 +1702,34 @@ class ADD:
         b.emit(0xFD, 0x39)
 
 
+class ADC:
+    """ADC 系命令。"""
+
+    @staticmethod
+    def HL_BC(b: Block) -> None:
+        """ADC HL,BC"""
+
+        b.emit(0xED, 0x4A)
+
+    @staticmethod
+    def HL_DE(b: Block) -> None:
+        """ADC HL,DE"""
+
+        b.emit(0xED, 0x5A)
+
+    @staticmethod
+    def HL_HL(b: Block) -> None:
+        """ADC HL,HL"""
+
+        b.emit(0xED, 0x6A)
+
+    @staticmethod
+    def HL_SP(b: Block) -> None:
+        """ADC HL,SP"""
+
+        b.emit(0xED, 0x7A)
+
+
 class SUB:
 
     @staticmethod
@@ -1390,6 +1763,39 @@ class SUB:
     @staticmethod
     def A(b: Block):
         b.emit(0x97)
+
+    @staticmethod
+    def n8(b: Block, n: int):
+        """a = a- n"""
+        b.emit(0xD6, n & 0xFF)
+
+
+class SBC:
+    """SBC 系命令。"""
+
+    @staticmethod
+    def HL_BC(b: Block) -> None:
+        """SBC HL,BC"""
+
+        b.emit(0xED, 0x42)
+
+    @staticmethod
+    def HL_DE(b: Block) -> None:
+        """SBC HL,DE"""
+
+        b.emit(0xED, 0x52)
+
+    @staticmethod
+    def HL_HL(b: Block) -> None:
+        """SBC HL,HL"""
+
+        b.emit(0xED, 0x62)
+
+    @staticmethod
+    def HL_SP(b: Block) -> None:
+        """SBC HL,SP"""
+
+        b.emit(0xED, 0x72)
 
 
 class CP:
@@ -1601,6 +2007,12 @@ class OR:
 
         b.emit(0xF6, value & 0xFF)
 
+    @staticmethod
+    def IXL(b: Block):
+        """A <- A OR IXL"""
+        b.emit(0xDD, 0xB5)
+
+
 
 class XOR:
     """XOR 系命令。"""
@@ -1671,6 +2083,80 @@ class XOR:
 
         b.emit(0xEE, value & 0xFF)
 
+
+class BIT:
+    """BIT n,r 系命令。"""
+
+    _REG8_INDEX = {
+        "B": 0,
+        "C": 1,
+        "D": 2,
+        "E": 3,
+        "H": 4,
+        "L": 5,
+        "mHL": 6,
+        "A": 7,
+    }
+
+    @staticmethod
+    def r(b: Block, bit: int, reg: str) -> None:
+        """BIT bit,reg
+
+        reg は "A","B","C","D","E","H","L","mHL" のいずれか。
+        bit は 0〜7 を指定する。
+        """
+
+        if not 0 <= bit <= 7:
+            raise ValueError("bit must be in 0..7")
+        try:
+            r_index = BIT._REG8_INDEX[reg]
+        except KeyError as exc:
+            raise ValueError(f"invalid BIT reg operand: {reg}") from exc
+        opcode = 0x40 | (bit << 3) | r_index
+        b.emit(0xCB, opcode)
+
+    @staticmethod
+    def n8_A(b: Block, bit: int) -> None:
+        BIT.r(b, bit, "A")
+
+    @staticmethod
+    def mIXd(b: Block, bit: int, disp: int) -> None:
+        """BIT bit,(IX+d)"""
+
+        if not 0 <= bit <= 7:
+            raise ValueError("bit must be in 0..7")
+        opcode = 0x40 | (bit << 3) | 6
+        b.emit(0xDD, 0xCB, disp & 0xFF, opcode)
+
+    @staticmethod
+    def mIYd(b: Block, bit: int, disp: int) -> None:
+        """BIT bit,(IY+d)"""
+
+        if not 0 <= bit <= 7:
+            raise ValueError("bit must be in 0..7")
+        opcode = 0x40 | (bit << 3) | 6
+        b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
+
+
+# ---------------------------------------------------------------------------
+# レジスタ交換
+# ---------------------------------------------------------------------------
+
+class EX:
+
+    @staticmethod
+    def DE_HL(b: Block) -> None:
+        b.emit(0xEB)
+
+    @staticmethod
+    def mSP_HL(b: Block) -> None:
+        b.emit(0xE3)
+
+    @staticmethod
+    def AF_AF(b: Block) -> None:
+        b.emit(0x08)
+
+
 # ---------------------------------------------------------------------------
 # ビット操作
 # ---------------------------------------------------------------------------
@@ -1692,6 +2178,150 @@ def RRA(b: Block) -> None:
     b.emit(0x1F)
 
 
+class RR:
+    """RR r/(HL)/(IX+d)/(IY+d) 命令。"""
+
+    _REG8_INDEX = {
+        "B": 0,
+        "C": 1,
+        "D": 2,
+        "E": 3,
+        "H": 4,
+        "L": 5,
+        "mHL": 6,
+        "A": 7,
+    }
+
+    @staticmethod
+    def r(b: Block, reg: str) -> None:
+        """RR reg"""
+
+        try:
+            r_index = RR._REG8_INDEX[reg]
+        except KeyError as exc:
+            raise ValueError(f"invalid RR reg operand: {reg}") from exc
+        opcode = 0x18 | r_index
+        b.emit(0xCB, opcode)
+
+    @staticmethod
+    def B(b: Block) -> None:
+        RR.r(b, "B")
+
+    @staticmethod
+    def C(b: Block) -> None:
+        RR.r(b, "C")
+
+    @staticmethod
+    def D(b: Block) -> None:
+        RR.r(b, "D")
+
+    @staticmethod
+    def E(b: Block) -> None:
+        RR.r(b, "E")
+
+    @staticmethod
+    def H(b: Block) -> None:
+        RR.r(b, "H")
+
+    @staticmethod
+    def L(b: Block) -> None:
+        RR.r(b, "L")
+
+    @staticmethod
+    def A(b: Block) -> None:
+        RR.r(b, "A")
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        RR.r(b, "mHL")
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """RR (IX+d)"""
+
+        opcode = 0x18 | RR._REG8_INDEX["mHL"]
+        b.emit(0xDD, 0xCB, disp & 0xFF, opcode)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """RR (IY+d)"""
+
+        opcode = 0x18 | RR._REG8_INDEX["mHL"]
+        b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
+
+
+class SRL:
+    """SRL r/(HL)/(IX+d)/(IY+d) 命令。"""
+
+    _REG8_INDEX = {
+        "B": 0,
+        "C": 1,
+        "D": 2,
+        "E": 3,
+        "H": 4,
+        "L": 5,
+        "mHL": 6,
+        "A": 7,
+    }
+
+    @staticmethod
+    def r(b: Block, reg: str) -> None:
+        """SRL reg"""
+
+        try:
+            r_index = SRL._REG8_INDEX[reg]
+        except KeyError as exc:
+            raise ValueError(f"invalid SRL reg operand: {reg}") from exc
+        opcode = 0x38 | r_index
+        b.emit(0xCB, opcode)
+
+    @staticmethod
+    def B(b: Block) -> None:
+        SRL.r(b, "B")
+
+    @staticmethod
+    def C(b: Block) -> None:
+        SRL.r(b, "C")
+
+    @staticmethod
+    def D(b: Block) -> None:
+        SRL.r(b, "D")
+
+    @staticmethod
+    def E(b: Block) -> None:
+        SRL.r(b, "E")
+
+    @staticmethod
+    def H(b: Block) -> None:
+        SRL.r(b, "H")
+
+    @staticmethod
+    def L(b: Block) -> None:
+        SRL.r(b, "L")
+
+    @staticmethod
+    def A(b: Block) -> None:
+        SRL.r(b, "A")
+
+    @staticmethod
+    def mHL(b: Block) -> None:
+        SRL.r(b, "mHL")
+
+    @staticmethod
+    def mIXd(b: Block, disp: int) -> None:
+        """SRL (IX+d)"""
+
+        opcode = 0x38 | SRL._REG8_INDEX["mHL"]
+        b.emit(0xDD, 0xCB, disp & 0xFF, opcode)
+
+    @staticmethod
+    def mIYd(b: Block, disp: int) -> None:
+        """SRL (IY+d)"""
+
+        opcode = 0x38 | SRL._REG8_INDEX["mHL"]
+        b.emit(0xFD, 0xCB, disp & 0xFF, opcode)
+
+
 def DAA(b: Block) -> None:
     b.emit(0x27)
 
@@ -1706,6 +2336,16 @@ def SCF(b: Block) -> None:
 
 def CCF(b: Block) -> None:
     b.emit(0x3F)
+
+
+def CPL(b: Block) -> None:
+    """Aレジスタをビット反転"""
+    b.emit(0x2F)
+
+
+def NEG(b: Block) -> None:
+    """A <- 0 - A （2の補数）"""
+    b.emit(0xED, 0x44)
 
 
 # ---------------------------------------------------------------------------
@@ -1869,6 +2509,8 @@ def DB(b: Block, *values: int) -> None:
     """1バイト値を順に配置する。"""
 
     for v in values:
+        if not 0 <= v <= 0xFF:
+            raise ValueError(f"DB value out of range (0..255): {v}")
         b.emit(v & 0xFF)
 
 
@@ -1881,7 +2523,7 @@ def DW(b: Block, *values: int) -> None:
         b.emit(lo, hi)
 
 # ---------------------------------------------------------------------------
-# OUT 命令
+# OUT / IN 命令
 # ---------------------------------------------------------------------------
 
 
@@ -1924,6 +2566,99 @@ class OUT_C:
         except KeyError as exc:
             raise ValueError(f"invalid src for OUT (C),r: {src}") from exc
         b.emit(0xED, opcode)
+
+    @staticmethod
+    def B(b: Block) -> None:
+        OUT_C.r(b, "B")
+
+    @staticmethod
+    def C(b: Block) -> None:
+        OUT_C.r(b, "C")
+
+    @staticmethod
+    def D(b: Block) -> None:
+        OUT_C.r(b, "D")
+
+    @staticmethod
+    def E(b: Block) -> None:
+        OUT_C.r(b, "E")
+
+    @staticmethod
+    def H(b: Block) -> None:
+        OUT_C.r(b, "H")
+
+    @staticmethod
+    def L(b: Block) -> None:
+        OUT_C.r(b, "L")
+
+    @staticmethod
+    def A(b: Block) -> None:
+        OUT_C.r(b, "A")
+
+"""
+TODO IN系 実装
+"""
+
+# ---------------------------------------------------------------------------
+# ブロック入出力
+# ---------------------------------------------------------------------------
+
+
+def INI(b: Block) -> None:
+    """
+    Input and Increment,ポートCのデータを(HL)に書き込み、HLを+1、Bを-1する。
+    """
+    b.emit(0xED, 0xA2)
+
+
+def IND(b: Block) -> None:
+    """
+    Input and Decrement,ポートCのデータを(HL)に書き込み、HLを-1、Bを-1する。
+    """
+    b.emit(0xED, 0xAA)
+
+
+def INIR(b: Block) -> None:
+    """
+    "Input, Incr. and Repeat",INIを繰り返す。 Bが0になるまで連続で入力し続ける。
+    """
+    b.emit(0xED, 0xB2)
+
+
+def INDR(b: Block) -> None:
+    """
+    "Input, Decr. and Repeat" ,INDを繰り返す。 Bが0になるまで連続で入力し続ける。
+    """
+    b.emit(0xED, 0xBA)
+
+
+def OUTI(b: Block) -> None:
+    """
+    Output and Increment,(HL)のデータをポートCへ出力し、HLを+1、Bを-1する。
+    """
+    b.emit(0xED, 0xA3)
+
+
+def OUTD(b: Block) -> None:
+    """
+    Output and Decrement,(HL)のデータをポートCへ出力し、HLを-1、Bを-1する。
+    """
+    b.emit(0xED, 0xAB)
+
+
+def OUTIR(b: Block) -> None:
+    """
+    "Output, Incr. and Repeat",OUTIを繰り返す。 Bが0になるまで連続で出力し続ける。
+    """
+    b.emit(0xED, 0xB3)
+
+
+def OUTDR(b: Block) -> None:
+    """
+    "Output, Decr. and Repeat",OUTDを繰り返す。 Bが0になるまで連続で出力し続ける。
+    """
+    b.emit(0xED, 0xBB)
+
 
 # ---------------------------------------------------------------------------
 # push / pop
@@ -2042,3 +2777,165 @@ def EI(b: Block) -> None:
     """EI (割り込み許可) 命令を挿入する。"""
     b.emit(0xFB)
 
+
+def register_dump_target(name: str, addr: int, size: int) -> None:
+    """ダンプ先のメモリアドレスと確保バイト数を登録する。"""
+
+    if size <= 0:
+        raise ValueError(f"dump target size must be positive : {size}")
+    if size > 8:
+        # TODO 8以上は受け付けていい
+        raise ValueError(f"dump targets support at most 8 bytes : {size}")
+    _dump_targets[name] = (addr & 0xFFFF, size)
+
+
+def dump_regs(
+    b: Block,
+    target: str,
+    *,
+    af: bool = True,
+    bc: bool = True,
+    de: bool = True,
+    hl: bool = True,
+    ix: bool = False,
+    iy: bool = False,
+) -> None:
+    """現在のレジスタ値を破壊せずにメモリへダンプする。
+
+    事前に :func:`register_dump_target` で名前とアドレス、確保バイト数を
+    登録しておき、その名前を ``target`` に渡す。登録サイズが選択された
+    レジスタの総バイト数を下回る場合はエラーとなる。空きバイトがある場合は
+    0 で埋める。
+    """
+
+    if target not in _dump_targets:
+        raise ValueError(f"dump_regs target is not registered: {target}")
+
+    dest_addr, max_bytes = _dump_targets[target]
+
+    ordered_flags = [
+        ("AF", af),
+        ("BC", bc),
+        ("DE", de),
+        ("HL", hl),
+        ("IX", ix),
+        ("IY", iy),
+    ]
+    selected = [reg for reg, flag in ordered_flags if flag]
+    total_bytes = len(selected) * 2
+    if total_bytes > max_bytes:
+        raise ValueError(
+            f"dump_regs target '{target}' reserves {max_bytes} bytes; requires {total_bytes}"
+        )
+
+    padding = max_bytes - total_bytes
+
+    push_sequence: List[RegNames16] = []
+    # 出力対象に含まれないが作業で破壊するレジスタを先に退避
+    for reg in ("AF", "BC", "DE", "HL"):
+        if reg not in selected:
+            PUSH.r(b, reg)
+            push_sequence.append(reg)
+
+    # 出力対象を逆順に PUSH して、スタック先頭を AF→… の順に並べる
+    for reg in reversed(selected):
+        PUSH.r(b, reg)
+        push_sequence.append(reg)
+
+    # スタック先頭→dest_addr に AF の上位バイトから順にコピー
+    LD.HL_n16(b, 0)
+    ADD.HL_SP(b)
+    LD.DE_n16(b, dest_addr & 0xFFFF)
+    if total_bytes:
+        for idx in range(len(selected)):
+            # 上位バイト
+            INC.HL(b)
+            LD.A_mHL(b)
+            LD.mDE_A(b)
+            INC.DE(b)
+
+            # 下位バイト
+            DEC.HL(b)
+            LD.A_mHL(b)
+            LD.mDE_A(b)
+            INC.DE(b)
+
+            # 次のレジスタへ
+            if idx + 1 < len(selected):
+                INC.HL(b)
+                INC.HL(b)
+
+    if padding:
+        XOR.A(b)
+        for _ in range(padding):
+            LD.mDE_A(b)
+            INC.DE(b)
+
+    for reg in reversed(push_sequence):
+        POP.r(b, reg)
+
+
+def dump_mem(
+    b: Block,
+    target: str,
+    source_addr: int,
+    *,
+    length: Optional[int] = None,
+    padding_byte: int = 0,
+) -> None:
+    """指定メモリ領域を破壊せずにターゲット領域へダンプする。
+
+    :param target: :func:`register_dump_target` で登録したターゲット名。
+    :param source_addr: コピー元アドレス。
+    :param length: コピーするバイト数。指定がない場合はターゲットの確保バイト数
+        すべてをダンプする。ターゲット確保サイズを超える場合はエラー。
+    :param padding_byte: ``length`` が登録サイズに満たない場合に余りを埋める値。
+        0〜255 で指定し、それ以外は :class:`ValueError`。
+    """
+
+    if target not in _dump_targets:
+        raise ValueError(f"dump_mem target is not registered: {target}")
+
+    dest_addr, max_bytes = _dump_targets[target]
+    if length is None:
+        copy_bytes = max_bytes
+    else:
+        if length < 0:
+            raise ValueError("dump_mem length must be non-negative")
+        copy_bytes = length
+
+    if copy_bytes > max_bytes:
+        raise ValueError(
+            f"dump_mem target '{target}' reserves {max_bytes} bytes; requires {copy_bytes}"
+        )
+
+    if not 0 <= padding_byte <= 0xFF:
+        raise ValueError("dump_mem padding_byte must be between 0 and 255")
+
+    padding = max_bytes - copy_bytes
+
+    # レジスタを全て復元するために退避
+    PUSH.AF(b)
+    PUSH.BC(b)
+    PUSH.DE(b)
+    PUSH.HL(b)
+
+    LD.HL_n16(b, source_addr & 0xFFFF)
+    LD.DE_n16(b, dest_addr & 0xFFFF)
+    if copy_bytes:
+        LD.BC_n16(b, copy_bytes)
+        LDIR(b)
+
+    if padding:
+        if padding_byte == 0:
+            XOR.A(b)
+        else:
+            LD.A_n8(b, padding_byte)
+        for _ in range(padding):
+            LD.mDE_A(b)
+            INC.DE(b)
+
+    POP.HL(b)
+    POP.DE(b)
+    POP.BC(b)
+    POP.AF(b)

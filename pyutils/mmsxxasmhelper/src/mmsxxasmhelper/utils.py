@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import sys
 from functools import wraps
 from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
@@ -17,7 +18,10 @@ __all__ = [
     "set_debug",
     "debug_trap",
     "debug_print_labels",
+    "embed_debug_string_macro",
+    "debug_print_pc",
     "print_bytes",
+    "MemAddrAllocator",
     "with_register_preserve",
 ]
 
@@ -65,7 +69,12 @@ JIFFY_ADDR = 0xFC9E
 # ---------------------------------------------------------------------------
 
 
-def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = True):
+def create_rng_seed_func(
+    rng_state_addr: int,
+    preserve_reg_bc: bool = True,
+    *,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
+):
     """
     ランダムシードの値を指定アドレスに描きこむ
     :param rng_state_addr: 読み書きするアドレス
@@ -82,10 +91,15 @@ def create_rng_seed_func(rng_state_addr: int, preserve_reg_bc: bool = True):
             POP.BC(b)
         LD.mn16_A(b, rng_state_addr)
 
-    return Func("create_rng_seed", _create_rng_seed)
+    return Func("create_rng_seed", _create_rng_seed, group=group)
 
 
-def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
+def rng_next_func(
+    rng_state_addr: int,
+    preserve_reg_bc: bool = True,
+    *,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
+) -> Func:
     """
     古典的簡易ランダムアルゴリズム
     あるアドレスの値を次のランダム値に更新する Aレジスタに更新後の値を返す
@@ -109,7 +123,7 @@ def rng_next_func(rng_state_addr: int, preserve_reg_bc: bool = True) -> Func:
             POP.BC(b)
         RET(b)
 
-    return Func("rng_next", _rng_next)
+    return Func("rng_next", _rng_next, group=group)
 
 
 # ---------------------------------------------------------------------------
@@ -174,16 +188,103 @@ def debug_trap(b: Block) -> None:
 
 
 #
+# デバッグ用に任意の文字列を埋め込む
+#
+
+def embed_debug_string_macro(b: Block, text: str, *, with_nops: bool = True, encoding: str = "ascii") -> None:
+    """任意の文字列をコードに埋め込むデバッグマクロ。
+
+    文字列の直前に文字列終端へのジャンプを挿入するため、
+    任意の位置に配置しても実行フローへ影響を与えない。
+    デバッグ時のメモリダンプで位置を把握しやすくする用途を想定している。
+    """
+
+    end_label = unique_label("debugstr_end")
+    JP(b, end_label)
+    if with_nops:
+        NOP(b)
+    string_pos = b.pc
+    string_bytes = str_bytes(text, encoding)
+    DB(b, *string_bytes)
+    if with_nops:
+        NOP(b)
+    b.label(end_label)
+    break_pos = b.pc
+
+    _register_debug_string(b, text, break_pos, string_pos, len(string_bytes))
+
+
+def _register_debug_string(b: Block, text: str, break_pos: int, offset: int, length: int) -> None:
+    entries = getattr(b, "_embedded_debug_strings", None)
+    if entries is None:
+        entries = []
+        setattr(b, "_embedded_debug_strings", entries)
+
+    entries.append((text, break_pos, offset, length))
+
+    if getattr(b, "_embedded_debug_strings_registered", False):
+        return
+
+    def _print_debug_strings(block: Block, origin: int) -> None:
+        if not DEBUG:
+            return
+
+        embedded = getattr(block, "_embedded_debug_strings", ())
+        if not embedded:
+            return
+
+        print("Embedded debug strings:")
+        for string, break_pos_addr, relative_offset, length in embedded:
+            break_pos_addr = origin + break_pos_addr
+            relative_end = relative_offset + max(length - 1, 0)
+            absolute_start = origin + relative_offset
+            absolute_end = origin + relative_end
+            print(
+                f"BP:{break_pos_addr:04X} {absolute_start:04X} ~ {absolute_end:04X}"
+                f"(+{relative_offset:04X} ~ +{relative_end:04X} ): {string}"
+            )
+
+    b._finalize_callbacks.append(_print_debug_strings)
+    setattr(b, "_embedded_debug_strings_registered", True)
+
+
+def debug_print_pc(b: Block, name: str) -> None:
+    """finalize 後に呼び出し位置のアドレスを名前付きで表示するデバッグヘルパー。
+
+    ブレークポイント設定の目印として使用することを想定している。
+    """
+
+    pos = b.pc
+
+    def _print_pc(block: Block, origin: int) -> None:
+        if not DEBUG:
+            return
+
+        absolute = origin + pos
+        print(f"[BP] {name}: {absolute:04X} (+{pos:04X})")
+
+    b._finalize_callbacks.append(_print_pc)
+
+
+#
 # finalize 後に決定したラベルアドレスを表示するデバッグ用ヘルパー
 #
 
-def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool = False) -> str:
+def debug_print_labels(
+    b: Block,
+    origin: int = 0,
+    *,
+    stream=None,
+    no_print: bool = False,
+    include_offset: bool = False,
+) -> str:
     """
     finalize 後に決定したラベルアドレスをダンプする。
     :param b: Block
-    :param origin: アドレスの
+    :param origin: アドレスの基点
     :param stream:
     :param no_print: print しない（でテキストだけ得る）
+    :param include_offset: オフセットも併記する
     """
 
     if not DEBUG:
@@ -196,7 +297,11 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 
     messages = []
     for name, offset in sorted(b.labels.items(), key=lambda item: item[1]):
-        message = f"{origin + offset:04X}h: {name}"
+        absolute = origin + offset
+        if include_offset:
+            message = f"{absolute:04X} (+{offset:04X}): {name}"
+        else:
+            message = f"{absolute:04X}: {name}"
         messages.append(message)
         if not no_print:
             print(message, file=stream)
@@ -209,7 +314,9 @@ def debug_print_labels(b: Block, origin: int = 0, *, stream=None, no_print: bool
 # 便利python関数
 # ---------------------------------------------------------------------------
 
-def print_bytes(data: bytes, step: int = 16, address: int | None = 0) -> None:
+def print_bytes(data: bytes, step: int = 16, address: int | None = 0, title: str = "") -> None:
+    if title:
+        print(title)
     for i in range(0, len(data), step):
         chunk = data[i:i + step]
         chunk = ' '.join(f'{b:02x}' for b in chunk)
@@ -217,3 +324,195 @@ def print_bytes(data: bytes, step: int = 16, address: int | None = 0) -> None:
             chunk = f"{address: 05x}: {chunk}"
             address += step
         print(chunk)
+
+
+class MemAddrAllocator:
+    """メモリアドレスを順次管理するユーティリティ。"""
+
+    def __init__(self, base_address: int, *, debug: bool = False) -> None:
+        self._base_address = base_address
+        self._current_address = base_address
+        self._allocated: list[str] = []
+        self._lookup: dict[str, dict[str, object]] = {}
+
+        self._initial_bytes = bytearray()
+        self._initial_value_names: list[str] = []
+
+        self.debug = debug
+
+    def _ensure_capacity(self, address: int, size: int) -> int:
+        offset = address - self._base_address
+        required = offset + size
+        if len(self._initial_bytes) < required:
+            self._initial_bytes.extend([0x00] * (required - len(self._initial_bytes)))
+        return offset
+
+    def _normalize_initial_value(self, value: object) -> list[int]:
+        if isinstance(value, Sequence) and all(isinstance(b, int) for b in value):
+            return list(value)
+        if isinstance(value, (bytes, bytearray)):
+            return list(value)
+
+        msg = "initial value must be bytes or bytearray"
+        raise TypeError(msg)
+
+    def add(
+        self,
+        name: str,
+        size: int | None = None,
+        initial_value: Sequence[int] | None = None,
+        description: str = "",
+    ) -> int:
+        """名前とサイズを登録し、割り当て先アドレスを返す。
+
+        例: ``allocator.add("BUFFER", 4, initial_value=b"\x01\x02\x03\x04", description="作業領域")``
+        """
+
+        if name in self._lookup:
+            msg = f"{name!r} is already allocated"
+            raise ValueError(msg)
+
+        raw: list[int] | None = None
+        value_length: int | None = None
+        if initial_value is not None:
+            raw = self._normalize_initial_value(initial_value)
+            value_length = len(raw)
+
+        if size is None and value_length is None:
+            msg = "size or initial_value is required"
+            raise ValueError(msg)
+
+        if size is None:
+            size = value_length
+        elif value_length is not None and size != value_length:
+            msg = (f"size ({size}) does not match initial value length ({value_length}),"
+                   f" name: {name} value:{initial_value} raw:{raw})")
+            raise ValueError(msg)
+
+        assert size is not None
+
+        if raw is None:
+            raw = []
+            value_length = 0
+
+        address = self._current_address
+        self._allocated.append(name)
+        has_initial_value = initial_value is not None
+        raw_initial_value = raw if raw else [0x00] * size
+        self._lookup[name] = {
+            "address": address,
+            "size": size,
+            "description": description,
+            "initial_value": bytes(raw_initial_value),
+            "has_initial_value": has_initial_value,
+        }
+        self._current_address += size
+
+        offset = self._ensure_capacity(address, size)
+        if raw is not None:
+            self._initial_bytes[offset : offset + len(raw)] = raw
+
+        if has_initial_value:
+            self._initial_value_names.append(name)
+
+        return address
+
+    def get_address(self, name: str) -> int:
+        """登録済みの名前を指定してアドレスを取得する。"""
+
+        try:
+            return self._lookup[name]["address"]  # type: ignore[index]
+        except KeyError as exc:  # pragma: no cover - simple passthrough
+            raise KeyError(name) from exc
+
+    def get_size(self, name: str) -> int:
+        """登録済みの名前を指定してサイズを取得する。"""
+
+        try:
+            print(self._lookup[name])
+            return self._lookup[name]["size"]  # type: ignore[index]
+        except KeyError as exc:  # pragma: no cover - simple passthrough
+            raise KeyError(name) from exc
+
+    def debug_print(self) -> None:
+        """登録済みの名前とアドレスを出力する。"""
+        print(self.as_str())
+
+    def as_str(self) -> str:
+        s = ""
+        for index, name in enumerate(self._allocated):
+            entry = self._lookup[name]
+            has_initial_value = entry["has_initial_value"]
+            address = entry["address"]
+            size = entry["size"]
+            desc = entry["description"]
+            initial = entry["initial_value"]
+
+            desc_text = f" # {desc}" if desc else ""
+            initial_hex = " ".join(f"{byte:02X}" for byte in initial)
+            s += f"[{index:02d}] {address:05X}h: {name} (size={size}" + \
+                (f", initial=[{initial_hex}])" if has_initial_value else ")") + \
+                f"{desc_text}\n"
+
+        return s
+
+    @property
+    def initial_bytes(self) -> bytes:
+        """初期値が設定されたバイト列（未設定は 0 埋め）を返す。"""
+
+        return bytes(self._initial_bytes)
+
+    @property
+    def total_size(self) -> int:
+        """割り当て済み領域の全サイズを返す。"""
+
+        return self._current_address - self._base_address
+
+    def emit_initial_value_loader(
+        self,
+        block: Block,
+        *,
+        table_label_prefix: str = "ALLOC_INITIAL_BYTES",
+    ) -> None:
+        """初期値をまとめて RAM に書き込むコードとデータを出力する。"""
+
+        if not self._initial_value_names:
+            return
+
+        segments: list[tuple[int, bytearray]] = []
+        for name in self._allocated:
+            entry = self._lookup[name]
+            if not entry["has_initial_value"]:
+                continue
+
+            address = int(entry["address"])
+            data = bytearray(entry["initial_value"])
+
+            print(f"Emitting {name} initial value loader: {address:04X}, size {len(data)} data:{data.hex()}")
+            if segments and address == segments[-1][0] + len(segments[-1][1]):
+                segments[-1][1].extend(data)
+            else:
+                segments.append((address, data))
+
+
+        for index, (address, data) in enumerate(segments):
+            data_label = unique_label(f"{table_label_prefix}_{index}")
+            after_label = unique_label("AFTER_INITIAL_BYTES")
+
+            LD.HL_label(block, data_label)
+            LD.DE_n16(block, address)
+            LD.BC_n16(block, len(data))
+            LDIR(block)
+            JR(block, after_label)
+
+            block.label(data_label)
+            DB(block, *data)
+            block.label(after_label)
+
+    def write_initial_values(self, target: bytearray) -> None:
+        """保持している初期値を ``target`` に書き込む。"""
+        if len(target) < self.total_size:
+            msg = "target buffer is too small to receive initial values"
+            raise ValueError(msg)
+
+        target[: self.total_size] = self._initial_bytes[: self.total_size]

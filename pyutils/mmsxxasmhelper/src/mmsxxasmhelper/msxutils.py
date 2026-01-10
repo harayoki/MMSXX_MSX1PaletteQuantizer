@@ -15,27 +15,36 @@ __all__ = [
     "place_msx_rom_header_macro",
     # "fill_stack_macro",
     "store_stack_pointer_macro",
+    "init_stack_pointer_macro",
     "restore_stack_pointer_macro",
     "get_msxver_macro",
     "set_msx2_palette_default_macro",
     "init_screen2_macro",
     "set_screen_mode_macro",
+    "set_screen_display_macro",
+    "set_screen_display_status_flag_macro",
+    "set_text_cursor_macro",
+    "write_text_with_cursor_macro",
+    "write_text_with_cursor_macro_with_bios",
     "set_screen_colors_macro",
     "enaslt_macro",
     "ldirvm_macro",
     # "set_palette_macro",
 
+    "build_update_input_func",
+    "INPUT_KEY_BIT",
+    "build_beep_control_utils",
+    "build_set_vram_write_func",
+    "build_outi_repeat_func",
+    "build_scroll_name_table_func",
+    "INITXT",
     "VDP_CTRL",
     "VDP_DATA",
     "VDP_PAL",
+    "enable_turbor_high_speed_macro",
 ]
 P = ParamSpec("P")
 
-
-# 自プログラム専用のRAM領域（C000h–EFFFh）内に確保する一時ワーク。
-# ROMブート直後のBIOSスタックはFxxxh帯に来ることが多いため、
-# システムワークと衝突しないようF000h未満に置く。
-SP_TEMP_RAM = 0xEFE0
 
 
 # BIOS コールアドレス
@@ -43,8 +52,13 @@ LDIRVM = 0x005C  # メモリ→VRAMの連続書込
 CHGMOD = 0x005F  # 画面モード変更
 INIGRP = 0x0072  # SCREEN 初期化
 CHGCLR = 0x0062  # 画面色変更
+POSIT = 0x00C6  # カーソル移動
+CHPUT = 0x00A2  # 1文字出力（SCREEN0/1/2 text??、その他未対応）
+INITXT = 0x006C  # SCREEN 0 初期化
 ENASLT = 0x0024  # スロット切り替え
 RSLREG = 0x0138  # 現在のスロット情報取得
+# turboR 専用
+CHGCPU = 0x0180  # CPU 切り替え (A=0: Z80, 1: R800 ROM, 2: R800 DRAM)
 # EXPTBL = 0xFCC1  # 拡張スロット情報
 # EXPTBL_MINUS_1 = EXPTBL -1
 # CALSLT = 0x001C  # インタースロットCALL（任意スロットの任意アドレスを呼ぶ）
@@ -58,6 +72,7 @@ FORCLR = 0xF3E9  # 前景色
 BAKCLR = 0xF3EA  # 背景色
 BDRCLR = 0xF3EB  # 枠色
 MSXVER = 0x002D  # 0=MSX1, 1=MSX2, 2=2+, 3=turboR
+RG1SAV = 0xF3E0  # VDPレジスタ1のミラー
 
 VDP_DATA = 0x98   # VDPデータポート
 VDP_CTRL = 0x99   # VDPコントロールポート
@@ -179,19 +194,49 @@ qqq
 #     b.emit(0xED, 0xB0)  # LDIR
 
 
+# 候補1
+# システムスタック下限(F383H)よりは下で、RAMの後方に近いアドレス
+# SP_TEMP_RAM1 = 0xF300
+SP_TEMP_RAM1 = 0xF37A
 
-def store_stack_pointer_macro(b: Block) -> None:
-    """スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。"""
+# # 候補2
+# # 自プログラム専用のRAM領域（C000h–EFFFh）内に確保する一時ワーク。
+# # ROMブート直後のBIOSスタックはFxxxh帯に来ることが多い？？ため chatGPTの意見、
+# # システムワークと衝突しないようF000h未満に置く。
+# SP_TEMP_RAM2 = 0xEFE0
 
+# 候補2 ぎりぎり ここで良いGeminiの意見
+SP_TEMP_RAM3 = 0xF380
+
+
+def store_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM1) -> None:
+    """
+    ROM起動直後、スタックポインタ(SP)の値を一時 RAM 領域に保存するマクロ。
+    既存のスタック値を残す安全版。（BASICにもどる場合など）
+    init_stack_pointer_macroを呼んだ方が無駄がないが、すでに動いてるものもあるので残す。
+    """
     # 元のスタックポインタ(SP)の値を RAM に退避する
     LD.HL_n16(b, 0)
     ADD.HL_SP(b)  # HL = SP
-    LD.mn16_HL(b, SP_TEMP_RAM)  # SP_TEMP_RAM にSP保存
+    LD.mn16_HL(b, address)  # SP_TEMP_RAM にSP保存
 
     # 新しいスタックポインタを、RAM上の安全な場所(SP_TEMP_RAM+4)へ設定
     # (PUSH 時のデクリメントで退避した SP の領域を踏まないように 4 バイト空ける)
-    LD.HL_n16(b, SP_TEMP_RAM + 4)
+    LD.HL_n16(b, address + 4)
     LD.SP_HL(b)
+
+
+def restore_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM1) -> None:
+    """一時 RAM 領域に保存したスタックポインタ(SP)の値を復元するマクロ。"""
+    LD.HL_mn16(b, address)
+    LD.SP_HL(b)
+
+
+def init_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM3) -> None:
+    """
+    ROM起動直後、スタックポインタ(SP)の値を移動するマクロ
+    """
+    LD.SP_n16(b, address)
 
 
 # 上の物より無駄が少ないかもしれないバージョン 未検証
@@ -211,11 +256,6 @@ def store_stack_pointer_macro(b: Block) -> None:
 #     # EI（必要なら。割り込み禁止のまま走る設計なら外す）
 #     b.emit(0xFB)
 
-
-def restore_stack_pointer_macro(b: Block) -> None:
-    """一時 RAM 領域に保存したスタックポインタ(SP)の値を復元するマクロ。"""
-    LD.HL_mn16(b, SP_TEMP_RAM)
-    LD.SP_HL(b)
 
 
 def enaslt_macro(b: Block) -> None:
@@ -324,6 +364,29 @@ def set_msx2_palette_default_macro(b: Block) -> None:
 
     # print("-----")
     # print(_MSX2_PALETTE_BYTES)
+
+
+def enable_turbor_high_speed_macro(b: Block) -> None:
+    """turboR の場合に R800 DRAM モードへ切り替える。
+
+    - MSXVER で turboR かを判定し、それ以外では何もしない。
+    - R800 DRAM を指定するため、A=2 をセットして CHGCPU を呼び出す。
+
+    レジスタ変更: A
+    """
+
+    end_label = unique_label("__TURBOR_HIGH_SPEED_END__")
+
+    # turboR 以外ではスキップ
+    get_msxver_macro(b)
+    CP.n8(b, 0x03)
+    JP_NZ(b, end_label)
+
+    # A=2 (R800 DRAM) で高速モードへ
+    LD.A_n8(b, 0x02)
+    CALL(b, CHGCPU)
+
+    b.label(end_label)
     # print("-----")
 
 
@@ -333,6 +396,71 @@ def set_screen_mode_macro(b: Block, mode: int) -> None:
     """
     LD.A_n8(b, mode & 0xFF)
     b.emit(0xCD, CHGMOD & 0xFF, (CHGMOD >> 8) & 0xFF)
+
+
+def set_screen_display_macro(b: Block, display_on: bool) -> None:
+    """VDPレジスタ1のBit6を 0/1 に設定して画面表示を切り替えるマクロ。
+    画面非表示中は VDP アクセスをウェイト無しで行えるため、高速化に利用できる。
+
+    レジスタ変更: A
+    """
+    LD.A_mn16(b, RG1SAV)
+    if display_on:
+        OR.n8(b, 0x40)
+    else:
+        AND.n8(b, 0xBF)
+    LD.mn16_A(b, RG1SAV)
+    OUT(b, VDP_CTRL)
+    OUT_A(b, VDP_CTRL, 0x80 + 1)
+
+
+def set_screen_display_status_flag_macro(b: Block) -> None:
+    """VDPレジスタ1のBit6を取得して画面表示状態でフラグを立てるマクロ
+    画面表示中ならＮＺ、非表示中ならＺフラグがセットされる。
+    レジスタ変更: A
+    """
+    LD.A_mn16(b, RG1SAV)
+    AND.n8(b, 6)
+
+
+def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
+    """POSIT (#00C6) を呼び出してテキストカーソルを移動するマクロ。
+    H: X 座標、L: Y 座標を設定してから POSIT を呼び出す。
+    レジスタ変更: AF（BIOS 呼び出しにより破壊される）。
+    画面座標は 1 始まりなので、引数の座標に 1 を加算してから設定する。
+    """
+    LD.H_n8(b, (x + 1) & 0xFF)
+    LD.L_n8(b, (y + 1) & 0xFF)
+    CALL(b, POSIT)
+
+
+def write_text_with_cursor_macro_with_bios(b: Block, text: str, x: int, y: int) -> None:
+    """
+    ※ このメソッドはV使わずに、RAM直書きをお勧めする。
+    テキストを任意の座標から書き出すマクロ。
+    SCREEN0/SCREEN1 などのテキスト系スクリーン向けのマクロとして利用する。
+    利用を勧めないのは、書き込む位置にスクロール処理が入ったり なぜか少しX座標がずれたりする現象が確認されるため。
+    """
+    for row_offset, line in enumerate(text.split("\n")):
+        set_text_cursor_macro(b, x, y + row_offset)
+        for ch in line:
+            LD.A_n8(b, ord(ch) & 0xFF)
+            CALL(b, CHPUT)
+
+
+def write_text_with_cursor_macro(b: Block, text: str, x: int, y: int, name_table:int = 0, width: int = 40) -> None:
+    """
+    テキストを任意の座標から書き出すマクロ VRAM直書き版。
+    """
+    for row_offset, line in enumerate(text.split("\n")):
+        address = name_table + (y + row_offset) * width + x
+        LD.HL_n16(b, address & 0xFFFF)
+        _set_vram_write(b)
+
+        for ch in line:
+            LD.A_n8(b, ord(ch) & 0xFF)
+            OUT(b, 0x98)
+            NOP(b, 2)
 
 
 def init_screen2_macro(b: Block) -> None:
@@ -437,3 +565,501 @@ def ldirvm_macro(
 #     # call_subrom_macro(block, SETPLET)
 
 
+# --- 仮想ボタン定義 (論理ビット) ---
+class INPUT_KEY_BIT:
+    L_UP: int = 0  # Bit 0
+    L_DOWN: int = 1  # Bit 1
+    L_LEFT: int = 2  # Bit 2
+    L_RIGHT: int = 3  # Bit 3
+    L_BTN_A: int = 4  # Bit 4 (SPACE / タップ)
+    L_BTN_B: int = 5  # Bit 5 (SHIFT / ジョイスティック2)
+    L_ESC: int = 6  # Bit 6
+    L_EXTRA: int = 7  # Bit 7
+
+
+def build_update_input_func(
+        input_hold: int = 0xC100,
+        input_trg: int = 0xC101,
+        *,
+        group: str = DEFAULT_FUNC_GROUP_NAME,
+) -> Func:
+    SNSMAT = 0x0141
+    CHSNS = 0x009C
+    CHGET = 0x009F
+    GTSTCK = 0x00D5
+    GTTRIG = 0x00D8
+
+    def update_input(block: Block) -> None:
+        # PUSH でレジスタ保護
+        PUSH.IX(block)
+        PUSH.BC(block)
+
+        # IXL を作業用ボタンフラグにする (0でリセット)
+        XOR.A(block)
+        LD.IXL_A(block)
+
+        # --- 1. Keyboard cursor (GTSTCK 0) ---
+        LD.A_n8(block, 0)
+        CALL(block, GTSTCK)
+        LD.B_A(block)  # B = 方向 (1-8)
+
+        # UP 判定 (1, 2, 8)
+        CP.n8(block, 1)
+        JR_Z(block, "_K_UP")
+        CP.n8(block, 2)
+        JR_Z(block, "_K_UP")
+        CP.n8(block, 8)
+        JR_NZ(block, "_K_SKIP_UP")
+        block.label("_K_UP")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_UP)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_K_SKIP_UP")
+
+        # DOWN 判定 (4, 5, 6)
+        LD.A_B(block)
+        CP.n8(block, 4)
+        JR_Z(block, "_K_DOWN")
+        CP.n8(block, 5)
+        JR_Z(block, "_K_DOWN")
+        CP.n8(block, 6)
+        JR_NZ(block, "_K_SKIP_DOWN")
+        block.label("_K_DOWN")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_DOWN)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_K_SKIP_DOWN")
+
+        # LEFT 判定 (6, 7, 8)
+        LD.A_B(block)
+        CP.n8(block, 6)
+        JR_Z(block, "_K_LEFT")
+        CP.n8(block, 7)
+        JR_Z(block, "_K_LEFT")
+        CP.n8(block, 8)
+        JR_NZ(block, "_K_SKIP_LEFT")
+        block.label("_K_LEFT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_LEFT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_K_SKIP_LEFT")
+
+        # RIGHT 判定 (2, 3, 4)
+        LD.A_B(block)
+        CP.n8(block, 2)
+        JR_Z(block, "_K_RIGHT")
+        CP.n8(block, 3)
+        JR_Z(block, "_K_RIGHT")
+        CP.n8(block, 4)
+        JR_NZ(block, "_K_SKIP_RIGHT")
+        block.label("_K_RIGHT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_RIGHT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_K_SKIP_RIGHT")
+
+        # --- 2. ジョイスティック 1 & 2 ---
+        # Port 1
+        LD.A_n8(block, 1)
+        CALL(block, GTSTCK)
+        LD.B_A(block)
+        CP.n8(block, 1)
+        JR_Z(block, "_J1_UP")
+        CP.n8(block, 2)
+        JR_Z(block, "_J1_UP")
+        CP.n8(block, 8)
+        JR_NZ(block, "_J1_SKIP_UP")
+        block.label("_J1_UP")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_UP)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_J1_SKIP_UP")
+
+        LD.A_B(block)
+        CP.n8(block, 4)
+        JR_Z(block, "_J1_DOWN")
+        CP.n8(block, 5)
+        JR_Z(block, "_J1_DOWN")
+        CP.n8(block, 6)
+        JR_NZ(block, "_J1_SKIP_DOWN")
+        block.label("_J1_DOWN")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_DOWN)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_J1_SKIP_DOWN")
+
+        LD.A_B(block)
+        CP.n8(block, 6)
+        JR_Z(block, "_J1_LEFT")
+        CP.n8(block, 7)
+        JR_Z(block, "_J1_LEFT")
+        CP.n8(block, 8)
+        JR_NZ(block, "_J1_SKIP_LEFT")
+        block.label("_J1_LEFT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_LEFT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_J1_SKIP_LEFT")
+
+        LD.A_B(block)
+        CP.n8(block, 2)
+        JR_Z(block, "_J1_RIGHT")
+        CP.n8(block, 3)
+        JR_Z(block, "_J1_RIGHT")
+        CP.n8(block, 4)
+        JR_NZ(block, "_J1_SKIP_RIGHT")
+        block.label("_J1_RIGHT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_RIGHT)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_J1_SKIP_RIGHT")
+
+        # --- 3. SPACE / SHIFT ---
+        # SPACE (Matrix 8, Bit 0)
+        LD.A_n8(block, 8)
+        CALL(block, SNSMAT)
+        BIT.n8_A(block, 0)
+        JR_NZ(block, "_SKIP_SPACE")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_A)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_SPACE")
+
+        # --- Matrix 6 (SHIFT, CTRL, GRAPH, etc.) ---
+        LD.A_n8(block, 6)
+        CALL(block, SNSMAT)
+        LD.B_A(block)  # Aレジスタの内容をBに保持
+
+        # SHIFT (Bit 0)
+        BIT.n8_A(block, 0)
+        JR_NZ(block, "_SKIP_SHIFT")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_BTN_B)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_SHIFT")
+
+        # GRAPH (Bit 2)       # Bit 2 が GRAPH です
+        LD.A_B(block)  # Bから読み込み直す
+        BIT.n8_A(block, 2)
+        JR_NZ(block, "_SKIP_GRAPH")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_EXTRA)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_GRAPH")
+
+        # ESC キー (キーボードバッファ)
+        CALL(block, CHSNS)
+        JR_Z(block, "_SKIP_ESC")
+        CALL(block, CHGET)
+        CP.n8(block, 0x1B)
+        JR_NZ(block, "_SKIP_ESC")
+        LD.A_n8(block, 1 << INPUT_KEY_BIT.L_ESC)
+        OR.IXL(block)
+        LD.IXL_A(block)
+        block.label("_SKIP_ESC")
+
+        # --- 4. HOLD / TRG 更新 ---
+        LD.A_IXL(block)
+        LD.HL_n16(block, input_hold)
+        LD.C_mHL(block)  # 前回の HOLD
+        LD.mHL_A(block)  # 今回の HOLD 保存
+
+        LD.B_A(block)  # NEW
+        LD.A_C(block)  # OLD
+        CPL(block)  # ~OLD
+        AND.B(block)  # NEW & ~OLD
+        LD.mn16_A(block, input_trg)
+
+        POP.BC(block)
+        POP.IX(block)
+        RET(block)
+
+    return Func("update_input", update_input, no_auto_ret=True, group=group)
+
+
+"""
+使い方
+
+# ...初期化...
+    b.label("MAIN_LOOP")
+    HALT(block) # V-Sync待ち（これを入れないとキー判定が速すぎる）
+    UPDATE_INPUT_CALL.call(b)
+
+    # SPACE(BTN_A)が今押されたかチェック
+    LD.A_mn16(b, INPUT_TRG)
+    BIT.n8_A(b, L_BTN_A)
+    JR_Z(b, "MAIN_LOOP")
+
+    # スペースが押された時、SHIFT(BTN_B)が保持されているか？
+    LD.A_mn16(b, INPUT_HOLD)
+    BIT.n8_A(b, L_BTN_B)
+    JR_NZ(b, "PREV_IMAGE")
+
+    # --- NEXT ---
+    # (画像番号を加算して描画ルーチンへ)
+    # ...
+    JR(b, "MAIN_LOOP")
+
+    # --- PREV ---
+    # (画像番号を減算して描画ルーチンへ)
+    # ...
+    JR(b, "MAIN_LOOP")
+
+"""
+
+
+
+def build_beep_control_utils(
+    beep_count_addr: int = 0xC110,
+    beep_active_addr: int = 0xC111,
+    tone_period: int = 30,  # 0-4095
+    duration_frames: int = 1,  # 1/60秒単位
+    volume: int = 10,
+    *,
+    group: str = DEFAULT_FUNC_GROUP_NAME,
+):
+    PSG_REG = 0xA0
+    PSG_DAT = 0xA1
+
+    if not 0 <= volume <= 15:
+        raise ValueError("volume must be between 0 and 15")
+
+    def psg_write(block: Block) -> None:
+        OUT(block, PSG_REG)
+        LD.A_E(block)
+        OUT(block, PSG_DAT)
+        RET(block)
+
+    BEEP_WRITE_FUNC = Func("BEEP_WRITE", psg_write, group=group)
+
+    def simple_beep(block: Block) -> None:
+        """
+        BEEP開始。
+        レジスタ7への書き込み時、最上位ビット(Bit7)を必ず1にすることで、
+        物理損傷のリスク(unsafe PSG port directions)を回避します。
+        """
+        # 状態の初期化
+        LD.A_n8(block, duration_frames & 0xFF)
+        LD.mn16_A(block, beep_count_addr)
+        LD.A_n8(block, 1)
+        LD.mn16_A(block, beep_active_addr)
+
+        # 1. チャンネルAの周期設定 (Reg 0, 1)
+        LD.A_n8(block, 0)
+        LD.E_n8(block, tone_period & 0xFF)
+        BEEP_WRITE_FUNC.call(block)
+
+        LD.A_n8(block, 1)
+        LD.E_n8(block, (tone_period >> 8) & 0x0F)
+        BEEP_WRITE_FUNC.call(block)
+
+        # 2. ミキサー設定 (Reg 7)
+        # Bit7=1(入力), Bit6=1(入力), Bit5-3=1(Noise OFF), Bit2-0=音量ON/OFF
+        # ChAのみONにする場合: 10111110b = 0xBE (安全な設定)
+        LD.A_n8(block, 7)
+        LD.E_n8(block, 0xBE)  # 0xFE ではなく 0xBE を使うことでハードを保護
+        BEEP_WRITE_FUNC.call(block)
+
+        # 3. 音量設定 (Reg 8)
+        LD.A_n8(block, 8)
+        LD.E_n8(block, volume)
+        BEEP_WRITE_FUNC.call(block)
+
+        RET(block)
+
+    def update_beep(block: Block) -> None:
+        # (update_beep の実装は変更なし)
+        LD.A_mn16(block, beep_active_addr)
+        OR.A(block)
+        RET_Z(block)
+
+        LD.A_mn16(block, beep_count_addr)
+        DEC.A(block)
+        LD.mn16_A(block, beep_count_addr)
+        RET_NZ(block)
+
+        # 消音
+        XOR.A(block)
+        LD.mn16_A(block, beep_active_addr)
+        LD.A_n8(block, 8)
+        LD.E_n8(block, 0)
+        BEEP_WRITE_FUNC.call(block)
+        RET(block)
+
+    return (
+        BEEP_WRITE_FUNC,
+        Func("SIMPLE_BEEP", simple_beep, group=group),
+        Func("UPDATE_BEEP", update_beep, group=group),
+    )
+
+
+def _set_vram_write(block: Block) -> None:
+    # 入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
+    # VDPレジスタの仕様: 下位8bit、次に上位6bit + 01000000b (Write mode) を送る
+    # レジスタ変化:
+    #   * A は処理中に HL の各バイトや 0x40 をロードするために使用・更新される
+    #   * HL は読み取りのみで値は変化しない
+    #   * フラグは OR.n8 により更新される
+
+    LD.A_L(block)
+    OUT(block, 0x99)  # 下位8bit
+
+    LD.A_H(block)
+    OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
+    OUT(block, 0x99)  # 上位8bit
+
+
+def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+
+    return Func("SET_VRAM_WRITE", _set_vram_write, group=group)
+
+
+def build_outi_repeat_func(
+    count: int, weight: Literal[0, 4, 8, 12] = 8, name: str | None = None, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """指定回数だけ :func:`OUTI` を連続で発行する ``Func`` を生成する。
+    : param count: OUTI を繰り返す回数
+    : param weight: 関数の重み（デフォルト: 8）4では画面が崩れる事を確認
+        4 の場合 NOP1回 1バイト
+        8 の場合 NOP2回 2バイト
+        12 の場合 JR_n8(block, 0) 2バイト
+
+    呼び出し前のレジスタ設定:
+        * ``C`` = 出力先 I/O ポート番号
+        * ``HL`` = 転送元アドレス（OUTI のたびに ``(HL)`` が読み出され、``HL`` はインクリメントされる）
+
+    呼び出し後に変化するレジスタ:
+        * ``B`` は OUTI 実行ごとにデクリメントされる
+        * ``HL`` は OUTI 実行ごとにインクリメントされる
+        * フラグレジスタは OUTI の仕様に従って更新される
+    """
+
+    if count <= 0:
+        raise ValueError("count must be positive")
+
+    func_name = name or f"OUTI_REPEAT{count}"
+    func_name = unique_label(func_name)
+
+    def outi_repeat(block: Block) -> None:
+        for _ in range(count):
+            OUTI(block)
+            if weight == 4:
+                NOP(block, 1)
+            elif weight == 8:
+                NOP(block, 2)
+            elif weight == 12:
+                JR_n8(block, 0)
+
+    return Func(func_name, outi_repeat, group=group)
+
+
+def build_scroll_name_table_func(
+    SET_VRAM_WRITE_FUNC: Func, *, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    def scroll_name_table(block: Block) -> None:
+        # 入力: A = CURRENT_SCROLL_ROW (0-23)
+        # ※ 24行を超えると表示がループ（0に戻る）します
+
+        PUSH.AF(block)
+        # VRAM 0x1800 (名前テーブル) を書き込みモードでセット
+        LD.HL_n16(block, 0x1800)
+        SET_VRAM_WRITE_FUNC.call(block)
+        POP.AF(block)
+
+        # キャラクター番号の開始オフセット = A * 32
+        # (1行32文字なので、A行分飛ばす)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        ADD.HL_HL(block)  # *2
+        ADD.HL_HL(block)  # *4
+        ADD.HL_HL(block)  # *8
+        ADD.HL_HL(block)  # *16
+        ADD.HL_HL(block)  # *32 -> HL = 開始キャラクタ番号
+
+        LD.D_n8(block, 24)  # 24行分ループ
+        LD.C_n8(block, 0x98)  # VDPポート
+
+        LINE_LOOP = unique_label()
+        COLUMN_LOOP = unique_label()
+        block.label(LINE_LOOP)
+        LD.B_n8(block, 32)  # 1行32列
+
+        block.label(COLUMN_LOOP)
+        LD.A_L(block)  # HLの下位8bitをキャラクタ番号として使用
+        OUT_C.A(block)
+        INC.HL(block)  # 次のキャラクタへ
+        DJNZ(block, COLUMN_LOOP)
+
+        DEC.D(block)
+        JR_NZ(block, LINE_LOOP)
+        RET(block)
+
+    return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
+
+
+def build_scroll_name_table_func2(
+    SET_VRAM_WRITE_FUNC: Func,
+    OUTI_256_FUNC: Func,
+    OUTI_256_FUNC_NO_WAIT: Func | None = None,  # Noneを許容
+    *,
+    use_no_wait: Literal["PARTIAL", "YES"] = "PARTIAL",                     # 生成時のフラグ
+    group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    """
+    名前テーブル転送の高速版。
+    生成時に use_no_wait=True かつ NO_WAIT関数がない場合はエラーを出す。
+    """
+    # エラーチェック
+    if OUTI_256_FUNC_NO_WAIT is None:
+        raise ValueError(f"use_no_wait[{use_no_wait}] requires OUTI_256_FUNC_NO_WAIT to be provided.")
+
+    def scroll_name_table(block: Block) -> None:
+        # 入力: A = CURRENT_SCROLL_ROW (0-23)
+
+        # 1. オフセット計算: HL = (A % 8) * 32
+        AND.n8(block, 0x07)
+        LD.L_A(block)
+        LD.H_n8(block, 0)
+        for _ in range(5):  # HL = HL * 32
+            ADD.HL_HL(block)
+
+        # 2. テーブルの物理アドレスを加算
+        LD.DE_label(block, "NAME_TABLE_512_LUT")
+        ADD.HL_DE(block)
+        PUSH.HL(block)
+
+        # 3. VRAMアドレスセット (0x1800)
+        LD.HL_n16(block, 0x1800)
+        SET_VRAM_WRITE_FUNC.call(block)
+
+        # 4. 256バイト × 3ブロック分を転送
+        LD.C_n8(block, 0x98)
+
+        # --- 第1ブロック (上段) ---
+        POP.HL(block)
+        PUSH.HL(block)
+        OUTI_256_FUNC_NO_WAIT.call(block)
+
+        # --- 第2・3ブロック (中・下段) ---
+        # 表示期間に食い込むため常に通常版を使用
+        POP.HL(block)
+        PUSH.HL(block)
+        if use_no_wait == "YES":
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
+
+        POP.HL(block)
+        if use_no_wait == "YES":
+            OUTI_256_FUNC_NO_WAIT.call(block)
+        else:
+            OUTI_256_FUNC.call(block)
+
+        RET(block)
+
+        # --- 512バイト LUT ---
+        block.label("NAME_TABLE_512_LUT")
+        lut_data = [i for i in range(256)] * 2
+        DB(block, *lut_data)
+
+    return Func("SCROLL_NAME_TABLE", scroll_name_table, group=group)
