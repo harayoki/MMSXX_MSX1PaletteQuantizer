@@ -908,9 +908,9 @@ SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
     group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED = (
-    SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
-    if args.vdp_wait_for_name_table
-    else SCROLL_NAME_TABLE_FUNC_NOWAIT
+    SCROLL_NAME_TABLE_FUNC_NOWAIT
+    if args.vdp_wait_for_name_table == 0
+    else SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
 )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
@@ -1165,7 +1165,10 @@ def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC
             SET_VRAM_WRITE_FUNC.call(block)
             EX.DE_HL(block)
             LD.C_n8(block, 0x98)
-            OUTI_256_FUNC.call(block)
+            if args.vdp_wait_for_pattern_gen == 0:
+                OUTI_256_FUNC_NO_WAIT.call(block)
+            else:
+                OUTI_256_FUNC.call(block)
 
             # --- B: カラー(CT)転送 ---
             LD.DE_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
@@ -1173,7 +1176,10 @@ def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC
             SET_VRAM_WRITE_FUNC.call(block)
             EX.DE_HL(block)
             LD.C_n8(block, 0x98)
-            OUTI_256_FUNC.call(block)
+            if args.vdp_wait_for_color_table == 0:
+                OUTI_256_FUNC_NO_WAIT.call(block)
+            else:
+                OUTI_256_FUNC.call(block)
 
         RET(block)
 
