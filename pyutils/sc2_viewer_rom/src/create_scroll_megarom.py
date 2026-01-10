@@ -385,6 +385,12 @@ class ADDR:
     CT_BUFFER = madd("CT_BUFFER", 256 * 3, description="1行分CT(256B)×3行の作業バッファ")
     TARGET_ROW = madd("TARGET_ROW", 2)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
+    SYNC_SCROLL_PG_VRAM_ADDRS = madd(
+        "SYNC_SCROLL_PG_VRAM_ADDRS", 2 * 3, description="同期スクロールPG転送先VRAMアドレス(3行)"
+    )
+    SYNC_SCROLL_CT_VRAM_ADDRS = madd(
+        "SYNC_SCROLL_CT_VRAM_ADDRS", 2 * 3, description="同期スクロールCT転送先VRAMアドレス(3行)"
+    )
     CONFIG_BEEP_ENABLED = madd(
         "CONFIG_BEEP_ENABLED",
         1,
@@ -1040,6 +1046,20 @@ def build_sync_scroll_prepare_func(direction: str, *, group: str = DEFAULT_FUNC_
 
         # 方向に応じたオフセットでループ
         for buf_index, (line_idx, img_adj) in enumerate(SCROLL_CONFIGS[direction]):
+            # --- VRAM転送先を事前計算 ---
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            if line_idx != 0:
+                ADD.A_n8(block, line_idx)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            LD.mn16_HL(block, ADDR.SYNC_SCROLL_PG_VRAM_ADDRS + (2 * buf_index))
+
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            ADD.A_n8(block, 0x20 + line_idx)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            LD.mn16_HL(block, ADDR.SYNC_SCROLL_CT_VRAM_ADDRS + (2 * buf_index))
+
             # --- 画像上の参照行 A = TARGET_ROW + img_adj ---
             LD.HL_mn16(block, ADDR.TARGET_ROW)
             if img_adj != 0:
@@ -1137,32 +1157,18 @@ def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC
         # 方向に応じたオフセットでループ
         for buf_index, (line_idx, _img_adj) in enumerate(SCROLL_CONFIGS[direction]):
             # --- A: パターン(PG)転送 ---
-            LD.HL_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
-
-            # VRAM書き込み先
-            PUSH.HL(block)
-            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, line_idx)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
+            LD.DE_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
+            LD.HL_mn16(block, ADDR.SYNC_SCROLL_PG_VRAM_ADDRS + (2 * buf_index))
             SET_VRAM_WRITE_FUNC.call(block)
-            # 転送
-            POP.HL(block)
+            EX.DE_HL(block)
             LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
 
             # --- B: カラー(CT)転送 ---
-            LD.HL_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
-
-            # VRAM書き込み先
-            PUSH.HL(block)
-            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, 0x20 + line_idx)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
+            LD.DE_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
+            LD.HL_mn16(block, ADDR.SYNC_SCROLL_CT_VRAM_ADDRS + (2 * buf_index))
             SET_VRAM_WRITE_FUNC.call(block)
-            # 転送
-            POP.HL(block)
+            EX.DE_HL(block)
             LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
 
