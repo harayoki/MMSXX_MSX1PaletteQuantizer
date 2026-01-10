@@ -381,8 +381,8 @@ class ADDR:
 
     SCROLL_DIRECTION = madd("SCROLL_DIRECTION", 1, description="スクロール方向 (1=下,255=上)")
 
-    # PG_BUFFER = madd("PG_BUFFER", 256 * 3)
-    # CT_BUFFER = madd("CT_BUFFER", 256 * 3)
+    PG_BUFFER = madd("PG_BUFFER", 256 * 3, description="1行分PG(256B)×3行の作業バッファ")
+    CT_BUFFER = madd("CT_BUFFER", 256 * 3, description="1行分CT(256B)×3行の作業バッファ")
     TARGET_ROW = madd("TARGET_ROW", 2)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
     CONFIG_BEEP_ENABLED = madd(
@@ -1030,8 +1030,8 @@ SCROLL_CONFIGS = {
 }
 
 
-def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
-    def sync_scroll(block: Block) -> None:
+def build_sync_scroll_prepare_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+    def sync_scroll_prepare(block: Block) -> None:
         # --- 1. VRAM内の物理行 (0-7) を計算して保存 ---
         LD.HL_mn16(block, ADDR.TARGET_ROW)
         LD.A_L(block)
@@ -1039,7 +1039,7 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
         LD.mn16_A(block, ADDR.VRAM_ROW_OFFSET)
 
         # 方向に応じたオフセットでループ
-        for line_idx, img_adj in SCROLL_CONFIGS[direction]:
+        for buf_index, (line_idx, img_adj) in enumerate(SCROLL_CONFIGS[direction]):
             # --- 画像上の参照行 A = TARGET_ROW + img_adj ---
             LD.HL_mn16(block, ADDR.TARGET_ROW)
             if img_adj != 0:
@@ -1052,7 +1052,7 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
                     SBC.HL_BC(block)
             PUSH.HL(block)  # 画像行を保存
 
-            # --- A: パターン(PG)転送 ---
+            # --- A: パターン(PG)準備 ---
             # バンク切り替え
             POP.HL(block)
             PUSH.HL(block)
@@ -1086,21 +1086,12 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
             LD.A_E(block)
             set_page2_bank(block)
 
-            # VRAM書き込み先
-            PUSH.HL(block)
-            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
-            ADD.A_n8(block, line_idx)
-            LD.H_A(block)
-            LD.L_n8(block, 0)
-            SET_VRAM_WRITE_FUNC.call(block)
-            # 転送
-            POP.HL(block)
-            LD.C_n8(block, 0x98)
-            OUTI_256_FUNC.call(block)
+            LD.DE_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
+            LD.BC_n16(block, 256)
+            LDIR(block)
 
-            # --- B: カラー(CT)転送 ---
+            # --- B: カラー(CT)準備 ---
             POP.HL(block)
-            PUSH.HL(block)
             LD.B_H(block)
             LD.C_L(block)
             LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
@@ -1132,6 +1123,37 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
             set_page2_bank(block)
             LD.L_n8(block, 0)
 
+            LD.DE_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
+            LD.BC_n16(block, 256)
+            LDIR(block)
+
+        RET(block)
+
+    return Func(f"SYNC_SCROLL_PREPARE_{direction}", sync_scroll_prepare, no_auto_ret=True, group=group)
+
+
+def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
+    def sync_scroll_transfer(block: Block) -> None:
+        # 方向に応じたオフセットでループ
+        for buf_index, (line_idx, _img_adj) in enumerate(SCROLL_CONFIGS[direction]):
+            # --- A: パターン(PG)転送 ---
+            LD.HL_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
+
+            # VRAM書き込み先
+            PUSH.HL(block)
+            LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
+            ADD.A_n8(block, line_idx)
+            LD.H_A(block)
+            LD.L_n8(block, 0)
+            SET_VRAM_WRITE_FUNC.call(block)
+            # 転送
+            POP.HL(block)
+            LD.C_n8(block, 0x98)
+            OUTI_256_FUNC.call(block)
+
+            # --- B: カラー(CT)転送 ---
+            LD.HL_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
+
             # VRAM書き込み先
             PUSH.HL(block)
             LD.A_mn16(block, ADDR.VRAM_ROW_OFFSET)
@@ -1144,11 +1166,9 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
             LD.C_n8(block, 0x98)
             OUTI_256_FUNC.call(block)
 
-            POP.AF(block)  # スタック掃除
-
         RET(block)
 
-    return Func(f"SYNC_SCROLL_{direction}", sync_scroll, no_auto_ret=True, group=group)
+    return Func(f"SYNC_SCROLL_TRANSFER_{direction}", sync_scroll_transfer, no_auto_ret=True, group=group)
 
 
 def build_config_scene_func(
@@ -1219,8 +1239,18 @@ def build_config_scene_func(
     return Func("CONFIG_SCENE", config_scene, group=group), table_funcs
 
 
-SYNC_SCROLL_UP_FUNC = build_sync_scroll_func(direction="UP", group=SCROLL_VIEWER_FUNC_GROUP)
-SYNC_SCROLL_DOWN_FUNC = build_sync_scroll_func(direction="DOWN", group=SCROLL_VIEWER_FUNC_GROUP)
+SYNC_SCROLL_UP_PREP_FUNC = build_sync_scroll_prepare_func(
+    direction="UP", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_SCROLL_DOWN_PREP_FUNC = build_sync_scroll_prepare_func(
+    direction="DOWN", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_SCROLL_UP_TRANSFER_FUNC = build_sync_scroll_transfer_func(
+    direction="UP", group=SCROLL_VIEWER_FUNC_GROUP
+)
+SYNC_SCROLL_DOWN_TRANSFER_FUNC = build_sync_scroll_transfer_func(
+    direction="DOWN", group=SCROLL_VIEWER_FUNC_GROUP
+)
 
 
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
@@ -1591,6 +1621,23 @@ def build_boot_bank(
     LD.H_n8(b, 0)
     LD.DE_label(b, "TABLE_MOD24")
     ADD.HL_DE(b)
+    PUSH.HL(b)
+    # 1. 新しい行の PG/CT を準備 (バッファ展開)
+    LD.A_mn16(b, ADDR.SCROLL_DIRECTION)
+    OR.A(b)
+    JR_NZ(b, "DO_SYNC_PREP_DOWN")
+
+    # 上スクロール用
+    SYNC_SCROLL_UP_PREP_FUNC.call(b)
+    JR(b, "SYNC_PREP_DONE")
+
+    b.label("DO_SYNC_PREP_DOWN")
+    # 下スクロール用
+    SYNC_SCROLL_DOWN_PREP_FUNC.call(b)
+
+    b.label("SYNC_PREP_DONE")
+    POP.HL(b)
+
     SCROLL_NOWAIT_ALL = unique_label("SCROLL_NOWAIT_ALL")
     SCROLL_NOWAIT_DONE = unique_label("SCROLL_NOWAIT_DONE")
     LD.A_mn16(b, ADDR.CONFIG_VDP_WAIT)
@@ -1609,17 +1656,17 @@ def build_boot_bank(
     # 2. 新しい行の PG/CT を転送  ADDR,TARGET_ROW に行番号が入っている
     LD.A_mn16(b, ADDR.SCROLL_DIRECTION)
     OR.A(b)
-    JR_NZ(b, "DO_SYNC_DOWN")
+    JR_NZ(b, "DO_SYNC_XFER_DOWN")
 
     # 上スクロール用
-    SYNC_SCROLL_UP_FUNC.call(b)
-    JR(b, "SYNC_DONE")
+    SYNC_SCROLL_UP_TRANSFER_FUNC.call(b)
+    JR(b, "SYNC_XFER_DONE")
 
-    b.label("DO_SYNC_DOWN")
+    b.label("DO_SYNC_XFER_DOWN")
     # 下スクロール用
-    SYNC_SCROLL_DOWN_FUNC.call(b)
+    SYNC_SCROLL_DOWN_TRANSFER_FUNC.call(b)
 
-    b.label("SYNC_DONE")
+    b.label("SYNC_XFER_DONE")
 
     JP(b, "CHECK_AUTO_PAGE")
 
