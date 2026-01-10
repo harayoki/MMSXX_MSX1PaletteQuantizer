@@ -383,7 +383,7 @@ class ADDR:
 
     # PG_BUFFER = madd("PG_BUFFER", 256 * 3)
     # CT_BUFFER = madd("CT_BUFFER", 256 * 3)
-    TARGET_ROW = madd("TARGET_ROW", 1)  # 更新する画像上の行番号
+    TARGET_ROW = madd("TARGET_ROW", 2)  # 更新する画像上の行番号
     VRAM_ROW_OFFSET = madd("VRAM_ROW_OFFSET", 1)  # VRAMブロック内の0-7行目オフセット
     CONFIG_BEEP_ENABLED = madd(
         "CONFIG_BEEP_ENABLED",
@@ -1033,34 +1033,58 @@ SCROLL_CONFIGS = {
 def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def sync_scroll(block: Block) -> None:
         # --- 1. VRAM内の物理行 (0-7) を計算して保存 ---
-        LD.A_mn16(block, ADDR.TARGET_ROW)
+        LD.HL_mn16(block, ADDR.TARGET_ROW)
+        LD.A_L(block)
         AND.n8(block, 0x07)
         LD.mn16_A(block, ADDR.VRAM_ROW_OFFSET)
 
         # 方向に応じたオフセットでループ
         for line_idx, img_adj in SCROLL_CONFIGS[direction]:
             # --- 画像上の参照行 A = TARGET_ROW + img_adj ---
-            LD.A_mn16(block, ADDR.TARGET_ROW)
+            LD.HL_mn16(block, ADDR.TARGET_ROW)
             if img_adj != 0:
-                ADD.A_n8(block, img_adj & 0xFF)
-            PUSH.AF(block)  # 画像行を保存
+                if img_adj > 0:
+                    LD.BC_n16(block, img_adj)
+                    ADD.HL_BC(block)
+                else:
+                    LD.BC_n16(block, -img_adj)
+                    OR.A(block)
+                    SBC.HL_BC(block)
+            PUSH.HL(block)  # 画像行を保存
 
             # --- A: パターン(PG)転送 ---
             # バンク切り替え
-            RLCA(block)
-            RLCA(block)
-            AND.n8(block, 0x03)
-            LD.C_A(block)
+            POP.HL(block)
+            PUSH.HL(block)
+            LD.B_H(block)
+            LD.C_L(block)
+            LD.HL_n16(block, DATA_BANK_ADDR)
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_START_BANK_ADDR)
-            ADD.A_C(block)
-            set_page2_bank(block)
-            # ROMアドレス確定
-            POP.AF(block)
-            PUSH.AF(block)
-            AND.n8(block, 0x3F)
-            ADD.A_n8(block, 0x80)
+            LD.E_A(block)
+
+            LD.A_C(block)
+            ADD.A_H(block)
             LD.H_A(block)
-            LD.L_n8(block, 0)
+
+            LD.A_B(block)
+            ADD.A_A(block)
+            ADD.A_A(block)
+            ADD.A_E(block)
+            LD.E_A(block)
+
+            l_norm_pg = unique_label(f"NORM_PG_{direction}_{line_idx}")
+            block.label(l_norm_pg)
+            LD.A_H(block)
+            CP.n8(block, 0xC0)
+            JR_C(block, l_norm_pg + "D")
+            SUB.n8(block, 0x40)
+            LD.H_A(block)
+            INC.E(block)
+            JR(block, l_norm_pg)
+            block.label(l_norm_pg + "D")
+
+            LD.A_E(block)
+            set_page2_bank(block)
 
             # VRAM書き込み先
             PUSH.HL(block)
@@ -1075,18 +1099,26 @@ def build_sync_scroll_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NA
             OUTI_256_FUNC.call(block)
 
             # --- B: カラー(CT)転送 ---
-            POP.AF(block)
-            PUSH.AF(block)
-            LD.L_A(block)
-            LD.H_n8(block, 0)
-            LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR + 1)
-            ADD.A_L(block)
-            LD.H_A(block)
+            POP.HL(block)
+            PUSH.HL(block)
+            LD.B_H(block)
+            LD.C_L(block)
+            LD.HL_mn16(block, ADDR.CURRENT_IMAGE_COLOR_ADDRESS_ADDR)
             LD.A_mn16(block, ADDR.CURRENT_IMAGE_COLOR_BANK_ADDR)
             LD.E_A(block)
 
+            LD.A_C(block)
+            ADD.A_H(block)
+            LD.H_A(block)
+
+            LD.A_B(block)
+            ADD.A_A(block)
+            ADD.A_A(block)
+            ADD.A_E(block)
+            LD.E_A(block)
+
             # バンク正規化
-            l_norm = unique_label(f"NORM_{direction}_{line_idx}")
+            l_norm = unique_label(f"NORM_CT_{direction}_{line_idx}")
             block.label(l_norm)
             LD.A_H(block)
             CP.n8(block, 0xC0)
@@ -1473,8 +1505,7 @@ def build_boot_bank(
     LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
 
     # ターゲット行は「新しく入ってきた上端の行」
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
     JP(b, "DO_UPDATE_SCROLL")
 
     b.label("CHECK_DOWN")
@@ -1551,8 +1582,7 @@ def build_boot_bank(
     # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
     LD.BC_n16(b, 23)
     ADD.HL_BC(b)
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
 
     b.label("DO_UPDATE_SCROLL")
     # 1. 名前テーブルをずらす (TABLE_MOD24 を使用)
@@ -1663,8 +1693,7 @@ def build_boot_bank(
     # --- 自動スクロール時の方向フラグ(0=上)をセット ---
     XOR.A(b)
     LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
     JP(b, "DO_UPDATE_SCROLL")
 
     b.label("AUTO_SCROLL_EDGE_TOP")
@@ -1717,8 +1746,7 @@ def build_boot_bank(
     # ターゲット行は「新しく入ってきた下端の行 (開始行 + 23)」
     LD.BC_n16(b, 23)
     ADD.HL_BC(b)
-    LD.A_L(b)
-    LD.mn16_A(b, ADDR.TARGET_ROW)
+    LD.mn16_HL(b, ADDR.TARGET_ROW)
     JP(b, "DO_UPDATE_SCROLL")
 
     b.label("AUTO_SCROLL_EDGE_BOTTOM")
