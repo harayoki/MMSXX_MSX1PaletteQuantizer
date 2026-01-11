@@ -30,6 +30,7 @@ __all__ = [
     "enaslt_macro",
     "ldirvm_macro",
     # "set_palette_macro",
+    "set_vram_write_macro",
 
     "build_update_input_func",
     "INPUT_KEY_BIT",
@@ -907,6 +908,18 @@ def _set_vram_write(block: Block) -> None:
     LD.A_H(block)
     OR.n8(block, 0x40)  # 0x40 (Writeモードビット) を立てる
     OUT(block, 0x99)  # 上位8bit
+
+
+def set_vram_write_macro(block: Block) -> None:
+    """VRAM 書き込みアドレス設定マクロ。
+
+    入力: HL = 書き込み開始VRAMアドレス (0x0000 - 0x3FFF)
+    レジスタ変化:
+      * A は処理中に HL の各バイトや 0x40 をロードするために使用・更新される
+      * HL は読み取りのみで値は変化しない
+      * フラグは OR.n8 により更新される
+    """
+    _set_vram_write(block)
 
 
 def build_set_vram_write_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
