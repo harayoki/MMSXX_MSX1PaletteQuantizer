@@ -1781,6 +1781,8 @@ def build_boot_bank(
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
     RESET_AUTO_SCROLL_TURN_COUNTERS_FUNC.call(b)
+    LD.A_n8(b, 0xFF)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1829,6 +1831,8 @@ def build_boot_bank(
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
     RESET_AUTO_SCROLL_TURN_COUNTERS_FUNC.call(b)
+    LD.A_n8(b, 1)
+    LD.mn16_A(b, ADDR.AUTO_SCROLL_DIR)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
