@@ -183,6 +183,13 @@ class Messages:
         }
 
     @_localized
+    def input_each_help(cls) -> dict[str, str]:
+        return {
+            "jp": "--input-each に列挙したファイルは連結せず、各ファイルを別画像として扱う",
+            "en": "Treat each --input-each file as a separate image without stacking.",
+        }
+
+    @_localized
     def debug_image_index_help(cls) -> dict[str, str]:
         return {
             "jp": "--use-debug-image 時に埋め込む番号",
@@ -442,6 +449,16 @@ def parse_args() -> argparse.Namespace:
         action="append",
         required=True,
         help=Messages.input_help(),
+    )
+    parser.add_argument(
+        "-ie",
+        "--input-each",
+        dest="input_each",
+        metavar="PNG",
+        type=Path,
+        nargs="+",
+        action="append",
+        help=Messages.input_each_help(),
     )
     parser.add_argument(
         "--use-debug-image",
@@ -2555,7 +2572,9 @@ def main() -> None:
     input_format_counter: Counter[str] = Counter()
     total_input_images = 0
 
-    input_groups: list[list[Path]] = [list(group) for group in args.input]
+    input_groups = [list(group) for group in args.input]
+    if args.input_each:
+        input_groups.extend([path] for group in args.input_each for path in group)
     prepared_groups: list[tuple[str, list[tuple[str, Image.Image, float]]]] = []
     image_data_list: list[ImageData] = []
     rom: bytes
