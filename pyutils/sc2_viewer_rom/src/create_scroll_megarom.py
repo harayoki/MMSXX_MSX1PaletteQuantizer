@@ -547,9 +547,17 @@ def find_msx1pq_cli(path: Path | None) -> Path:
             return path
         raise SystemExit(f"msx1pq_cli not found: {path}")
 
+    script_dir = Path(__file__).resolve().parent
+    for candidate_name in ("msx1pq_cli", "msx1pq_cli.exe"):
+        candidate = script_dir / candidate_name
+        if candidate.is_file():
+            return candidate
+
     resolved = shutil.which("msx1pq_cli")
     if not resolved:
-        raise SystemExit("msx1pq_cli not found in PATH. Provide --msx1pq-cli.")
+        raise SystemExit(
+            "msx1pq_cli not found near script or in PATH. Provide --msx1pq-cli."
+        )
     return Path(resolved)
 
 
