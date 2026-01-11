@@ -60,8 +60,6 @@ __pycache__/
 *.pyo
 
 _sdk_temp_/
-../msx_pyutils/tests/msx1pq_outputs/
-../msx_pyutils/tests/msx1pq_autogen_input.png
 nuitka-crash-report.xml
 work/
 ~*
