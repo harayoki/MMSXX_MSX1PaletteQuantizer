@@ -296,6 +296,7 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+
 args = parse_args()
 
 PAGE_SIZE = 0x4000
@@ -311,9 +312,7 @@ COLOR_BASE = 0x2000
 
 # MSX RAM での作業領域
 WORK_RAM_BASE = 0xC000
-# PATTERN_RAM_BASE = WORK_RAM_BASE
 PATTERN_RAM_SIZE = 0x1800
-# COLOR_RAM_BASE = WORK_RAM_BASE
 COLOR_RAM_SIZE = 0x1800
 TARGET_WIDTH = 256
 SCREEN_TILE_ROWS = 24
@@ -321,8 +320,6 @@ IMAGE_HEADER_ENTRY_SIZE = 7
 IMAGE_HEADER_END_SIZE = 4
 QUANTIZED_SUFFIX = "_quantized"
 
-# OUTI_FUNCS_GROUP = "outi_funcs"
-# OUTI_FUNCS_BACK_NUM:int = 1
 
 SCROLL_VIEWER_FUNC_GROUP = "scroll_viewer"
 
@@ -615,8 +612,7 @@ def palette_distance(idx_a: int, idx_b: int) -> int:
 
 def restrict_two_colors(indices: list[int]) -> list[int]:
     """Ensure a block uses at most two colors.
-
-    `msx1pq_cli` で 8dot 2 色ルールが守られている前提
+    `msx1pq_cli`等 で 8dot 2 色ルールが守られている前提
     """
 
     unique = set(indices)
@@ -625,18 +621,6 @@ def restrict_two_colors(indices: list[int]) -> list[int]:
 
     raise ValueError(f"{unique} colors in 8 dots.")
 
-    # 念のため 3 色以上のブロックを 2 色に丸める安全弁を入れておく？
-    # counts = Counter(indices)
-    # allowed = [color for color, _ in counts.most_common(2)]
-    #
-    # remapped: list[int] = []
-    # for idx in indices:
-    #     if idx in allowed:
-    #         remapped.append(idx)
-    #         continue
-    #     remapped.append(min(allowed, key=lambda candidate: palette_distance(idx, candidate)))
-    #
-    # return remapped
 
 
 def build_image_data_from_image(image: Image.Image) -> ImageData:
@@ -679,43 +663,6 @@ def build_image_data_from_image(image: Image.Image) -> ImageData:
 
     tile_rows = height // 8
     return ImageData(pattern=b"".join(patterns), color=b"".join(colors), tile_rows=tile_rows)
-
-
-# def build_reset_name_table_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
-#     def reset_name_table_call(block: Block) -> None:
-#         # VRAMアドレスセット (NAME_BASE = 0x1800)
-#         # 0x1800 を書き込みモードでセット
-#         LD.A_n8(block, 0x00)     # 下位8bit
-#         OUT(block, 0x99)
-#         LD.A_n8(block, 0x18 | 0x40) # 上位8bit + Write Mode(0x40)
-#         OUT(block, 0x99)
-#
-#         # 0~255 の出力を3回繰り返す
-#         LD.D_n8(block, 3)        # 3ブロック分
-#         LD.C_n8(block, 0x98)     # VDPデータポート
-#
-#         OUTER_LOOP = unique_label()
-#         INNER_LOOP = unique_label()
-#
-#         block.label(OUTER_LOOP)
-#         LD.A_n8(block, 0)        # 0から開始
-#
-#         block.label(INNER_LOOP)
-#         OUT_C.A(block)          # VDPへ A を出力 (OUT (C), A)
-#         # ※名前テーブルはデータが疎(1byte/1char)なので
-#         # ウェイト(JR $+2)がなくてもMSX1のVDPなら追いつくことが多いですが、
-#         # 念のため入れるならここに NOP や INC A を置きます。
-#         NOP(block)
-#         INC.A(block)             # 次のキャラクタ番号
-#         JR_NZ(block, INNER_LOOP) # 255を超えて0になるまでループ
-#
-#         DEC.D(block)             # 残りブロック数を減らす
-#         JR_NZ(block, OUTER_LOOP)
-#
-#     return Func("init_name_table_call", reset_name_table_call, group=group)
-#
-#
-# RESET_NAME_TABLE_FUNC = build_reset_name_table_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
 
 def build_scroll_vram_xfer_func(with_wait: bool = True, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
@@ -766,30 +713,6 @@ def build_scroll_vram_xfer_func(with_wait: bool = True, group: str = DEFAULT_FUN
         POP.DE(block)  # 行数(D) と バンク(E) を復帰
         DEC.D(block)  # 行数カウンタを減らす
         JP_NZ(block, "VRAM_PAGE_LOOP")
-
-    """
-    呼び出し方のイメージ
-    
-    ; --- パターン転送の場合 (VRAM 0x0000) ---
-    LD   HL, 0x0000         ; 書き込み先VRAMアドレス
-    CALL SET_VRAM_WRITE     ; VDPへのアドレスセットルーチン
-    ; --- ここでHLをROMアドレスに、Eをバンクに、Dを行数にセット ---
-    LD   HL, (計算したPGのROMアドレス)
-    LD   A, (CURRENT_IMAGE_START_BANK_ADDR)
-    LD   E, A
-    LD   D, 24              ; 行数（前述の通りDレジスタを使用）
-    CALL scroll_vram_xfer
-    
-    ; --- カラー転送の場合 (VRAM 0x2000) ---
-    LD   HL, 0x2000         ; 書き込み先VRAMアドレス
-    CALL SET_VRAM_WRITE
-    ; --- ROMアドレス、バンク、行数をセット ---
-    LD   HL, (計算したCTのROMアドレス)
-    LD   A, (CURRENT_IMAGE_COLOR_BANK_ADDR)
-    LD   E, A
-    LD   D, 24
-    CALL scroll_vram_xfer
-    """
 
     func_name = "scroll_vram_xfer" if with_wait else "sscroll_vram_xfer_no_wait"
     return Func(func_name, scroll_vram_xfer, group=group)
@@ -1971,40 +1894,6 @@ def build_boot_bank(
     return data
 
 
-# def build_outi_funcs_bank(
-#     fill_byte: int, log_lines: list[str] | None = None, debug_build: bool = False
-# ) -> list[bytes]:
-#     b = Block(debug=debug_build)
-#
-#     define_created_funcs(b, group=OUTI_FUNCS_GROUP)
-#     assembled = b.finalize(origin=0, groups=[OUTI_FUNCS_GROUP], func_in_bunk=True)
-#     bank_count = (len(assembled) + PAGE_SIZE - 1) // PAGE_SIZE
-#     if bank_count > 1:
-#         raise ValueError(
-#             "OUTI funcs bank must fit within a single bank; actual: "
-#             f"{bank_count} banks"
-#         )
-#     total_size = bank_count * PAGE_SIZE
-#     data = bytes(pad_bytes(list(assembled), total_size, fill_byte))
-#     used_percent = len(assembled) / PAGE_SIZE * 100
-#     log_and_store(
-#         "OUTI funcs bank usage: "
-#         f"{len(assembled)} bytes across {bank_count} bank(s) "
-#         f"({used_percent:.2f}% of first bank)",
-#         log_lines,
-#     )
-#     log_and_store("---- labels ----", log_lines)
-#     log_and_store(
-#         debug_print_labels(b, origin=0, no_print=True, include_offset=True),
-#         log_lines,
-#     )
-#
-#     banks = [data[i : i + PAGE_SIZE] for i in range(0, len(data), PAGE_SIZE)]
-#     # ensure_funcs_defined(OUTI_FUNCS)
-#
-#     return banks
-
-
 def validate_image_data(image: ImageData) -> None:
     if image.tile_rows <= 0 or image.tile_rows > 0xFFFF:
         raise ValueError("tile_rows must fit in 2 bytes and be positive")
@@ -2093,17 +1982,8 @@ def build(
 
     image_entries: list[ImageEntry] = []
     data_banks: list[bytes] = []
-    # outi_funcs_banks = build_outi_funcs_bank(fill_byte, log_lines=log_lines, debug_build=debug_build)
-    # OUTI_FUNCS_BACK_NUM = 1
-    # log_and_store(
-    #     f"OUTI funcs bank number: {OUTI_FUNCS_BACK_NUM}",
-    #     log_lines,
-    # )
-    # set_funcs_bank(OUTI_FUNCS, OUTI_FUNCS_BACK_NUM)
-    # next_bank = OUTI_FUNCS_BACK_NUM + len(outi_funcs_banks)
     next_bank = 1
     header_bytes: list[int] = []
-    bgm_bank_count = 0
     bgm_start_bank: int | None = None
     if bgm_data is not None:
         if len(bgm_data) > PAGE_SIZE:
