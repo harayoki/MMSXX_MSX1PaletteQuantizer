@@ -132,8 +132,8 @@ from mmsxxasmhelper.msxutils import (
     set_screen_display_macro,
     set_screen_display_status_flag_macro,
     quantize_msx1_image_two_colors,
-    BASIC_COLORS_MSX1,
     parse_color,
+    nearest_palette_index,
 )
 from mmsxxasmhelper.config_scene import (
     Screen0ConfigEntry,
@@ -894,26 +894,6 @@ def run_python_quantize(prepared_image: Image.Image, output_path: Path) -> Path:
     quantized = quantize_msx1_image_two_colors(prepared_image)
     quantized.save(output_path)
     return output_path
-
-
-def nearest_palette_index(rgb: Sequence[int]) -> int:
-    """Return the closest MSX1 palette index (0-based) for an RGB triple."""
-    r, g, b = rgb
-    best_idx = 0
-    best_dist = float("inf")
-    for idx, (pr, pg, pb) in enumerate(BASIC_COLORS_MSX1):
-        dist = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
-        if dist < best_dist:
-            best_dist = dist
-            best_idx = idx
-
-    return best_idx
-
-
-def palette_distance(idx_a: int, idx_b: int) -> int:
-    ra, ga, ba = BASIC_COLORS_MSX1[idx_a]
-    rb, gb, bb = BASIC_COLORS_MSX1[idx_b]
-    return (ra - rb) ** 2 + (ga - gb) ** 2 + (ba - bb) ** 2
 
 
 def restrict_two_colors(indices: list[int]) -> list[int]:

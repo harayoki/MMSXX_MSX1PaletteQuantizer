@@ -46,6 +46,8 @@ __all__ = [
     "enable_turbor_high_speed_macro",
     "parse_color",
     "BASIC_COLORS_MSX1",
+    "palette_distance",
+    "nearest_palette_index",
     "quantize_msx1_image_two_colors",
 ]
 P = ParamSpec("P")
@@ -100,6 +102,12 @@ BASIC_COLORS_MSX1 = [
     (204, 204, 204),
     (255, 255, 255),
 ]
+
+
+def palette_distance(idx_a: int, idx_b: int) -> int:
+    ra, ga, ba = BASIC_COLORS_MSX1[idx_a]
+    rb, gb, bb = BASIC_COLORS_MSX1[idx_b]
+    return (ra - rb) ** 2 + (ga - gb) ** 2 + (ba - bb) ** 2
 
 
 def parse_color(text: str) -> tuple[int, int, int]:
@@ -292,6 +300,11 @@ def _nearest_palette_index(rgb: tuple[int, int, int]) -> int:
             best_idx = idx
             best_dist = dist
     return best_idx
+
+
+def nearest_palette_index(rgb: Sequence[int]) -> int:
+    """Return the closest MSX1 palette index (0-based) for an RGB triple."""
+    return _nearest_palette_index((int(rgb[0]), int(rgb[1]), int(rgb[2])))
 
 
 def _best_palette_pair(
