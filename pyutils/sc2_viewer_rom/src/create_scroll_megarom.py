@@ -1512,6 +1512,29 @@ SYNC_SCROLL_DOWN_TRANSFER_FUNC = build_sync_scroll_transfer_func(
 )
 
 
+def build_reset_auto_scroll_turn_counters_func(
+    *, group: str = DEFAULT_FUNC_GROUP_NAME
+) -> Func:
+    def reset_auto_scroll_turn_counters(block: Block) -> None:
+        LD.HL_n16(block, 0)
+        LD.mn16_HL(block, ADDR.AUTO_SCROLL_COUNTER)
+        LD.mn16_HL(block, ADDR.AUTO_SCROLL_EDGE_WAIT)
+        XOR.A(block)
+        LD.mn16_A(block, ADDR.AUTO_SCROLL_TURN_STATE)
+        RET(block)
+
+    return Func(
+        "RESET_AUTO_SCROLL_TURN_COUNTERS",
+        reset_auto_scroll_turn_counters,
+        group=group,
+    )
+
+
+RESET_AUTO_SCROLL_TURN_COUNTERS_FUNC = build_reset_auto_scroll_turn_counters_func(
+    group=SCROLL_VIEWER_FUNC_GROUP
+)
+
+
 def calc_line_num_for_reg_a_macro(b: Block) -> None:
     """
     作業すべき行数をaレジスタに設定
@@ -1757,6 +1780,7 @@ def build_boot_bank(
     JR_Z(b, "CHECK_DOWN")
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
+    RESET_AUTO_SCROLL_TURN_COUNTERS_FUNC.call(b)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
@@ -1804,6 +1828,7 @@ def build_boot_bank(
     JP_Z(b, "CHECK_AUTO_SCROLL")
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.SKIP_AUTO_SCROLL)
+    RESET_AUTO_SCROLL_TURN_COUNTERS_FUNC.call(b)
 
     # SHIFT 押下時は 8 行スクロールして全体を再描画
     LD.A_mn16(b, ADDR.INPUT_HOLD)
