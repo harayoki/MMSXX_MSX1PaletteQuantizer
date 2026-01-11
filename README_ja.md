@@ -44,6 +44,14 @@ Mac でも Xcode でビルドすれば動作する想定です。
 2.  After Effects / Premiere PRO の共通プラグインフォルダにプラグインファイルをコピーします。
     - Windows: `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\`
 
+## リポジトリのセットアップ
+
+このリポジトリでは `pyutils` を git submodule として管理しています。クローン後に submodule を初期化してください。
+
+```bash
+git submodule update --init --recursive
+```
+
 ## 使用方法
 
 1.  After Effectsを起動します。
@@ -117,6 +125,5 @@ CLI の挙動確認用テストは Windows 環境で、既にビルド済みの 
 * CLI版にはPNGエンコーダ/デコーダライブラリ「lodepng」を使用しています。
   * https://github.com/lvandeve/lodepng/
   * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
-
 
 

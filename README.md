@@ -43,6 +43,14 @@ It should also work on Mac if built with Xcode.
 2.  Copy the plugin file to the common plugin folder of After Effects / Premiere PRO.
     - Windows: `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\`
 
+## Repository Setup
+
+This repository uses git submodules for Python utilities under `pyutils`. After cloning, initialize the submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
 ## How to Use
 
 1.  Launch After Effects.
