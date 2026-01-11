@@ -8,6 +8,7 @@ from typing import Callable, Concatenate, Literal, ParamSpec, Sequence
 
 from mmsxxasmhelper.core import *
 from mmsxxasmhelper.utils import *
+from PIL import Image
 
 
 __all__ = [
@@ -43,6 +44,9 @@ __all__ = [
     "VDP_DATA",
     "VDP_PAL",
     "enable_turbor_high_speed_macro",
+    "parse_color",
+    "BASIC_COLORS_MSX1",
+    "quantize_msx1_image_two_colors",
 ]
 P = ParamSpec("P")
 
@@ -78,6 +82,44 @@ RG1SAV = 0xF3E0  # VDPレジスタ1のミラー
 VDP_DATA = 0x98   # VDPデータポート
 VDP_CTRL = 0x99   # VDPコントロールポート
 VDP_PAL  = 0x9A   # パレットデータポート（MSX2以降）
+
+BASIC_COLORS_MSX1 = [
+    (0, 0, 0),
+    (62, 184, 73),
+    (116, 208, 125),
+    (89, 85, 224),
+    (128, 118, 241),
+    (185, 94, 81),
+    (101, 219, 239),
+    (219, 101, 89),
+    (255, 137, 125),
+    (204, 195, 94),
+    (222, 208, 135),
+    (58, 162, 65),
+    (183, 102, 181),
+    (204, 204, 204),
+    (255, 255, 255),
+]
+
+
+def parse_color(text: str) -> tuple[int, int, int]:
+    text = text.strip()
+    if text.startswith("#"):
+        text = text[1:]
+    if "," in text:
+        parts = text.split(",")
+    else:
+        parts = [text[i : i + 2] for i in range(0, len(text), 2)]
+    if len(parts) != 3:
+        raise ValueError("Color must have exactly three components")
+    values: list[int] = []
+    for part in parts:
+        part = part.strip()
+        base = 16 if all(c in "0123456789abcdefABCDEF" for c in part) and len(part) <= 2 else 10
+        values.append(int(part, base))
+    if any(not (0 <= v <= 255) for v in values):
+        raise ValueError("Color components must be between 0 and 255")
+    return values[0], values[1], values[2]
 
 
 # def call_subrom_macro(b: Block, address: int) -> None:
@@ -238,6 +280,71 @@ def init_stack_pointer_macro(b: Block, address: int = SP_TEMP_RAM3) -> None:
     ROM起動直後、スタックポインタ(SP)の値を移動するマクロ
     """
     LD.SP_n16(b, address)
+
+
+def _nearest_palette_index(rgb: tuple[int, int, int]) -> int:
+    r, g, b = rgb
+    best_idx = 0
+    best_dist = float("inf")
+    for idx, (pr, pg, pb) in enumerate(BASIC_COLORS_MSX1):
+        dist = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
+        if dist < best_dist:
+            best_idx = idx
+            best_dist = dist
+    return best_idx
+
+
+def _best_palette_pair(
+    block_pixels: list[tuple[int, int, int]],
+    palette: list[tuple[int, int, int]],
+) -> tuple[int, int]:
+    best_pair = (0, 0)
+    best_error = float("inf")
+    for i in range(len(palette)):
+        ri, gi, bi = palette[i]
+        for j in range(i, len(palette)):
+            rj, gj, bj = palette[j]
+            error = 0
+            for r, g, b in block_pixels:
+                da = (r - ri) ** 2 + (g - gi) ** 2 + (b - bi) ** 2
+                db = (r - rj) ** 2 + (g - gj) ** 2 + (b - bj) ** 2
+                error += da if da <= db else db
+                if error >= best_error:
+                    break
+            if error < best_error:
+                best_error = error
+                best_pair = (i, j)
+    return best_pair
+
+
+def quantize_msx1_image_two_colors(image: Image.Image) -> Image.Image:
+    """Quantize an image into the 15-color MSX1 palette with two colors per 8-dot block."""
+    rgb_image = image.convert("RGB")
+    width, height = rgb_image.size
+    palette = list(BASIC_COLORS_MSX1)
+    pixels = list(rgb_image.getdata())
+    palette_indices = [_nearest_palette_index(rgb) for rgb in pixels]
+
+    for y in range(height):
+        row_offset = y * width
+        for x in range(0, width, 8):
+            block_start = row_offset + x
+            block_indices = palette_indices[block_start : block_start + 8]
+            if len(set(block_indices)) <= 2:
+                continue
+            block_pixels = pixels[block_start : block_start + 8]
+            color_a, color_b = _best_palette_pair(block_pixels, palette)
+            ra, ga, ba = palette[color_a]
+            rb, gb, bb = palette[color_b]
+            for offset, (r, g, b) in enumerate(block_pixels):
+                da = (r - ra) ** 2 + (g - ga) ** 2 + (b - ba) ** 2
+                db = (r - rb) ** 2 + (g - gb) ** 2 + (b - bb) ** 2
+                palette_indices[block_start + offset] = color_a if da <= db else color_b
+
+    quantized_pixels = [palette[idx] for idx in palette_indices]
+    quantized_image = Image.new("RGB", (width, height))
+    quantized_image.putdata(quantized_pixels)
+    return quantized_image
 
 
 # 上の物より無駄が少ないかもしれないバージョン 未検証

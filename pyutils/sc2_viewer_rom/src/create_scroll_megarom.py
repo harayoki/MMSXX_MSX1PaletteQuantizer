@@ -131,6 +131,9 @@ from mmsxxasmhelper.msxutils import (
     write_text_with_cursor_macro,
     set_screen_display_macro,
     set_screen_display_status_flag_macro,
+    quantize_msx1_image_two_colors,
+    BASIC_COLORS_MSX1,
+    parse_color,
 )
 from mmsxxasmhelper.config_scene import (
     Screen0ConfigEntry,
@@ -152,7 +155,6 @@ from mmsxxasmhelper.utils import (
 )
 
 from PIL import Image
-from simple_sc2_converter.converter import BASIC_COLORS_MSX1, parse_color
 
 
 def int_from_str(value: str) -> int:
@@ -541,7 +543,7 @@ def prepare_image(image: Image.Image, background: tuple[int, int, int]) -> Image
     return canvas
 
 
-def find_msx1pq_cli(path: Path | None) -> Path:
+def find_msx1pq_cli(path: Path | None) -> Path | None:
     if path is not None:
         if path.is_file():
             return path
@@ -555,9 +557,7 @@ def find_msx1pq_cli(path: Path | None) -> Path:
 
     resolved = shutil.which("msx1pq_cli")
     if not resolved:
-        raise SystemExit(
-            "msx1pq_cli not found near script or in PATH. Provide --msx1pq-cli."
-        )
+        return None
     return Path(resolved)
 
 
@@ -618,6 +618,13 @@ def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
     if not out_path.is_file():
         raise SystemExit(f"Expected output not found: {out_path}")
     return out_path
+
+
+def run_python_quantize(prepared_image: Image.Image, output_path: Path) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    quantized = quantize_msx1_image_two_colors(prepared_image)
+    quantized.save(output_path)
+    return output_path
 
 
 def nearest_palette_index(rgb: Sequence[int]) -> int:
@@ -2288,6 +2295,11 @@ def main() -> None:
         )
 
         with open_workdir(args.workdir) as workdir:
+            if msx1pq_cli is None:
+                log_and_store(
+                    "msx1pq_cli not found; using Python quantization fallback.",
+                    log_lines,
+                )
             for group_idx, (group_name, segments) in enumerate(prepared_groups):
                 segment_image_data: list[ImageData] = []
                 for segment_idx, (segment_name, image, src_mtime) in enumerate(segments):
@@ -2308,9 +2320,12 @@ def main() -> None:
                         segment_image_data.append(image_data)
                         continue
 
-                    image.save(prepared_path)
-                    quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
-                    os.unlink(prepared_path)
+                    if msx1pq_cli is None:
+                        quantized_path = run_python_quantize(image, quantized_path)
+                    else:
+                        image.save(prepared_path)
+                        quantized_path = run_msx1pq_cli(msx1pq_cli, prepared_path, workdir)
+                        os.unlink(prepared_path)
 
                     image_data = load_quantized_image(
                         quantized_image_counter, quantized_path, "created", log_lines
