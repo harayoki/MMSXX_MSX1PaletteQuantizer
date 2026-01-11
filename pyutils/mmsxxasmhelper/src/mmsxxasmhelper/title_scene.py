@@ -32,6 +32,7 @@ from mmsxxasmhelper.msxutils import (
     set_screen_colors_macro,
     set_text_cursor_macro,
     write_text_with_cursor_macro,
+    replace_screen0_yen_with_slash_macro,
 )
 
 
@@ -167,6 +168,8 @@ def build_title_screen_func(
     def title_screen(block: Block) -> None:
         CALL(block, INITXT)
         set_screen_colors_macro(block, 15, 0, 0, current_screen_mode=0)
+
+        replace_screen0_yen_with_slash_macro(block)
 
         if logo_lines:
             write_text_with_cursor_macro(

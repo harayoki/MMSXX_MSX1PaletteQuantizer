@@ -556,7 +556,7 @@ def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
     CALL(b, POSIT)
 
 
-def replace_screen0_yen_with_slash_macro(b: Block, *, pattern_table: int = 0x0000) -> None:
+def replace_screen0_yen_with_slash_macro(b: Block, *, pattern_table: int = 0x0800) -> None:
     """SCREEN0 で "￥"(0x5C) の文字パターンを "／" に差し替えるマクロ。
 
     パターンジェネレータテーブルの先頭アドレスを ``pattern_table`` に指定する。
@@ -566,6 +566,7 @@ def replace_screen0_yen_with_slash_macro(b: Block, *, pattern_table: int = 0x000
     """
     yen_char_code = 0x5C
     slash_pattern = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+    slash_pattern.reverse()
 
     LD.HL_n16(b, (pattern_table + yen_char_code * 8) & 0xFFFF)
     _set_vram_write(b)
