@@ -81,6 +81,7 @@ from mmsxxasmhelper.core import (
     LDIR,
     EX,
     SBC,
+    SRL,
     OUT_C,
     OUTI,
     RET,
@@ -763,8 +764,17 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
 
             # 1行 = 256(0x0100)バイトなので、行数下位(C)をアドレス上位(H)に足す
             LD.A_C(b)
+            AND.n8(b, 0x3F)
             ADD.A_H(b)
             LD.H_A(b)
+
+            # C上位2bitぶんのバンク加算 (0..3)
+            LD.A_C(b)
+            AND.n8(b, 0xC0)
+            for _ in range(6):
+                SRL.r(b, "A")
+            ADD.A_E(b)
+            LD.E_A(b)
 
             # 行数上位(B)が 1 増えるごとに 256行 = 65536バイト = 4バンク(ASCII16)進む
             LD.A_B(b)
@@ -1029,8 +1039,16 @@ def build_sync_scroll_prepare_func(direction: str, *, group: str = DEFAULT_FUNC_
             LD.E_A(block)
 
             LD.A_C(block)
+            AND.n8(block, 0x3F)
             ADD.A_H(block)
             LD.H_A(block)
+
+            LD.A_C(block)
+            AND.n8(block, 0xC0)
+            for _ in range(6):
+                SRL.r(block, "A")
+            ADD.A_E(block)
+            LD.E_A(block)
 
             LD.A_B(block)
             ADD.A_A(block)
@@ -1065,8 +1083,16 @@ def build_sync_scroll_prepare_func(direction: str, *, group: str = DEFAULT_FUNC_
             LD.E_A(block)
 
             LD.A_C(block)
+            AND.n8(block, 0x3F)
             ADD.A_H(block)
             LD.H_A(block)
+
+            LD.A_C(block)
+            AND.n8(block, 0xC0)
+            for _ in range(6):
+                SRL.r(block, "A")
+            ADD.A_E(block)
+            LD.E_A(block)
 
             LD.A_B(block)
             ADD.A_A(block)
