@@ -560,7 +560,7 @@ def replace_screen0_yen_with_slash_macro(b: Block, *, pattern_table: int = 0x080
     """SCREEN0 で "￥"(0x5C) の文字パターンを "／" に差し替えるマクロ。
 
     パターンジェネレータテーブルの先頭アドレスを ``pattern_table`` に指定する。
-    SCREEN0 のデフォルトは 0x0000。
+    SCREEN0 のデフォルトは 0x0800。
 
     レジスタ変更: A, HL
     """
