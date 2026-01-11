@@ -436,7 +436,7 @@ class ADDR:
         "CONFIG_AUTO_SPEED", 1, initial_value=bytes([4]), description="自動切り替え速度 (0-7)"
     )
     CONFIG_AUTO_SCROLL = madd(
-        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([4]), description="自動スクロール速度 (0-9)"
+        "CONFIG_AUTO_SCROLL", 1, initial_value=bytes([3]), description="自動スクロール速度 (0-9)"
     )
     CONFIG_AUTO_PAGE_EDGE = madd(
         "CONFIG_AUTO_PAGE_EDGE", 1, initial_value=bytes([1]), description="自動スクロール中のページ端遷移"
@@ -1153,7 +1153,6 @@ def build_config_scene_func(
         work_base_addr=ADDR.CONFIG_WORK_BASE,
         header_lines=[
             "<HELP>",
-            "",
             "ESC : ENTER | EXIT THIS HELP",
             "SPACE: NEXT IMAGE",
             "GRAPH: PREV IMAGE",
