@@ -967,7 +967,7 @@ def build_outi_repeat_func(
 
 
 def build_scroll_name_table_func(
-    SET_VRAM_WRITE_FUNC: Func, *, group: str = DEFAULT_FUNC_GROUP_NAME
+    group: str = DEFAULT_FUNC_GROUP_NAME
 ) -> Func:
     def scroll_name_table(block: Block) -> None:
         # 入力: A = CURRENT_SCROLL_ROW (0-23)
@@ -976,7 +976,7 @@ def build_scroll_name_table_func(
         PUSH.AF(block)
         # VRAM 0x1800 (名前テーブル) を書き込みモードでセット
         LD.HL_n16(block, 0x1800)
-        SET_VRAM_WRITE_FUNC.call(block)
+        set_vram_write_macro(block)
         POP.AF(block)
 
         # キャラクター番号の開始オフセット = A * 32
@@ -1011,7 +1011,6 @@ def build_scroll_name_table_func(
 
 
 def build_scroll_name_table_func2(
-    SET_VRAM_WRITE_FUNC: Func,
     OUTI_256_FUNC: Func,
     OUTI_256_FUNC_NO_WAIT: Func | None = None,  # Noneを許容
     *,
@@ -1043,7 +1042,7 @@ def build_scroll_name_table_func2(
 
         # 3. VRAMアドレスセット (0x1800)
         LD.HL_n16(block, 0x1800)
-        SET_VRAM_WRITE_FUNC.call(block)
+        set_vram_write_macro(block)
 
         # 4. 256バイト × 3ブロック分を転送
         LD.C_n8(block, 0x98)

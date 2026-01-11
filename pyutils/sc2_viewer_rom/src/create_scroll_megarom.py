@@ -121,7 +121,8 @@ from mmsxxasmhelper.msxutils import (
     build_update_input_func,
     INPUT_KEY_BIT,
     build_beep_control_utils,
-    build_set_vram_write_func,
+    # build_set_vram_write_func,
+    set_vram_write_macro,
     build_scroll_name_table_func,
     build_scroll_name_table_func2,
     build_outi_repeat_func,
@@ -805,7 +806,7 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
         PUSH.HL(block)
         PUSH.DE(block)
         LD.HL_n16(block, PATTERN_BASE)  # VRAM 0x0000
-        SET_VRAM_WRITE_FUNC.call(block)
+        set_vram_write_macro(block)
         POP.DE(block)
         POP.HL(block)
         LD.D_n8(block, 24)  # 24行分転送
@@ -816,7 +817,7 @@ def build_draw_scroll_view_func(*, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func
         PUSH.HL(block)
         PUSH.DE(block)
         LD.HL_n16(block, COLOR_BASE)  # VRAM 0x2000
-        SET_VRAM_WRITE_FUNC.call(block)
+        set_vram_write_macro(block)
         POP.DE(block)
         POP.HL(block)
         LD.D_n8(block, 24)  # 24行分転送
@@ -841,20 +842,16 @@ DRAW_SCROLL_VIEW_FUNC = build_draw_scroll_view_func(group=SCROLL_VIEWER_FUNC_GRO
 OUTI_256_FUNC = build_outi_repeat_func(256, group=SCROLL_VIEWER_FUNC_GROUP)
 OUTI_256_FUNC_NO_WAIT = build_outi_repeat_func(256, weight=0, group=SCROLL_VIEWER_FUNC_GROUP)
 
-SET_VRAM_WRITE_FUNC = build_set_vram_write_func(group=SCROLL_VIEWER_FUNC_GROUP)
 SCROLL_NAME_TABLE_FUNC = build_scroll_name_table_func(
-    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL = build_scroll_name_table_func2(
-    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     OUTI_256_FUNC=OUTI_256_FUNC,
     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
     use_no_wait="PARTIAL",
     group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
-    SET_VRAM_WRITE_FUNC=SET_VRAM_WRITE_FUNC,
     OUTI_256_FUNC=OUTI_256_FUNC,
     OUTI_256_FUNC_NO_WAIT=OUTI_256_FUNC_NO_WAIT,
     use_no_wait="YES",
@@ -1126,29 +1123,34 @@ def build_sync_scroll_prepare_func(direction: str, *, group: str = DEFAULT_FUNC_
 
 def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC_GROUP_NAME) -> Func:
     def sync_scroll_transfer(block: Block) -> None:
+
+        if args.vdp_wait_for_pattern_gen == 1:
+            outi_pg_func = OUTI_256_FUNC_NO_WAIT
+        else:
+            outi_pg_func = OUTI_256_FUNC
+
+        if args.vdp_wait_for_color_table == 1:
+            outi_ct_func = OUTI_256_FUNC_NO_WAIT
+        else:
+            outi_ct_func = OUTI_256_FUNC
+
+        LD.C_n8(block, 0x98)
+
         # 方向に応じたオフセットでループ
         for buf_index, (line_idx, _img_adj) in enumerate(SCROLL_CONFIGS[direction]):
             # --- A: パターン(PG)転送 ---
             LD.DE_n16(block, ADDR.PG_BUFFER + (0x100 * buf_index))
             LD.HL_mn16(block, ADDR.SYNC_SCROLL_PG_VRAM_ADDRS + (2 * buf_index))
-            SET_VRAM_WRITE_FUNC.call(block)
+            set_vram_write_macro(block)
             EX.DE_HL(block)
-            LD.C_n8(block, 0x98)
-            if args.vdp_wait_for_pattern_gen == 1:
-                OUTI_256_FUNC_NO_WAIT.call(block)
-            else:
-                OUTI_256_FUNC.call(block)
+            outi_pg_func.call(block)
 
             # --- B: カラー(CT)転送 ---
             LD.DE_n16(block, ADDR.CT_BUFFER + (0x100 * buf_index))
             LD.HL_mn16(block, ADDR.SYNC_SCROLL_CT_VRAM_ADDRS + (2 * buf_index))
-            SET_VRAM_WRITE_FUNC.call(block)
+            set_vram_write_macro(block)
             EX.DE_HL(block)
-            LD.C_n8(block, 0x98)
-            if args.vdp_wait_for_color_table == 1:
-                OUTI_256_FUNC_NO_WAIT.call(block)
-            else:
-                OUTI_256_FUNC.call(block)
+            outi_ct_func.call(block)
 
         RET(block)
 
