@@ -692,6 +692,8 @@ class ADDR:
         madd("CURRENT_IMAGE_COLOR_ADDRESS_ADDR", 2, description="カラーパターンの先頭アドレス"))
     CURRENT_SCROLL_ROW = (
         madd("CURRENT_SCROLL_ROW", 2, description="スクロール位置"))
+    CURRENT_NAME_TABLE_ROW = (
+        madd("CURRENT_NAME_TABLE_ROW", 1, description="ネームテーブル用スクロール位置"))
 
     INPUT_HOLD = madd("INPUT_HOLD", 1, description="現在押されている全入力")
     INPUT_TRG = madd("INPUT_TRG", 1, description="今回新しく押された入力")
@@ -1233,6 +1235,8 @@ def build_update_image_display_func(
         LD.mn16_HL(block, ADDR.CURRENT_SCROLL_ROW)
 
         block.label("_INIT_POS_DONE")
+        LD.A_mn16(block, ADDR.CURRENT_SCROLL_ROW)
+        LD.mn16_A(block, ADDR.CURRENT_NAME_TABLE_ROW)
 
         # 4. VRAM 描画実行
         DRAW_SCROLL_VIEW_FUNC.call(block)
@@ -1856,6 +1860,9 @@ def build_boot_bank(
     JR_Z(b, "CHECK_DOWN")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_mn16(b, ADDR.CURRENT_NAME_TABLE_ROW)
+    DEC.A(b)
+    LD.mn16_A(b, ADDR.CURRENT_NAME_TABLE_ROW)
 
     # --- 追記：方向フラグ(0=上)をセット ---
     XOR.A(b)
@@ -1934,6 +1941,9 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_mn16(b, ADDR.CURRENT_NAME_TABLE_ROW)
+    INC.A(b)
+    LD.mn16_A(b, ADDR.CURRENT_NAME_TABLE_ROW)
 
     # --- 追記：方向フラグ(1=下)をセット ---
     LD.A_n8(b, 1)
@@ -1946,7 +1956,7 @@ def build_boot_bank(
 
     b.label("DO_UPDATE_SCROLL")
     # 1. 名前テーブルをずらす (TABLE_MOD24 を使用)
-    LD.A_mn16(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_mn16(b, ADDR.CURRENT_NAME_TABLE_ROW)
     LD.L_A(b)
     LD.H_n8(b, 0)
     LD.DE_label(b, "TABLE_MOD24")
@@ -2056,6 +2066,9 @@ def build_boot_bank(
     JP_Z(b, "AUTO_SCROLL_EDGE_TOP")
     DEC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_mn16(b, ADDR.CURRENT_NAME_TABLE_ROW)
+    DEC.A(b)
+    LD.mn16_A(b, ADDR.CURRENT_NAME_TABLE_ROW)
     # --- 自動スクロール時の方向フラグ(0=上)をセット ---
     XOR.A(b)
     LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
@@ -2105,6 +2118,9 @@ def build_boot_bank(
     LD.HL_mn16(b, ADDR.CURRENT_SCROLL_ROW)
     INC.HL(b)
     LD.mn16_HL(b, ADDR.CURRENT_SCROLL_ROW)
+    LD.A_mn16(b, ADDR.CURRENT_NAME_TABLE_ROW)
+    INC.A(b)
+    LD.mn16_A(b, ADDR.CURRENT_NAME_TABLE_ROW)
     # --- 自動スクロール時の方向フラグ(1=下)をセット ---
     LD.A_n8(b, 1)
     LD.mn16_A(b, ADDR.SCROLL_DIRECTION)
