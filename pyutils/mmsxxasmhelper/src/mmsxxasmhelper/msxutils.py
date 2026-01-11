@@ -28,6 +28,7 @@ __all__ = [
     "write_text_with_cursor_macro",
     "write_text_with_cursor_macro_with_bios",
     "set_screen_colors_macro",
+    "replace_screen0_yen_with_slash_macro",
     "enaslt_macro",
     "ldirvm_macro",
     # "set_palette_macro",
@@ -553,6 +554,25 @@ def set_text_cursor_macro(b: Block, x: int, y: int) -> None:
     LD.H_n8(b, (x + 1) & 0xFF)
     LD.L_n8(b, (y + 1) & 0xFF)
     CALL(b, POSIT)
+
+
+def replace_screen0_yen_with_slash_macro(b: Block, *, pattern_table: int = 0x0000) -> None:
+    """SCREEN0 で "￥"(0x5C) の文字パターンを "／" に差し替えるマクロ。
+
+    パターンジェネレータテーブルの先頭アドレスを ``pattern_table`` に指定する。
+    SCREEN0 のデフォルトは 0x0000。
+
+    レジスタ変更: A, HL
+    """
+    yen_char_code = 0x5C
+    slash_pattern = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+
+    LD.HL_n16(b, (pattern_table + yen_char_code * 8) & 0xFFFF)
+    _set_vram_write(b)
+    for byte in slash_pattern:
+        LD.A_n8(b, byte)
+        OUT(b, VDP_DATA)
+        NOP(b, 2)
 
 
 def write_text_with_cursor_macro_with_bios(b: Block, text: str, x: int, y: int) -> None:
