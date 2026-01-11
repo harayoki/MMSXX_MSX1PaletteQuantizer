@@ -157,13 +157,273 @@ from mmsxxasmhelper.utils import (
 from PIL import Image
 
 
+def _localized(getter):
+    def wrapper(cls, **kwargs: object) -> str:
+        template = getter(cls)[cls.lang]
+        return template.format(**kwargs)
+
+    return classmethod(wrapper)
+
+
+class Messages:
+    lang = "jp"
+
+    @_localized
+    def description(cls) -> dict[str, str]:
+        return {
+            "jp": "縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール",
+            "en": "Generate a SCREEN2 vertical scroll ROM from tall PNGs.",
+        }
+
+    @_localized
+    def input_help(cls) -> dict[str, str]:
+        return {
+            "jp": "入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
+            "en": "Input PNGs. Multiple files are stacked vertically. Repeat -i to create separate images.",
+        }
+
+    @_localized
+    def debug_image_index_help(cls) -> dict[str, str]:
+        return {
+            "jp": "--use-debug-image 時に埋め込む番号",
+            "en": "Index to embed when --use-debug-image is enabled.",
+        }
+
+    @_localized
+    def output_help(cls) -> dict[str, str]:
+        return {
+            "jp": "出力 ROM ファイル名（未指定なら自動命名）",
+            "en": "Output ROM file name (auto-generated if omitted).",
+        }
+
+    @_localized
+    def background_help(cls) -> dict[str, str]:
+        return {
+            "jp": "右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
+            "en": "Padding color for right/bottom (e.g. #000000 or 0,0,0).",
+        }
+
+    @_localized
+    def msx1pq_cli_help(cls) -> dict[str, str]:
+        return {
+            "jp": "msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
+            "en": "Path to msx1pq_cli (search PATH if omitted).",
+        }
+
+    @_localized
+    def workdir_help(cls) -> dict[str, str]:
+        return {
+            "jp": "中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
+            "en": "Work directory for intermediate files (temporary if omitted).",
+        }
+
+    @_localized
+    def no_cache_help(cls) -> dict[str, str]:
+        return {
+            "jp": "ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
+            "en": "Regenerate quantized images instead of using cache in the work directory.",
+        }
+
+    @_localized
+    def fill_byte_help(cls) -> dict[str, str]:
+        return {
+            "jp": "未使用領域の埋め値 (default: 0xFF)",
+            "en": "Fill byte for unused areas (default: 0xFF).",
+        }
+
+    @_localized
+    def title_wait_help(cls) -> dict[str, str]:
+        return {
+            "jp": "タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
+            "en": "Countdown seconds on the title screen. 0 disables auto-start.",
+        }
+
+    @_localized
+    def rom_info_help(cls) -> dict[str, str]:
+        return {
+            "jp": "ROM情報テキストを出力するかどうか (default: ON)",
+            "en": "Whether to output ROM info text (default: ON).",
+        }
+
+    @_localized
+    def beep_help(cls) -> dict[str, str]:
+        return {
+            "jp": "起動時のBEEP設定 (default: ON)",
+            "en": "Startup BEEP setting (default: ON).",
+        }
+
+    @_localized
+    def bgm_help(cls) -> dict[str, str]:
+        return {
+            "jp": "起動時のBGM設定 (default: OFF)",
+            "en": "Startup BGM setting (default: OFF).",
+        }
+
+    @_localized
+    def bgm_path_help(cls) -> dict[str, str]:
+        return {
+            "jp": "BGMのbinファイルパス (未指定の場合はBGM設定は強制OFF)",
+            "en": "Path to BGM bin file (BGM is forced OFF if omitted).",
+        }
+
+    @_localized
+    def bgm_fps_help(cls) -> dict[str, str]:
+        return {
+            "jp": "BGM再生FPS (default: 30)",
+            "en": "BGM playback FPS (default: 30).",
+        }
+
+    @_localized
+    def start_at_help(cls) -> dict[str, str]:
+        return {
+            "jp": "全画像の初期表示位置デフォルト (default: top)",
+            "en": "Default initial position for all images (default: top).",
+        }
+
+    @_localized
+    def start_at_override_help(cls) -> dict[str, str]:
+        return {
+            "jp": "入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
+            "en": "Specify initial positions in input order; count must match images.",
+        }
+
+    @_localized
+    def start_at_random_help(cls) -> dict[str, str]:
+        return {
+            "jp": "全画像の初期表示位置をランダムに決定する（テスト用途）",
+            "en": "Randomize initial positions for all images (testing).",
+        }
+
+    @_localized
+    def debug_build_help(cls) -> dict[str, str]:
+        return {
+            "jp": "デバッグ用ビルドモードを有効にする。",
+            "en": "Enable debug build mode.",
+        }
+
+    @_localized
+    def vdp_wait_name_help(cls) -> dict[str, str]:
+        return {
+            "jp": "VDP WAITの設定(name table) (PARTIAL/NOWAIT, default: NOWAIT)",
+            "en": "VDP WAIT setting (name table) (PARTIAL/NOWAIT, default: NOWAIT).",
+        }
+
+    @_localized
+    def vdp_wait_pattern_help(cls) -> dict[str, str]:
+        return {
+            "jp": "VDP WAITの設定(pattern gen) (PARTIAL/NOWAIT, default: NOWAIT)",
+            "en": "VDP WAIT setting (pattern gen) (PARTIAL/NOWAIT, default: NOWAIT).",
+        }
+
+    @_localized
+    def vdp_wait_color_help(cls) -> dict[str, str]:
+        return {
+            "jp": "VDP WAITの設定(color table) (PARTIAL/NOWAIT, default: NOWAIT)",
+            "en": "VDP WAIT setting (color table) (PARTIAL/NOWAIT, default: NOWAIT).",
+        }
+
+    @_localized
+    def msx1pq_cli_not_found(cls) -> dict[str, str]:
+        return {
+            "jp": "msx1pq_cli が見つかりません: {path}",
+            "en": "msx1pq_cli not found: {path}",
+        }
+
+    @_localized
+    def msx1pq_cli_failed(cls) -> dict[str, str]:
+        return {
+            "jp": "msx1pq_cli の実行に失敗しました:\n"
+            "command: {command}\n"
+            "stdout:\n{stdout}\n"
+            "stderr:\n{stderr}",
+            "en": "msx1pq_cli failed:\ncommand: {command}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        }
+
+    @_localized
+    def expected_output_not_found(cls) -> dict[str, str]:
+        return {
+            "jp": "期待した出力が見つかりません: {out_path}",
+            "en": "Expected output not found: {out_path}",
+        }
+
+    @_localized
+    def output_path_is_dir(cls) -> dict[str, str]:
+        return {
+            "jp": "出力先がディレクトリです: {path}",
+            "en": "Output path is a directory: {path}",
+        }
+
+    @_localized
+    def failed_open_rom(cls) -> dict[str, str]:
+        return {
+            "jp": "ERROR! ROMファイルを書き込み用に開けませんでした: {path}: {exc}",
+            "en": "ERROR! failed to open ROM file for writing: {path}: {exc}",
+        }
+
+    @_localized
+    def empty_input_group(cls) -> dict[str, str]:
+        return {
+            "jp": "空の入力グループは指定できません",
+            "en": "Empty input group is not allowed",
+        }
+
+    @_localized
+    def path_not_found(cls) -> dict[str, str]:
+        return {
+            "jp": "見つかりません: {path}",
+            "en": "not found: {path}",
+        }
+
+    @_localized
+    def no_images_prepared(cls) -> dict[str, str]:
+        return {
+            "jp": "画像が準備されていません",
+            "en": "No images were prepared",
+        }
+
+    @_localized
+    def start_conflict(cls) -> dict[str, str]:
+        return {
+            "jp": "--start-at-random と --start-at-override は同時に指定できません",
+            "en": "Cannot use --start-at-random with --start-at-override",
+        }
+
+    @_localized
+    def start_override_mismatch(cls) -> dict[str, str]:
+        return {
+            "jp": "--start-at-override の数は画像数と一致させてください",
+            "en": "Number of --start-at-override values must match image count",
+        }
+
+    @_localized
+    def bgm_not_found(cls) -> dict[str, str]:
+        return {
+            "jp": "BGMファイルが見つかりません: {path}",
+            "en": "BGM file not found: {path}",
+        }
+
+    @_localized
+    def failed_write_rom(cls) -> dict[str, str]:
+        return {
+            "jp": "ERROR! ROMファイルを書き込めませんでした: {exc}",
+            "en": "ERROR! failed to write ROM file: {exc}",
+        }
+
+
+def _detect_language(argv: Sequence[str]) -> str:
+    return "en" if "-en" in argv or "--english" in argv else "jp"
+
+
+Messages.lang = _detect_language(sys.argv)
+
+
 def int_from_str(value: str) -> int:
     return int(value, 0)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="縦長 PNG から SCREEN2 縦スクロール ROM を生成するツール"
+        description=Messages.description()
     )
     parser.add_argument(
         "-i",
@@ -174,7 +434,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         action="append",
         required=True,
-        help="入力 PNG。複数指定すると縦に連結。-i を複数回指定すると別画像として扱う。",
+        help=Messages.input_help(),
     )
     parser.add_argument(
         "--use-debug-image",
@@ -184,118 +444,126 @@ def parse_args() -> argparse.Namespace:
         "--debug-image-index",
         type=int,
         default=0,
-        help="--use-debug-image 時に埋め込む番号",
+        help=Messages.debug_image_index_help(),
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        help="出力 ROM ファイル名（未指定なら自動命名）",
+        help=Messages.output_help(),
     )
     parser.add_argument(
         "--background",
         type=str,
         default="#000000",
-        help="右側／下側のパディングに使う色 (例: #000000 や 0,0,0)",
+        help=Messages.background_help(),
     )
     parser.add_argument(
         "--msx1pq-cli",
         type=Path,
-        help="msx1pq_cli 実行ファイルのパス（未指定なら PATH を検索）",
+        help=Messages.msx1pq_cli_help(),
     )
     parser.add_argument(
         "--workdir",
         type=Path,
-        help="中間ファイルを書き出すワークフォルダ（未指定なら一時フォルダ）",
+        help=Messages.workdir_help(),
     )
     parser.add_argument(
         "--no-cache",
         action="store_true",
-        help="ワークフォルダ内のキャッシュ済み量子化画像を使わずに再生成する",
+        help=Messages.no_cache_help(),
     )
     parser.add_argument(
         "--fill-byte",
         type=int_from_str,
         default=0xFF,
-        help="未使用領域の埋め値 (default: 0xFF)",
+        help=Messages.fill_byte_help(),
     )
     parser.add_argument(
         "--title-wait-seconds",
         type=int,
         default=5,
-        help="タイトル画面のカウントダウン秒数。0なら自動遷移なし。",
+        help=Messages.title_wait_help(),
     )
     parser.add_argument(
         "--rom-info",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="ROM情報テキストを出力するかどうか (default: ON)",
+        help=Messages.rom_info_help(),
     )
     parser.add_argument(
         "--beep",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="起動時のBEEP設定 (default: ON)",
+        help=Messages.beep_help(),
     )
     parser.add_argument(
         "--bgm",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="起動時のBGM設定 (default: OFF)",
+        help=Messages.bgm_help(),
     )
     parser.add_argument(
         "--bgm-path",
         type=Path,
-        help="BGMのbinファイルパス (未指定の場合はBGM設定は強制OFF)",
+        help=Messages.bgm_path_help(),
     )
     parser.add_argument(
         "--bgm-fps",
         type=int,
         choices=[30, 60],
         default=30,
-        help="BGM再生FPS (default: 30)",
+        help=Messages.bgm_fps_help(),
     )
     parser.add_argument(
         "--start-at",
         choices=["top", "bottom"],
         default="top",
-        help="全画像の初期表示位置デフォルト (default: top)",
+        help=Messages.start_at_help(),
     )
     parser.add_argument(
         "--start-at-override",
         nargs="+",
         choices=["top", "bottom"],
-        help="入力画像の順に初期表示位置を指定。画像数と一致している必要あり。",
+        help=Messages.start_at_override_help(),
     )
     parser.add_argument(
         "--start-at-random",
         action="store_true",
-        help="全画像の初期表示位置をランダムに決定する（テスト用途）",
+        help=Messages.start_at_random_help(),
     )
     parser.add_argument(
         "--debug-build",
         action="store_true",
-        help="デバッグ用ビルドモードを有効にする。",
+        help=Messages.debug_build_help(),
     )
     parser.add_argument(
         "--vdp-wait-for-name-table",
         choices=["PARTIAL", "NOWAIT"],
         default="NOWAIT",
-        help="VDP WAITの設定(name table) (PARTIAL/NOWAIT, default: NOWAIT)",
+        help=Messages.vdp_wait_name_help(),
     )
     parser.add_argument(
         "--vdp-wait-for-pattern-gen",
         choices=["PARTIAL", "NOWAIT"],
         default="NOWAIT",
-        help="VDP WAITの設定(pattern gen) (PARTIAL/NOWAIT, default: NOWAIT)",
+        help=Messages.vdp_wait_pattern_help(),
     )
     parser.add_argument(
         "--vdp-wait-for-color-table",
         choices=["PARTIAL", "NOWAIT"],
         default="NOWAIT",
-        help="VDP WAITの設定(color table) (PARTIAL/NOWAIT, default: NOWAIT)",
+        help=Messages.vdp_wait_color_help(),
+    )
+    parser.add_argument(
+        "-en",
+        "--english",
+        action="store_true",
+        help="Use -en/--english to switch all messages to English.",
     )
     args = parser.parse_args()
+    if args.english:
+        Messages.lang = "en"
     vdp_wait_map = {"PARTIAL": 0, "NOWAIT": 1}
     args.vdp_wait_for_name_table = vdp_wait_map[args.vdp_wait_for_name_table]
     args.vdp_wait_for_pattern_gen = vdp_wait_map[args.vdp_wait_for_pattern_gen]
@@ -547,7 +815,7 @@ def find_msx1pq_cli(path: Path | None) -> Path | None:
     if path is not None:
         if path.is_file():
             return path
-        raise SystemExit(f"msx1pq_cli not found: {path}")
+        raise SystemExit(Messages.msx1pq_cli_not_found(path=path))
 
     script_dir = Path(__file__).resolve().parent
     for candidate_name in ("msx1pq_cli", "msx1pq_cli.exe"):
@@ -608,15 +876,16 @@ def run_msx1pq_cli(cli: Path, prepared_png: Path, output_dir: Path) -> Path:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise SystemExit(
-            "msx1pq_cli failed:\n"
-            f"command: {' '.join(cmd)}\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
+            Messages.msx1pq_cli_failed(
+                command=" ".join(cmd),
+                stdout=result.stdout,
+                stderr=result.stderr,
+            )
         )
 
     out_path = quantized_output_path(prepared_png, output_dir)
     if not out_path.is_file():
-        raise SystemExit(f"Expected output not found: {out_path}")
+        raise SystemExit(Messages.expected_output_not_found(out_path=out_path))
     return out_path
 
 
@@ -2231,12 +2500,12 @@ def ensure_output_writable(path: Path) -> None:
     """アウトプットファイルが書き込み出来るが（処理の事前に）チェックする"""
     if path.exists():
         if path.is_dir():
-            raise SystemExit(f"Output path is a directory: {path}")
+            raise SystemExit(Messages.output_path_is_dir(path=path))
         try:
             # openMSXで開いているROMは r+b でのOPENをパスするので同名に変更する事で状態をチェックする
             os.replace(path, path)
         except Exception as exc:  # pragma: no cover - CLI error path
-            raise SystemExit(f"ERROR! failed to open ROM file for writing: {path}: {exc}") from exc
+            raise SystemExit(Messages.failed_open_rom(path=path, exc=exc)) from exc
     return
 
 
@@ -2269,12 +2538,12 @@ def main() -> None:
     else:
         for group in input_groups:
             if not group:
-                raise SystemExit("Empty input group is not allowed")
+                raise SystemExit(Messages.empty_input_group())
 
             group_segments: list[tuple[str, Image.Image, float]] = []
             for path in group:
                 if not path.is_file():
-                    raise SystemExit(f"not found: {path}")
+                    raise SystemExit(Messages.path_not_found(path=path))
                 with Image.open(path) as src:
                     image_format = src.format or path.suffix.lstrip(".").upper() or "UNKNOWN"
                     input_format_counter[image_format] += 1
@@ -2336,16 +2605,16 @@ def main() -> None:
                 image_data_list.append(concatenate_image_data_vertically(segment_image_data))
 
     if not image_data_list:
-        raise SystemExit("No images were prepared")
+        raise SystemExit(Messages.no_images_prepared())
 
     if args.start_at_random and args.start_at_override:
-        raise SystemExit("--start-at-random と --start-at-override は同時に指定できません")
+        raise SystemExit(Messages.start_conflict())
 
     if args.start_at_random:
         start_positions = [random.choice(["top", "bottom"]) for _ in image_data_list]
     elif args.start_at_override:
         if len(args.start_at_override) != len(image_data_list):
-            raise SystemExit("--start-at-override の数は画像数と一致させてください")
+            raise SystemExit(Messages.start_override_mismatch())
         start_positions = args.start_at_override
     else:
         start_positions = [args.start_at] * len(image_data_list)
@@ -2354,7 +2623,7 @@ def main() -> None:
         bgm_enabled_default = False
     else:
         if not args.bgm_path.is_file():
-            raise SystemExit(f"BGM file not found: {args.bgm_path}")
+            raise SystemExit(Messages.bgm_not_found(path=args.bgm_path))
         bgm_data = args.bgm_path.read_bytes()
         if len(bgm_data) > PAGE_SIZE:
             log_and_store("BGM file size exceeds 16KB; truncating to 16KB", log_lines)
@@ -2388,7 +2657,7 @@ def main() -> None:
     try:
         out.write_bytes(rom)
     except Exception as exc:  # pragma: no cover - CLI error path
-        raise SystemExit(f"ERROR! failed to write ROM file: {exc}") from exc
+        raise SystemExit(Messages.failed_write_rom(exc=exc)) from exc
 
     log_and_store("---- mem ----", log_lines)
     log_and_store(mem_addr_allocator.as_str(), log_lines)
