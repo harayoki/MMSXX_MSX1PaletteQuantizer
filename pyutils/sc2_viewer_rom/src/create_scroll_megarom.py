@@ -275,26 +275,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--vdp-wait-for-name-table",
-        type=int_from_str,
-        choices=[0, 1],
-        default=0,
-        help="VDP WAITの設定(name table) (0=YES, 1=PARTIAL)",
+        choices=["PARTIAL", "NOWAIT"],
+        default="NOWAIT",
+        help="VDP WAITの設定(name table) (PARTIAL/NOWAIT, default: NOWAIT)",
     )
     parser.add_argument(
         "--vdp-wait-for-pattern-gen",
-        type=int_from_str,
-        choices=[0, 1],
-        default=0,
-        help="VDP WAITの設定(pattern gen) (0=YES, 1=PARTIAL)",
+        choices=["PARTIAL", "NOWAIT"],
+        default="NOWAIT",
+        help="VDP WAITの設定(pattern gen) (PARTIAL/NOWAIT, default: NOWAIT)",
     )
     parser.add_argument(
         "--vdp-wait-for-color-table",
-        type=int_from_str,
-        choices=[0, 1],
-        default=0,
-        help="VDP WAITの設定(color table) (0=YES, 1=PARTIAL)",
+        choices=["PARTIAL", "NOWAIT"],
+        default="NOWAIT",
+        help="VDP WAITの設定(color table) (PARTIAL/NOWAIT, default: NOWAIT)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    vdp_wait_map = {"PARTIAL": 0, "NOWAIT": 1}
+    args.vdp_wait_for_name_table = vdp_wait_map[args.vdp_wait_for_name_table]
+    args.vdp_wait_for_pattern_gen = vdp_wait_map[args.vdp_wait_for_pattern_gen]
+    args.vdp_wait_for_color_table = vdp_wait_map[args.vdp_wait_for_color_table]
+    return args
 
 
 args = parse_args()
@@ -831,9 +833,9 @@ SCROLL_NAME_TABLE_FUNC_NOWAIT = build_scroll_name_table_func2(
     group=SCROLL_VIEWER_FUNC_GROUP
 )
 SCROLL_NAME_TABLE_FUNC_NOWAIT_SELECTED = (
-    SCROLL_NAME_TABLE_FUNC_NOWAIT
+    SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
     if args.vdp_wait_for_name_table == 0
-    else SCROLL_NAME_TABLE_FUNC_NOWAIT_PARTIAL
+    else SCROLL_NAME_TABLE_FUNC_NOWAIT
 )
 SCROLL_VRAM_XFER_FUNC = build_scroll_vram_xfer_func(group=SCROLL_VIEWER_FUNC_GROUP)
 
@@ -1088,7 +1090,7 @@ def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC
             SET_VRAM_WRITE_FUNC.call(block)
             EX.DE_HL(block)
             LD.C_n8(block, 0x98)
-            if args.vdp_wait_for_pattern_gen == 0:
+            if args.vdp_wait_for_pattern_gen == 1:
                 OUTI_256_FUNC_NO_WAIT.call(block)
             else:
                 OUTI_256_FUNC.call(block)
@@ -1099,7 +1101,7 @@ def build_sync_scroll_transfer_func(direction: str, *, group: str = DEFAULT_FUNC
             SET_VRAM_WRITE_FUNC.call(block)
             EX.DE_HL(block)
             LD.C_n8(block, 0x98)
-            if args.vdp_wait_for_color_table == 0:
+            if args.vdp_wait_for_color_table == 1:
                 OUTI_256_FUNC_NO_WAIT.call(block)
             else:
                 OUTI_256_FUNC.call(block)
