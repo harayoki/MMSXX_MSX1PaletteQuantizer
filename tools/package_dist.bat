@@ -7,8 +7,8 @@ for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
 set "DIST_DIR=%REPO_ROOT%\dist"
 set "SOURCE_DIR=%REPO_ROOT%\platform\Win\x64"
 set "EXTRA_DIR=%SCRIPT_DIR%disit_items"
-set "BASIC_SC2_VIEWER=%REPO_ROOT%\pyutils\basic_sc2_viewer\dist\basic_sc2_viewer.exe"
-set "SC2_VIEWER_ROM=%REPO_ROOT%\pyutils\sc2_viewer_rom\dist\create_sc2_32k_rom.exe"
+set "BASIC_SC2_VIEWER=%REPO_ROOT%\msx_pyutils\basic_sc2_viewer\dist\basic_sc2_viewer.exe"
+set "SC2_VIEWER_ROM=%REPO_ROOT%\msx_pyutils\sc2_viewer_rom\dist\create_sc2_32k_rom.exe"
 
 if not exist "%DIST_DIR%" (
     echo Creating dist directory: %DIST_DIR%
