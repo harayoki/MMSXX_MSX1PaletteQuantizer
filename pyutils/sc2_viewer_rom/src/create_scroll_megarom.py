@@ -506,7 +506,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--beep",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=Messages.beep_help(),
     )
     parser.add_argument(
