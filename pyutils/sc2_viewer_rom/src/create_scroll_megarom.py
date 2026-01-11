@@ -477,27 +477,32 @@ def parse_args() -> argparse.Namespace:
         help=Messages.output_help(),
     )
     parser.add_argument(
+        "-bg",
         "--background",
         type=str,
         default="#000000",
         help=Messages.background_help(),
     )
     parser.add_argument(
+        "-pqcli",
         "--msx1pq-cli",
         type=Path,
         help=Messages.msx1pq_cli_help(),
     )
     parser.add_argument(
+        "-W",
         "--workdir",
         type=Path,
         help=Messages.workdir_help(),
     )
     parser.add_argument(
+        "-N",
         "--no-cache",
         action="store_true",
         help=Messages.no_cache_help(),
     )
     parser.add_argument(
+        "-F",
         "--fill-byte",
         type=int_from_str,
         default=0xFF,
@@ -551,6 +556,7 @@ def parse_args() -> argparse.Namespace:
         help=Messages.start_at_help(),
     )
     parser.add_argument(
+        "-sao",
         "--start-at-override",
         nargs="+",
         choices=["top", "bottom"],
@@ -567,18 +573,21 @@ def parse_args() -> argparse.Namespace:
         help=Messages.debug_build_help(),
     )
     parser.add_argument(
+        "-vwn",
         "--vdp-wait-for-name-table",
         choices=["PARTIAL", "NOWAIT"],
         default="NOWAIT",
         help=Messages.vdp_wait_name_help(),
     )
     parser.add_argument(
+        "-vwp",
         "--vdp-wait-for-pattern-gen",
         choices=["PARTIAL", "NOWAIT"],
         default="NOWAIT",
         help=Messages.vdp_wait_pattern_help(),
     )
     parser.add_argument(
+        "-vwc",
         "--vdp-wait-for-color-table",
         choices=["PARTIAL", "NOWAIT"],
         default="NOWAIT",
