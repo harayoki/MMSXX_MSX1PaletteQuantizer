@@ -239,6 +239,13 @@ class Messages:
         }
 
     @_localized
+    def skip_title_help(cls) -> dict[str, str]:
+        return {
+            "jp": "タイトル画面を表示せずにビューアーを開始する",
+            "en": "Start the viewer without showing the title screen.",
+        }
+
+    @_localized
     def rom_info_help(cls) -> dict[str, str]:
         return {
             "jp": "ROM情報テキストを出力するかどうか (default: ON)",
@@ -484,6 +491,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=5,
         help=Messages.title_wait_help(),
+    )
+    parser.add_argument(
+        "--skip-title-screen",
+        action="store_true",
+        help=Messages.skip_title_help(),
     )
     parser.add_argument(
         "--rom-info",
@@ -1552,6 +1564,7 @@ def build_boot_bank(
     header_bytes: Sequence[int],
     fill_byte: int,
     title_wait_seconds: int,
+    skip_title_screen: bool,
     beep_enabled_default: bool,
     bgm_enabled_default: bool,
     bgm_start_bank: int | None,
@@ -1686,21 +1699,24 @@ def build_boot_bank(
         LD.mn16_HL(b, ADDR.BGM_PTR_ADDR)
         LD.mn16_HL(b, ADDR.BGM_LOOP_ADDR)
 
-    TITLE_SCREEN_FUNC.call(b)
-
     AFTER_TITLE_CONFIG = unique_label("AFTER_TITLE_CONFIG")
     ENTER_CONFIG_FROM_TITLE = unique_label("ENTER_CONFIG_FROM_TITLE")
 
-    CP.n8(b, 1)
-    JR_Z(b, ENTER_CONFIG_FROM_TITLE)
-    apply_viewer_screen_settings(b)
-    JR(b, AFTER_TITLE_CONFIG)
+    if skip_title_screen:
+        apply_viewer_screen_settings(b)
+        b.label(AFTER_TITLE_CONFIG)
+    else:
+        TITLE_SCREEN_FUNC.call(b)
+        CP.n8(b, 1)
+        JR_Z(b, ENTER_CONFIG_FROM_TITLE)
+        apply_viewer_screen_settings(b)
+        JR(b, AFTER_TITLE_CONFIG)
 
-    b.label(ENTER_CONFIG_FROM_TITLE)
-    CONFIG_SCENE_FUNC.call(b)
-    apply_viewer_screen_settings(b)
+        b.label(ENTER_CONFIG_FROM_TITLE)
+        CONFIG_SCENE_FUNC.call(b)
+        apply_viewer_screen_settings(b)
 
-    b.label(AFTER_TITLE_CONFIG)
+        b.label(AFTER_TITLE_CONFIG)
 
     XOR.A(b)
     SCROLL_NAME_TABLE_FUNC.call(b)
@@ -2310,6 +2326,7 @@ def build(
     start_positions: Sequence[str] | None = None,
     fill_byte: int = 0xFF,
     title_wait_seconds: int = 3,
+    skip_title_screen: bool = False,
     beep_enabled_default: bool = True,
     bgm_enabled_default: bool = False,
     bgm_fps: int = 30,
@@ -2325,6 +2342,10 @@ def build(
     title_wait_seconds = max(0, min(title_wait_seconds, 255))
 
     log_and_store(f"Title wait seconds: {title_wait_seconds}", log_lines)
+    log_and_store(
+        f"Title screen: {'SKIP' if skip_title_screen else 'ON'}",
+        log_lines,
+    )
     log_and_store(
         f"BEEP default: {'ON' if beep_enabled_default else 'OFF'}",
         log_lines,
@@ -2425,6 +2446,7 @@ def build(
             header_bytes,
             fill_byte,
             title_wait_seconds,
+            skip_title_screen,
             beep_enabled_default,
             bgm_enabled_default,
             bgm_start_bank,
@@ -2643,6 +2665,7 @@ def main() -> None:
         start_positions=start_positions,
         fill_byte=args.fill_byte,
         title_wait_seconds=args.title_wait_seconds,
+        skip_title_screen=args.skip_title_screen,
         beep_enabled_default=args.beep,
         bgm_enabled_default=bgm_enabled_default,
         bgm_fps=args.bgm_fps,
