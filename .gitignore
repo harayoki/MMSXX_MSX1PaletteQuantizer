@@ -46,6 +46,7 @@ Debug/
 CLI_Release/
 CLI_Debug/
 dist/
+bin/
 *.rc
 *.res
 *.aex
@@ -53,4 +54,17 @@ dist/
 *.lnk
 *.zip
 venv
+
+__pycache__/
+*.pyc
+*.pyo
+
+_sdk_temp_/
+nuitka-crash-report.xml
+work/
+~*
+*~
+*.rom
+*.sc2
+*.bin
 

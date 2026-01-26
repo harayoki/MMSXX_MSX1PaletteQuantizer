@@ -132,7 +132,6 @@ const MSX1PQ::QuantColor MSX1PQ::kBasicColorsMsx2[15] = {
 };
 
 const int MSX1PQ::kNumQuantColors = sizeof(MSX1PQ::kQuantColors) / sizeof(MSX1PQ::kQuantColors[0]);
-const int MSX1PQ::kNumBasicColors = 15;
 const int MSX1PQ::kNumDarkDitherColors  = 6; // palette_low_luminance の個数
 const int MSX1PQ::kFirstDarkDitherIndex = MSX1PQ::kNumQuantColors - MSX1PQ::kNumDarkDitherColors;
 

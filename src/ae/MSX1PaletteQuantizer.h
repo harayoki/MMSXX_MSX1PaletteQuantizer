@@ -27,18 +27,47 @@ enum MSX1PQ_ParamId {
     MSX1PQ_PARAM_USE_DITHER,      // Dither ON/OFF
     MSX1PQ_PARAM_USE_DARK_DITHER, // Whether to use a dark dither palette
     MSX1PQ_PARAM_USE_8DOT2COL,    // 8dot / 2col restriction mode
-    MSX1PQ_PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSB)
+    MSX1PQ_PARAM_DISTANCE_MODE,   // Distance calculation method (RGB/HSV)
     MSX1PQ_PARAM_WEIGHT_H,        // H intensity
     MSX1PQ_PARAM_WEIGHT_S,        // S intensity
     MSX1PQ_PARAM_WEIGHT_B,        // B intensity
+    MSX1PQ_PARAM_WEIGHT_R,        // R intensity (RGB mode)
+    MSX1PQ_PARAM_WEIGHT_G,        // G intensity (RGB mode)
+    MSX1PQ_PARAM_WEIGHT_B_RGB,    // B intensity (RGB mode)
 
     MSX1PQ_PARAM_PRE_POSTERIZE,   // Posterize before preprocessing
     MSX1PQ_PARAM_PRE_SAT,         // Saturation boost
     MSX1PQ_PARAM_PRE_GAMMA,       // Gamma to enhance shadows
-    MSX1PQ_PARAM_PRE_HIGHLIGHT,   // Highlight correction
+    MSX1PQ_PARAM_PRE_CONTRAST,    // Contrast correction
     MSX1PQ_PARAM_PRE_HUE,         // Hue rotation
 
+    MSX1PQ_PARAM_PRE_BLACK_CUTOFF, // Cut off luminance before black edge sharpen
+
+    MSX1PQ_PARAM_PRE_SHARPEN_BLACK, // Sharpen near black areas
+
     MSX1PQ_PARAM_USE_PALETTE_COLOR, // Use 92-color palette directly
+
+    MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL, // Topic: palette usage controls
+    MSX1PQ_PARAM_SWATCH_ROW,          // Color swatch row (display only)
+    MSX1PQ_PARAM_COLOR_FLAG_1,          // Checkbox: color 1
+    MSX1PQ_PARAM_COLOR_FLAG_2,
+    MSX1PQ_PARAM_COLOR_FLAG_3,
+    MSX1PQ_PARAM_COLOR_FLAG_4,
+    MSX1PQ_PARAM_COLOR_FLAG_5,
+    MSX1PQ_PARAM_COLOR_FLAG_6,
+    MSX1PQ_PARAM_COLOR_FLAG_7,
+    MSX1PQ_PARAM_COLOR_FLAG_8,
+    MSX1PQ_PARAM_COLOR_FLAG_9,
+    MSX1PQ_PARAM_COLOR_FLAG_10,
+    MSX1PQ_PARAM_COLOR_FLAG_11,
+    MSX1PQ_PARAM_COLOR_FLAG_12,
+    MSX1PQ_PARAM_COLOR_FLAG_13,
+    MSX1PQ_PARAM_COLOR_FLAG_14,
+    MSX1PQ_PARAM_COLOR_FLAG_15,
+    MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS, // Button: randomize palette flags
+    MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE,   // Button: random enable +1
+    MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE,  // Button: random disable -1
+    MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END, // Topic end
 
     MSX1PQ_PARAM_NUM_PARAMS
 };

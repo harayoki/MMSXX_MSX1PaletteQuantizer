@@ -1,6 +1,6 @@
 # MMSXX_MSX1PaletteQuantizer (for AfterFX / Premiere PRO / CLI)
 
-MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
+MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI.
 
 日本語版のドキュメント：[README_ja](README_ja.md)
 
@@ -22,8 +22,8 @@ MSX1-style effect plugin for Adobe After Effects (AE) / Premiere PRO / CLI
 ## Overview
 
 "MSX1PaletteQuantizer" is an effect plugin that recreates the MSX1 (TMS9918) look in compositions.
-It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area).
-Supports After Effects Smart Rendering and Multi-Frame Rendering, speeding up exports.
+It imitates the graphics style specific to MSX1, based on rules (15 colors, 2 colors within an 8-dot horizontal area) and also provides an MSX2 palette preset.
+Supports After Effects Smart Rendering and Multi-Frame Rendering, speeding up exports. The CLI variant includes palette disabling, LUT support, and SCREEN2 binary export for emulator workflows.
 
 ## Disclaimer
 
@@ -32,8 +32,8 @@ The author assumes no responsibility for any damages caused by the use of this p
 ## Supported Platforms
 
 - Windows
-- Adobe After Effects CC 2018? or later
-- Adobe Premiere Pro CC 2018? or later
+- Adobe After Effects CC 2018 or later
+- Adobe Premiere Pro CC 2018 or later
 
 It should also work on Mac if built with Xcode.
 
@@ -42,6 +42,14 @@ It should also work on Mac if built with Xcode.
 1.  Obtain the plugin file (.aex or .plugin).
 2.  Copy the plugin file to the common plugin folder of After Effects / Premiere PRO.
     - Windows: `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\`
+
+## Repository Setup
+
+This repository uses git submodules for Python utilities under `pyutils`. After cloning, initialize the submodules:
+
+```bash
+git submodule update --init --recursive
+```
 
 ## How to Use
 
@@ -72,6 +80,20 @@ Build the project using Visual Studio (Windows).
     *   `msbuild platform\Win\MSX1PaletteQuantizer.vcxproj /p:Configuration=Release /p:Platform=x64`
 
 `MMSXX_MSX1PaletteQuantizer.aex` will be generated in the `platform\Win\x64` folder.
+
+## Build Instructions for CLI on Linux
+
+These steps build only the `msx1pq_cli` tool for environments without the Adobe SDK.
+
+1. Install the basic build toolchain (Ubuntu example):
+   ```bash
+   sudo apt-get update && sudo apt-get install -y build-essential
+   ```
+2. Build the CLI binary with `make`:
+   ```bash
+   make -C platform/Linux
+   ```
+3. The executable will be placed in `platform/Linux/bin/msx1pq_cli`.
 
 ## Build Instructions for Xcode (Mac)
 

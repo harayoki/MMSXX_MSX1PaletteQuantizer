@@ -10,15 +10,119 @@
 #include "Param_Utils.h"
 #include "AEFX_SuiteHelper.h"
 #include "AEGP_SuiteHandler.h"
+#include "adobesdk/DrawbotSuite.h"
 #include "MSX1PaletteQuantizer.h"
 #include "MSX1PQPalettes.h"
 
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <random>
+#include <cstring>
+#include <vector>
+
+
+#ifndef MSX1PQ_IMPL_AEFX_SUITE_HELPER
+#define MSX1PQ_IMPL_AEFX_SUITE_HELPER
+extern "C" {
+PF_Err AEFX_AcquireSuite(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    const char  *name,
+    int32_t      version,
+    const char  *error_stringPC0,
+    void       **suite)
+{
+    PF_Err         err    = PF_Err_NONE;
+    SPBasicSuite  *bsuite = in_data->pica_basicP;
+
+    if (bsuite) {
+        (*bsuite->AcquireSuite)((char*)name, version, (const void**)suite);
+        if (!*suite) {
+            err = PF_Err_BAD_CALLBACK_PARAM;
+        }
+    } else {
+        err = PF_Err_BAD_CALLBACK_PARAM;
+    }
+
+    if (err) {
+        const char *error_stringPC = error_stringPC0 ? error_stringPC0 : "Not able to acquire AEFX Suite.";
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, error_stringPC);
+    }
+
+    return err;
+}
+
+PF_Err AEFX_ReleaseSuite(
+    PF_InData   *in_data,
+    PF_OutData  *out_data,
+    const char  *name,
+    int32_t      version,
+    const char  *error_stringPC0)
+{
+    PF_Err         err    = PF_Err_NONE;
+    SPBasicSuite  *bsuite = in_data->pica_basicP;
+
+    if (bsuite) {
+        (*bsuite->ReleaseSuite)((char*)name, version);
+    } else {
+        err = PF_Err_BAD_CALLBACK_PARAM;
+    }
+
+    if (err) {
+        const char *error_stringPC = error_stringPC0 ? error_stringPC0 : "Not able to release AEFX Suite.";
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, error_stringPC);
+    }
+
+    return err;
+}
+
+PF_Err AEFX_AcquireDrawbotSuites(
+    PF_InData       *in_data,
+    PF_OutData      *out_data,
+    DRAWBOT_Suites  *suitesP)
+{
+    PF_Err err = PF_Err_NONE;
+
+    if (!suitesP) {
+        out_data->out_flags |= PF_OutFlag_DISPLAY_ERROR_MESSAGE;
+        PF_SPRINTF(out_data->return_msg, "NULL suite pointer passed to AEFX_AcquireDrawbotSuites");
+        return PF_Err_UNRECOGNIZED_PARAM_TYPE;
+    }
+
+    err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, NULL, (void **)&suitesP->drawbot_suiteP);
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, NULL, (void **)&suitesP->supplier_suiteP);
+    }
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, NULL, (void **)&suitesP->surface_suiteP);
+    }
+    if (!err) {
+        err = AEFX_AcquireSuite(in_data, out_data, kDRAWBOT_PathSuite, kDRAWBOT_PathSuite_VersionCurrent, NULL, (void **)&suitesP->path_suiteP);
+    }
+    return err;
+}
+
+PF_Err AEFX_ReleaseDrawbotSuites(
+    PF_InData   *in_data,
+    PF_OutData  *out_data)
+{
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, NULL);
+    AEFX_ReleaseSuite(in_data, out_data, kDRAWBOT_PathSuite, kDRAWBOT_PathSuite_VersionCurrent, NULL);
+    return PF_Err_NONE;
+}
+} // extern "C"
+#endif // MSX1PQ_IMPL_AEFX_SUITE_HELPER
 
 
 #ifdef AE_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
 #include <Windows.h>
 static inline void MyDebugLog(const char* fmt, ...)
 {
@@ -48,7 +152,7 @@ namespace MSX1PQ {
     constexpr char kPluginName[]        = "MSX1 Palette Quantizer";
     constexpr char kPluginDescription[] = "\nMSX1-style palette quantization and dithering.";
     constexpr int  kVersionMajor        = 0;
-    constexpr int  kVersionMinor        = 7;
+    constexpr int  kVersionMinor        = 8;
     constexpr int  kVersionBug          = 0;
     constexpr int  kVersionStage        = PF_Stage_BETA;
     /*
@@ -69,11 +173,12 @@ namespace MSX1PQ {
 }
 
 using MSX1PQCore::QuantInfo;
+using MSX1PQCore::apply_black_edge_sharpen;
 using MSX1PQCore::apply_preprocess;
 using MSX1PQCore::find_basic_index_from_rgb;
 using MSX1PQCore::get_basic_palette;
-using MSX1PQCore::nearest_basic_hsb;
-using MSX1PQCore::nearest_palette_hsb;
+using MSX1PQCore::nearest_basic_hsv;
+using MSX1PQCore::nearest_palette_hsv;
 using MSX1PQCore::nearest_palette_rgb;
 using MSX1PQCore::quantize_pixel;
 using MSX1PQCore::clamp01f;
@@ -86,7 +191,7 @@ using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_BEST1;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_FAST1;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_NONE;
 using MSX1PQCore::MSX1PQ_EIGHTDOT_MODE_PENALTY_BEST;
-using MSX1PQCore::MSX1PQ_DIST_MODE_HSB;
+using MSX1PQCore::MSX1PQ_DIST_MODE_HSV;
 using MSX1PQCore::MSX1PQ_DIST_MODE_RGB;
 
 namespace {
@@ -114,6 +219,161 @@ static inline PF_Err CheckinParam(
     return PF_CHECKIN_PARAM(in_data, &param);
 }
 
+
+static PF_Err DrawSwatchRow(
+    PF_InData     *in_data,
+    PF_OutData    *out_data,
+    PF_ParamDef   *params[],
+    PF_EventExtra *event_extra)
+{
+    if (!event_extra || !params || !in_data || !out_data) {
+        return PF_Err_NONE;
+    }
+    if (event_extra->e_type != PF_Event_DRAW ||
+        event_extra->effect_win.index != MSX1PQ_PARAM_SWATCH_ROW) {
+        return PF_Err_NONE;
+    }
+
+    MyDebugLog("DrawSwatchRow: area=%d index=%d event=%d",
+               event_extra->effect_win.area,
+               event_extra->effect_win.index,
+               event_extra->e_type);
+
+    const PF_Rect* frame_ptr = &event_extra->effect_win.current_frame;
+    const PF_Rect& title_frame = event_extra->effect_win.param_title_frame;
+    if (frame_ptr->bottom <= frame_ptr->top) {
+        frame_ptr = &title_frame;
+    }
+    const PF_Rect& frame = *frame_ptr;
+    const float height   = static_cast<float>(frame.bottom - frame.top);
+    const float width    = static_cast<float>(frame.right - frame.left);
+    const float window_height = std::max(height, 20.0f);
+    const float margin   = 4.0f;
+    const float max_box_by_height = window_height - 4.0f;
+    const float available_width = std::max(width - margin * 2.0f, 0.0f);
+    const float box_space = std::max(available_width - (MSX1PQ::kNumBasicColors - 1) * margin, 0.0f);
+    const float max_box_by_width = box_space / MSX1PQ::kNumBasicColors;
+    const float box_size = std::max(4.0f, std::min(14.0f, std::min(max_box_by_height, max_box_by_width)));
+    MyDebugLog("DrawSwatchRow: frame=(%d,%d,%d,%d) size=(%.1f,%.1f) window_h=%.1f box_size=%.1f title_frame=(%d,%d,%d,%d)",
+               frame.left, frame.top, frame.right, frame.bottom, width, height, window_height, box_size,
+               title_frame.left, title_frame.top, title_frame.right, title_frame.bottom);
+
+    const A_long color_system = params[MSX1PQ_PARAM_COLOR_SYSTEM]->u.pd.value;
+    const MSX1PQ::QuantColor* palette = get_basic_palette(static_cast<int>(color_system));
+    if (!palette) {
+        return PF_Err_NONE;
+    }
+
+    DRAWBOT_Suites drawbot_suites{};
+    if (AEFX_AcquireDrawbotSuites(in_data, out_data, &drawbot_suites) != PF_Err_NONE) {
+        MyDebugLog("DrawSwatchRow: AcquireDrawbotSuites failed");
+        return PF_Err_NONE;
+    }
+
+    PF_EffectCustomUISuite1 *custom_ui_suite = nullptr;
+    DRAWBOT_DrawRef draw_ref = nullptr;
+    if (AEFX_AcquireSuite(
+            in_data,
+            out_data,
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1,
+            "EffectCustomUISuite",
+            reinterpret_cast<void**>(&custom_ui_suite)) == PF_Err_NONE &&
+        custom_ui_suite) {
+        (void)custom_ui_suite->PF_GetDrawingReference(event_extra->contextH, &draw_ref);
+        (void)AEFX_ReleaseSuite(
+            in_data,
+            out_data,
+            kPFEffectCustomUISuite,
+            kPFEffectCustomUISuiteVersion1,
+            "EffectCustomUISuite");
+    }
+
+    if (!draw_ref) {
+        (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+        return PF_Err_NONE;
+    }
+
+    DRAWBOT_SupplierRef supplier_ref = nullptr;
+    DRAWBOT_SurfaceRef surface_ref   = nullptr;
+    if (drawbot_suites.drawbot_suiteP->GetSupplier(draw_ref, &supplier_ref) != PF_Err_NONE ||
+        drawbot_suites.drawbot_suiteP->GetSurface(draw_ref, &surface_ref) != PF_Err_NONE) {
+        MyDebugLog("DrawSwatchRow: GetSupplier/GetSurface failed");
+        (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+        return PF_Err_NONE;
+    }
+
+    float x = static_cast<float>(frame.left) + margin;
+    const float y = (height > box_size + margin)
+        ? static_cast<float>(frame.top) + (height - box_size) * 0.5f
+        : static_cast<float>(frame.top) + margin;
+
+    DRAWBOT_BrushRef bg_brush_ref = nullptr;
+    DRAWBOT_PathRef bg_path_ref = nullptr;
+    DRAWBOT_ColorRGBA bg_color{};
+    bg_color.red = bg_color.green = bg_color.blue = 0.1f;
+    bg_color.alpha = 1.0f;
+
+    DRAWBOT_RectF32 bg_rect{
+        static_cast<float>(frame.left) + 0.5f,
+        static_cast<float>(frame.top) + 0.5f,
+        static_cast<float>(frame.right - frame.left),
+        static_cast<float>(window_height < 18.0f ? 18.0f : window_height)
+    };
+
+    if (drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &bg_path_ref) == PF_Err_NONE) {
+        (void)drawbot_suites.path_suiteP->AddRect(bg_path_ref, &bg_rect);
+        if (drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &bg_color, &bg_brush_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.surface_suiteP->FillPath(surface_ref, bg_brush_ref, bg_path_ref, kDRAWBOT_FillType_Default);
+        }
+    }
+
+    if (bg_brush_ref) {
+        (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(bg_brush_ref));
+    }
+    if (bg_path_ref) {
+        (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(bg_path_ref));
+    }
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        DRAWBOT_PathRef path_ref = nullptr;
+        DRAWBOT_BrushRef brush_ref = nullptr;
+        DRAWBOT_RectF32 rectF{ x + 0.5f, y + 0.5f, box_size, box_size };
+
+        if (drawbot_suites.supplier_suiteP->NewPath(supplier_ref, &path_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.path_suiteP->AddRect(path_ref, &rectF);
+        }
+        else {
+            MyDebugLog("DrawSwatchRow: NewPath failed index=%d", i);
+        }
+
+        DRAWBOT_ColorRGBA c{};
+        c.red   = static_cast<float>(palette[i].r) / 255.0f;
+        c.green = static_cast<float>(palette[i].g) / 255.0f;
+        c.blue  = static_cast<float>(palette[i].b) / 255.0f;
+        c.alpha = 1.0f;
+
+        if (path_ref &&
+            drawbot_suites.supplier_suiteP->NewBrush(supplier_ref, &c, &brush_ref) == PF_Err_NONE) {
+            (void)drawbot_suites.surface_suiteP->FillPath(surface_ref, brush_ref, path_ref, kDRAWBOT_FillType_Default);
+        } else if (path_ref) {
+            MyDebugLog("DrawSwatchRow: NewBrush failed index=%d", i);
+        }
+
+        if (brush_ref) {
+            (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(brush_ref));
+        }
+        if (path_ref) {
+            (void)drawbot_suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(path_ref));
+        }
+
+        x += box_size + margin;
+    }
+
+    event_extra->evt_out_flags |= PF_EO_HANDLED_EVENT;
+    (void)AEFX_ReleaseDrawbotSuites(in_data, out_data);
+    return PF_Err_NONE;
+}
 
 } // namespace
 
@@ -153,9 +413,11 @@ GlobalSetup (
     out_data->my_version = MSX1PQ::kVersionPacked;
     // MyDebugLog("my_version = %lu", (unsigned long)out_data->my_version);
 
-        out_data->out_flags  = PF_OutFlag_NONE;
+        out_data->out_flags  = PF_OutFlag_NONE | PF_OutFlag_CUSTOM_UI; // | PF_OutFlag_SEND_UPDATE_PARAMS_UI;
         out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER |
                                PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+    //PF_OutFlag_CUSTOM_UI = 0x00008000
+    //PF_OutFlag_SEND_UPDATE_PARAMS_UI = 0x04000000
     //PF_OutFlag2_SUPPORTS_SMART_RENDER = 0x0400
     //PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000?
     MyDebugLog("GlobalSetup: out_flags=0x%08X, out_flags2=0x%08X",
@@ -242,8 +504,8 @@ ParamsSetup (
     PF_ADD_POPUP(
         "Distance mode",      // ラベル
         2,                    // 項目数
-        MSX1PQ_DIST_MODE_HSB, // デフォルト値 (2 = HSB)
-        "RGB|HSB",            // 順番に 1:RGB, 2:HSB
+        MSX1PQ_DIST_MODE_RGB, // デフォルト値 (1 = RGB)
+        "RGB|HSV",            // 順番に 1:RGB, 2:HSV
         MSX1PQ_PARAM_DISTANCE_MODE
     );
 
@@ -277,7 +539,7 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "B weight",
+        "V weight",
         0,
         1,
         0,
@@ -287,6 +549,48 @@ ParamsSetup (
         0,
         0,
         MSX1PQ_PARAM_WEIGHT_B
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "R weight",
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_R
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "G weight",
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_G
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "B weight",
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_WEIGHT_B_RGB
     );
 
     AEFX_CLR_STRUCT(def);
@@ -307,10 +611,10 @@ ParamsSetup (
     PF_ADD_FLOAT_SLIDERX(
         "Pre 2: Saturation boost",
         0,
-        10,
+        2,
         0,
         10,
-        1,
+        0,
         2,
         0,
         0,
@@ -319,9 +623,9 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 3: Gamma (darker)",
-        0,
-        10,
+        "Pre 3: Gamma",
+        0.2,
+        5,
         0,
         10,
         1,
@@ -333,30 +637,58 @@ ParamsSetup (
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
-        "Pre 4: Highlight adjust",
-        0,
-        10,
+        "Pre 4: Contrast adjust",
+        0.2,
+        5,
         0,
         10,
         1,
         2,
         0,
         0,
-        MSX1PQ_PARAM_PRE_HIGHLIGHT
+        MSX1PQ_PARAM_PRE_CONTRAST
     );
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX(
         "Pre 5: Hue rotate",
-        -180,
-        180,
+        -90,
+        90,
         -180,
         180,
         0,
-        0,
+        2,
         0,
         0,
         MSX1PQ_PARAM_PRE_HUE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 6: Black cutoff",
+        0,
+        1,
+        0,
+        1,
+        0,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_BLACK_CUTOFF
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX(
+        "Pre 7: Sharpen near black",
+        0,
+        10,
+        0,
+        5,
+        0,
+        2,
+        0,
+        0,
+        MSX1PQ_PARAM_PRE_SHARPEN_BLACK
     );
 
     AEFX_CLR_STRUCT(def);
@@ -368,6 +700,194 @@ ParamsSetup (
         0,
         MSX1PQ_PARAM_USE_PALETTE_COLOR
     );
+
+    // Palette control topic
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC(
+        "MSX1 Palette Control",
+        MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL
+    );
+
+    AEFX_CLR_STRUCT(def);
+    def.flags |= PF_ParamFlag_CANNOT_TIME_VARY;
+    def.ui_flags |= PF_PUI_CONTROL;
+    def.ui_height = 32;
+    PF_ADD_NULL("Palette sample", MSX1PQ_PARAM_SWATCH_ROW);
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*1: Black",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_1
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*2: Medium Green",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_2
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*3: Light Green",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_3
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*4: Dark Blue",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_4
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*5: Light Blue",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_5
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*6: Dark Red",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_6
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*7: Cyan",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_7
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*8: Medium Red",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_8
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*9: Light Red",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_9
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*10: Dark Yellow",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_10
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*11: Light Yellow",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_11
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*12: Dark Green",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_12
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*13: Magenta",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_13
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*14: Gray",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_14
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOX(
+        "*15: White",
+        "Enable",
+        TRUE,
+        0,
+        MSX1PQ_PARAM_COLOR_FLAG_15
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Randomize",
+        "Randomize",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Rand +1",
+        "Rand +1",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_BUTTON(
+        "Rand -1",
+        "Rand -1",
+        0,
+        PF_ParamFlag_SUPERVISE,
+        MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE
+    );
+
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(MSX1PQ_PARAM_TOPIC_PALETTE_CONTROL_END);
+
+    PF_CustomUIInfo ci{};
+    ci.events = PF_CustomEFlag_EFFECT;
+    ci.comp_ui_width = ci.comp_ui_height = 0;
+    ci.comp_ui_alignment = PF_UIAlignment_NONE;
+    ci.layer_ui_width = ci.layer_ui_height = 0;
+    ci.layer_ui_alignment = PF_UIAlignment_NONE;
+    ci.preview_ui_width = ci.preview_ui_height = 0;
+    ci.preview_ui_alignment = PF_UIAlignment_NONE;
+    ERR((*(in_data->inter.register_ui))(in_data->effect_ref, &ci));
 
     out_data->num_params = MSX1PQ_PARAM_NUM_PARAMS;
 
@@ -467,7 +987,61 @@ struct FilterRefcon {
     QuantInfo qi{};
     A_long     global_x0{};
     A_long     global_y0{};
+    const PF_Pixel8* pre_sharpen_argb{nullptr};
+    const MSX1PQ_Pixel_BGRA_8u* pre_sharpen_bgra{nullptr};
+    std::ptrdiff_t pre_sharpen_pitch{0};
 };
+
+template<typename PixelT>
+static void BuildPreSharpenBuffer(
+    const PF_EffectWorld *world,
+    float                 strength,
+    float                 black_cutoff,
+    std::vector<PixelT>  &buffer,
+    const PixelT*        &out_ptr,
+    std::ptrdiff_t       &out_pitch)
+{
+    out_ptr = nullptr;
+    out_pitch = 0;
+
+    if (!world || (strength <= 0.0f && black_cutoff <= 0.0f)) {
+        return;
+    }
+
+    const A_long width  = world->width;
+    const A_long height = world->height;
+    if (width <= 1 || height <= 1) {
+        return;
+    }
+
+    buffer.resize(static_cast<std::size_t>(width) *
+                  static_cast<std::size_t>(height));
+
+    const std::ptrdiff_t row_bytes = static_cast<std::ptrdiff_t>(world->rowbytes);
+    for (A_long y = 0; y < height; ++y) {
+        const char *row_base = reinterpret_cast<const char*>(world->data);
+        if (row_bytes < 0) {
+            row_base += (world->height - 1 - y) * (-row_bytes);
+        } else {
+            row_base += y * row_bytes;
+        }
+
+        const PixelT *src_row = reinterpret_cast<const PixelT*>(row_base);
+        PixelT *dst_row = buffer.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width);
+        std::copy(src_row, src_row + width, dst_row);
+    }
+
+    apply_black_edge_sharpen(
+        buffer.data(),
+        static_cast<std::ptrdiff_t>(width),
+        static_cast<std::int32_t>(width),
+        static_cast<std::int32_t>(height),
+        strength,
+        black_cutoff);
+
+    out_ptr   = buffer.data();
+    out_pitch = static_cast<std::ptrdiff_t>(width);
+}
 
 static PF_Err
 FilterImage8 (
@@ -480,10 +1054,17 @@ FilterImage8 (
     auto *ref = reinterpret_cast<FilterRefcon*>(refcon);
     const QuantInfo *qi = &ref->qi;
 
+    const PF_Pixel8 *srcP = inP;
+    if (ref->pre_sharpen_argb) {
+        srcP = ref->pre_sharpen_argb +
+            ref->pre_sharpen_pitch * static_cast<std::ptrdiff_t>(yL) +
+            static_cast<std::ptrdiff_t>(xL);
+    }
+
     // 入力色をローカルコピー
-    A_u_char r = inP->red;
-    A_u_char g = inP->green;
-    A_u_char b = inP->blue;
+    A_u_char r = srcP->red;
+    A_u_char g = srcP->green;
+    A_u_char b = srcP->blue;
 
     // 前処理
     apply_preprocess(qi, r, g, b);
@@ -521,9 +1102,16 @@ FilterImageBGRA_8u (
     MSX1PQ_Pixel_BGRA_8u *inBGRA_8uP  = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(inP);
     MSX1PQ_Pixel_BGRA_8u *outBGRA_8uP = reinterpret_cast<MSX1PQ_Pixel_BGRA_8u*>(outP);
 
-    A_u_char r = inBGRA_8uP->red;
-    A_u_char g = inBGRA_8uP->green;
-    A_u_char b = inBGRA_8uP->blue;
+    const MSX1PQ_Pixel_BGRA_8u *srcP = inBGRA_8uP;
+    if (ref->pre_sharpen_bgra) {
+        srcP = ref->pre_sharpen_bgra +
+            ref->pre_sharpen_pitch * static_cast<std::ptrdiff_t>(yL) +
+            static_cast<std::ptrdiff_t>(xL);
+    }
+
+    A_u_char r = srcP->red;
+    A_u_char g = srcP->green;
+    A_u_char b = srcP->blue;
 
     apply_preprocess(qi, r, g, b);
 
@@ -653,7 +1241,7 @@ Render (
     qi.use_dither      = (params[MSX1PQ_PARAM_USE_DITHER]->u.bd.value != 0);
     qi.use_palette_color = (params[MSX1PQ_PARAM_USE_PALETTE_COLOR]->u.bd.value != 0);
     qi.use_8dot2col    = params[MSX1PQ_PARAM_USE_8DOT2COL]->u.pd.value;
-    qi.use_hsb         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSB);
+    qi.use_hsv         = (params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value == MSX1PQ_DIST_MODE_HSV);
 
     qi.w_h = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_H]->u.fs_d.value));
@@ -661,6 +1249,12 @@ Render (
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_S]->u.fs_d.value));
     qi.w_b = clamp01f(
         static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B]->u.fs_d.value));
+    qi.w_r = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_R]->u.fs_d.value));
+    qi.w_g = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_G]->u.fs_d.value));
+    qi.w_b_rgb = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_WEIGHT_B_RGB]->u.fs_d.value));
 
     qi.pre_posterize = clamp_value(
         static_cast<int>(params[MSX1PQ_PARAM_PRE_POSTERIZE]->u.fs_d.value + 0.5),
@@ -668,10 +1262,24 @@ Render (
         255);
     qi.pre_sat       = static_cast<float>(params[MSX1PQ_PARAM_PRE_SAT]->u.fs_d.value);
     qi.pre_gamma     = static_cast<float>(params[MSX1PQ_PARAM_PRE_GAMMA]->u.fs_d.value);
-    qi.pre_highlight = static_cast<float>(params[MSX1PQ_PARAM_PRE_HIGHLIGHT]->u.fs_d.value);
+    qi.pre_contrast  = static_cast<float>(params[MSX1PQ_PARAM_PRE_CONTRAST]->u.fs_d.value);
     qi.pre_hue       = static_cast<float>(params[MSX1PQ_PARAM_PRE_HUE]->u.fs_d.value);
+    qi.pre_black_cutoff = clamp01f(
+        static_cast<float>(params[MSX1PQ_PARAM_PRE_BLACK_CUTOFF]->u.fs_d.value));
+    qi.pre_sharpen_black = clamp_value(
+        static_cast<float>(params[MSX1PQ_PARAM_PRE_SHARPEN_BLACK]->u.fs_d.value),
+        0.0f,
+        10.0f);
 
     qi.use_dark_dither = (params[MSX1PQ_PARAM_USE_DARK_DITHER]->u.bd.value != 0);
+
+    for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+        const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+        if (flag_index < MSX1PQ_PARAM_NUM_PARAMS) {
+            qi.palette_enabled[static_cast<std::size_t>(i)] =
+                (params[flag_index]->u.bd.value != 0);
+        }
+    }
 
     // 画像サイズ（extent_hint ベース）
     const A_long width  = output->extent_hint.right  - output->extent_hint.left;
@@ -695,6 +1303,18 @@ Render (
             refcon.qi = qi;
             refcon.global_x0 = output->extent_hint.left;
             refcon.global_y0 = output->extent_hint.top;
+
+            std::vector<MSX1PQ_Pixel_BGRA_8u> sharpen_buffer;
+            if (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f) {
+                BuildPreSharpenBuffer(
+                    reinterpret_cast<PF_EffectWorld*>(
+                        &params[MSX1PQ_PARAM_INPUT]->u.ld),
+                    qi.pre_sharpen_black,
+                    qi.pre_black_cutoff,
+                    sharpen_buffer,
+                    refcon.pre_sharpen_bgra,
+                    refcon.pre_sharpen_pitch);
+            }
 
             err = RunIteratePass(
                       in_dataP,
@@ -732,6 +1352,18 @@ Render (
         refcon.qi = qi;
         refcon.global_x0 = output->extent_hint.left;
         refcon.global_y0 = output->extent_hint.top;
+
+        std::vector<PF_Pixel8> sharpen_buffer;
+        if (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f) {
+            BuildPreSharpenBuffer(
+                reinterpret_cast<PF_EffectWorld*>(
+                    &params[MSX1PQ_PARAM_INPUT]->u.ld),
+                qi.pre_sharpen_black,
+                qi.pre_black_cutoff,
+                sharpen_buffer,
+                refcon.pre_sharpen_argb,
+                refcon.pre_sharpen_pitch);
+        }
 
         err = RunIteratePass(
                   in_dataP,
@@ -947,7 +1579,7 @@ SmartRender(
                 in_dataP,
                 MSX1PQ_PARAM_DISTANCE_MODE,
                 param) );
-        qi.use_hsb = (param.u.pd.value == MSX1PQ_DIST_MODE_HSB);
+        qi.use_hsv = (param.u.pd.value == MSX1PQ_DIST_MODE_HSV);
         ERR( CheckinParam(in_dataP, param) );
 
         // WEIGHT_H/S/B (float)
@@ -972,6 +1604,27 @@ SmartRender(
         qi.w_b = clamp01f(static_cast<float>(param.u.fs_d.value));
         ERR( CheckinParam(in_dataP, param) );
 
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_R,
+                param) );
+        qi.w_r = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_G,
+                param) );
+        qi.w_g = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_WEIGHT_B_RGB,
+                param) );
+        qi.w_b_rgb = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
         // PRE_POSTERIZE
         ERR( CheckoutParam(
                 in_dataP,
@@ -983,7 +1636,7 @@ SmartRender(
             255);
         ERR( CheckinParam(in_dataP, param) );
 
-        // PRE_SAT / GAMMA / HIGHLIGHT / HUE
+        // PRE_SAT / GAMMA / CONTRAST / HUE
         ERR( CheckoutParam(
                 in_dataP,
                 MSX1PQ_PARAM_PRE_SAT,
@@ -1000,9 +1653,9 @@ SmartRender(
 
         ERR( CheckoutParam(
                 in_dataP,
-                MSX1PQ_PARAM_PRE_HIGHLIGHT,
+                MSX1PQ_PARAM_PRE_CONTRAST,
                 param) );
-        qi.pre_highlight = static_cast<float>(param.u.fs_d.value);
+        qi.pre_contrast = static_cast<float>(param.u.fs_d.value);
         ERR( CheckinParam(in_dataP, param) );
 
         ERR( CheckoutParam(
@@ -1012,6 +1665,23 @@ SmartRender(
         qi.pre_hue = static_cast<float>(param.u.fs_d.value);
         ERR( CheckinParam(in_dataP, param) );
 
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_BLACK_CUTOFF,
+                param) );
+        qi.pre_black_cutoff = clamp01f(static_cast<float>(param.u.fs_d.value));
+        ERR( CheckinParam(in_dataP, param) );
+
+        ERR( CheckoutParam(
+                in_dataP,
+                MSX1PQ_PARAM_PRE_SHARPEN_BLACK,
+                param) );
+        qi.pre_sharpen_black = clamp_value(
+            static_cast<float>(param.u.fs_d.value),
+            0.0f,
+            10.0f);
+        ERR( CheckinParam(in_dataP, param) );
+
         // USE_DARK_DITHER
         ERR( CheckoutParam(
                 in_dataP,
@@ -1019,6 +1689,16 @@ SmartRender(
                 param) );
         qi.use_dark_dither = (param.u.bd.value != 0);
         ERR( CheckinParam(in_dataP, param) );
+
+        for (int i = 0; i < MSX1PQ::kNumBasicColors; ++i) {
+            const PF_ParamIndex flag_index = static_cast<PF_ParamIndex>(MSX1PQ_PARAM_COLOR_FLAG_1 + i);
+            ERR( CheckoutParam(
+                    in_dataP,
+                    flag_index,
+                    param) );
+            qi.palette_enabled[static_cast<std::size_t>(i)] = (param.u.bd.value != 0);
+            ERR( CheckinParam(in_dataP, param) );
+        }
 
         // --------------------------------------------------------------------
         // スマートレンダー用 ROI 揃え（ディザ使用時のみ 8ドット境界にスナップ）
@@ -1105,6 +1785,17 @@ SmartRender(
             refcon.global_x0 = aligned_rect.left;
             refcon.global_y0 = aligned_rect.top;
 
+            std::vector<PF_Pixel8> sharpen_buffer;
+            if (qi.pre_sharpen_black > 0.0f || qi.pre_black_cutoff > 0.0f) {
+                BuildPreSharpenBuffer(
+                    &input_roi,
+                    qi.pre_sharpen_black,
+                    qi.pre_black_cutoff,
+                    sharpen_buffer,
+                    refcon.pre_sharpen_argb,
+                    refcon.pre_sharpen_pitch);
+            }
+
             // ----------------------------------------------------------------
             // 1パス目：通常量子化
             // ----------------------------------------------------------------
@@ -1187,17 +1878,18 @@ UpdateParameterUI(
         out_data);
 
     A_long mode = params[MSX1PQ_PARAM_DISTANCE_MODE]->u.pd.value;
-    A_Boolean enable_hsb = (mode == MSX1PQ_DIST_MODE_HSB);
+    A_Boolean enable_hsv = (mode == MSX1PQ_DIST_MODE_HSV);
+    A_Boolean enable_rgb = (mode == MSX1PQ_DIST_MODE_RGB);
 
     // MyDebugLog("=== UpdateParameterUI CALLED ===");
-    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsb=%d",
-    //          mode, enable_hsb ? 1 : 0);
+    // MyDebugLog("UpdateParameterUI: mode=%ld enable_hsv=%d",
+    //          mode, enable_hsv ? 1 : 0);
 
     PF_ParamDef tmp;
 
     // --- H weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_H];
-    if (enable_hsb)
+    if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
@@ -1208,7 +1900,7 @@ UpdateParameterUI(
 
     // --- S weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_S];
-    if (enable_hsb)
+    if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
@@ -1217,9 +1909,9 @@ UpdateParameterUI(
                                  MSX1PQ_PARAM_WEIGHT_S,
                                  &tmp);
 
-    // --- B weight ---
+    // --- V weight ---
     tmp = *params[MSX1PQ_PARAM_WEIGHT_B];
-    if (enable_hsb)
+    if (enable_hsv)
         tmp.ui_flags &= ~PF_PUI_DISABLED;
     else
         tmp.ui_flags |= PF_PUI_DISABLED;
@@ -1227,6 +1919,119 @@ UpdateParameterUI(
     paramUtils->PF_UpdateParamUI(in_data->effect_ref,
                                  MSX1PQ_PARAM_WEIGHT_B,
                                  &tmp);
+
+    // --- R weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_R];
+    if (enable_rgb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_R,
+                                 &tmp);
+
+    // --- G weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_G];
+    if (enable_rgb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_G,
+                                 &tmp);
+
+    // --- B weight ---
+    tmp = *params[MSX1PQ_PARAM_WEIGHT_B_RGB];
+    if (enable_rgb)
+        tmp.ui_flags &= ~PF_PUI_DISABLED;
+    else
+        tmp.ui_flags |= PF_PUI_DISABLED;
+    paramUtils->PF_UpdateParamUI(in_data->effect_ref,
+                                 MSX1PQ_PARAM_WEIGHT_B_RGB,
+                                 &tmp);
+
+    return err;
+}
+
+static PF_Err
+RefreshPaletteFlagsUI(
+    PF_InData   *in_data,
+    PF_OutData  *out_data)
+{
+    PF_Err err = PF_Err_NONE;
+
+    AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(
+        in_data,
+        kPFParamUtilsSuite,
+        kPFParamUtilsSuiteVersion3,
+        out_data);
+
+    PF_ParamDef tmp;
+    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+         i <= MSX1PQ_PARAM_COLOR_FLAG_15 && !err;
+         ++i) {
+        ERR( CheckoutParam(
+                in_data,
+                static_cast<PF_ParamIndex>(i),
+                tmp) );
+        if (!err) {
+            paramUtils->PF_UpdateParamUI(
+                in_data->effect_ref,
+                static_cast<PF_ParamIndex>(i),
+                &tmp);
+            ERR( CheckinParam(in_data, tmp) );
+        }
+    }
+
+    return err;
+}
+
+static PF_Err
+SetPaletteFlagValue(
+    PF_InData    *in_data,
+    PF_ParamDef  *params[],
+    PF_ParamIndex index,
+    A_Boolean     value)
+{
+    PF_Err err = PF_Err_NONE;
+    PF_ParamDef temp_param;
+
+    ERR( CheckoutParam(in_data, index, temp_param) );
+    if (!err) {
+        if (temp_param.param_type == PF_Param_CHECKBOX) {
+            temp_param.u.bd.value = value;
+            temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+            params[index]->u.bd.value = value;
+            params[index]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+        }
+        ERR( CheckinParam(in_data, temp_param) );
+    }
+
+    return err;
+}
+
+
+static PF_Err
+HandleEvent(
+    PF_InData     *in_data,
+    PF_OutData    *out_data,
+    PF_ParamDef   *params[],
+    PF_LayerDef   *output,
+    PF_EventExtra *extra)
+{
+    PF_Err err = PF_Err_NONE;
+
+    (void)output;
+
+    if (!extra) {
+        return err;
+    }
+
+    if (extra->e_type == PF_Event_DRAW &&
+        extra->effect_win.index == MSX1PQ_PARAM_SWATCH_ROW) {
+        MyDebugLog("HandleEvent: draw index=%d area=%d", extra->effect_win.index, extra->effect_win.area);
+        err = DrawSwatchRow(in_data, out_data, params, extra);
+    }
 
     return err;
 }
@@ -1243,6 +2048,37 @@ EffectMain(
 {
     PF_Err  err = PF_Err_NONE;
 
+    // Log command at entry
+    switch (cmd) {
+    case PF_Cmd_ABOUT:
+        MyDebugLog("CMD: ABOUT");
+        break;
+    case PF_Cmd_GLOBAL_SETUP:
+        MyDebugLog("CMD: GLOBAL_SETUP");
+        break;
+    case PF_Cmd_PARAMS_SETUP:
+        MyDebugLog("CMD: PARAMS_SETUP");
+        break;
+    case PF_Cmd_RENDER:
+        MyDebugLog("CMD: RENDER");
+        break;
+    case PF_Cmd_SMART_PRE_RENDER:
+        MyDebugLog("CMD: SMART_PRE_RENDER");
+        break;
+    case PF_Cmd_SMART_RENDER:
+        MyDebugLog("CMD: SMART_RENDER");
+        break;
+    case PF_Cmd_USER_CHANGED_PARAM:
+        MyDebugLog("CMD: USER_CHANGED_PARAM");
+        break;
+    case PF_Cmd_EVENT:
+        MyDebugLog("CMD: EVENT");
+        break;
+    default:
+        MyDebugLog("CMD: %d (other)", (int)cmd);
+        break;
+    }
+
     try {
         switch (cmd)
         {
@@ -1255,19 +2091,149 @@ EffectMain(
             // case PF_Cmd_UPDATE_PARAMS_UI:
             //     return UpdateParameterUI(in_dataP, out_data, params);
             case PF_Cmd_PARAMS_SETUP:
+                //MyDebugLog("PARAMS_SETUP start");
                 err = ParamsSetup(in_dataP, out_data, params, output);
                 break;
             case PF_Cmd_USER_CHANGED_PARAM:
             {
+
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::bernoulli_distribution dist(0.5);
+
                 PF_UserChangedParamExtra *extraP =
                     reinterpret_cast<PF_UserChangedParamExtra*>(extra);
 
+                //MyDebugLog("USER_CHANGED_PARAM: index=%d", static_cast<int>(extraP->param_index));
+                //MyDebugLog("Check RANDOM index=%d target=%d", extraP->param_index, MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS);
                 if (extraP->param_index == MSX1PQ_PARAM_DISTANCE_MODE) {
                     UpdateParameterUI(in_dataP, out_data, params);
-                }
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PALETTE_FLAGS)
+                {
+                    A_long changed_count = 0;
+                    PF_ParamDef temp_param;
 
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const A_Boolean old_v = temp_param.u.bd.value;
+                        const A_Boolean new_v = dist(gen) ? TRUE : FALSE;
+
+                        if (old_v != new_v)
+                        {
+                            temp_param.u.bd.value = new_v;
+                            temp_param.uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+                            params[i]->u.bd.value = new_v;
+                            params[i]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
+
+                            ERR( CheckinParam(in_dataP, temp_param) );
+
+                            changed_count++;
+                        } else {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                        }
+                    }
+
+                    if (changed_count > 0) {
+                        ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                        if (!err) {
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                        }
+                    }
+
+                    //MyDebugLog("RANDOMIZE done changed_count=%d", (int)changed_count);
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_PLUS_ONE) {
+                    PF_ParamDef temp_param;
+                    PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
+                    A_long candidate_count = 0;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const bool enabled = (temp_param.u.bd.value != 0);
+                        ERR( CheckinParam(in_dataP, temp_param) );
+
+                        if (!enabled && candidate_count < static_cast<A_long>(MSX1PQ::kNumBasicColors)) {
+                            candidates[candidate_count++] = static_cast<PF_ParamIndex>(i);
+                        }
+                    }
+
+                    if (candidate_count > 0) {
+                        std::uniform_int_distribution<A_long> pick(0, candidate_count - 1);
+                        const PF_ParamIndex target = candidates[pick(gen)];
+
+                        ERR( SetPaletteFlagValue(in_dataP, params, target, TRUE) );
+                        if (!err) {
+                            ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                            // MyDebugLog("RND+1: enabled index=%d", static_cast<int>(target));
+                        }
+                    } else {
+                        // MyDebugLog("RND+1: no disabled color to enable");
+                    }
+                } else if (extraP && extraP->param_index == MSX1PQ_PARAM_RANDOMIZE_MINUS_ONE) {
+                    PF_ParamDef temp_param; // ????PF_ParamDef
+                    PF_ParamIndex candidates[MSX1PQ::kNumBasicColors]{};
+                    A_long candidate_count = 0;
+
+                    for (A_long i = MSX1PQ_PARAM_COLOR_FLAG_1;
+                         i <= MSX1PQ_PARAM_COLOR_FLAG_15;
+                         ++i)
+                    {
+                        ERR( CheckoutParam(in_dataP, (PF_ParamIndex)i, temp_param) );
+
+                        if (temp_param.param_type != PF_Param_CHECKBOX) {
+                            ERR( CheckinParam(in_dataP, temp_param) );
+                            continue;
+                        }
+
+                        const bool enabled = (temp_param.u.bd.value != 0);
+                        ERR( CheckinParam(in_dataP, temp_param) );
+
+                        if (enabled && candidate_count < static_cast<A_long>(MSX1PQ::kNumBasicColors)) {
+                            candidates[candidate_count++] = static_cast<PF_ParamIndex>(i);
+                        }
+                    }
+
+                    if (candidate_count > 0) {
+                        std::uniform_int_distribution<A_long> pick(0, candidate_count - 1);
+                        const PF_ParamIndex target = candidates[pick(gen)];
+
+                        ERR( SetPaletteFlagValue(in_dataP, params, target, FALSE) );
+                        if (!err) {
+                            ERR( RefreshPaletteFlagsUI(in_dataP, out_data) );
+                            out_data->out_flags |= PF_OutFlag_FORCE_RERENDER;
+                            out_data->out_flags |= PF_OutFlag_REFRESH_UI;
+                            out_data->out_flags |= PF_OutFlag_SEND_UPDATE_PARAMS_UI;
+                            //MyDebugLog("RND-1: disabled index=%d", static_cast<int>(target));
+                        }
+                    } else {
+                        //MyDebugLog("RND-1: no enabled color to disable");
+                    }
+                }
                 break;
             }
+
             case PF_Cmd_RENDER:
                 err = Render(in_dataP, out_data, params, output);
                 break;
@@ -1289,6 +2255,25 @@ EffectMain(
                           params,
                           reinterpret_cast<PF_SmartRenderExtra*>(extra));
                 break;
+            case PF_Cmd_EVENT:
+            {
+                PF_EventExtra* ev = reinterpret_cast<PF_EventExtra*>(extra);
+                //MyDebugLog("PF_Cmd_EVENT command received");
+                if (!ev) {
+                    break;
+                }
+
+                MyDebugLog("EVENT: e_type=%d", (int)ev->e_type);
+
+                err = HandleEvent(
+                    in_dataP,
+                    out_data,
+                    params,
+                    output,
+                    ev);
+
+                break;
+            }
         }
     } catch(PF_Err &thrown_err) {
         // AE に例外を飛ばさない

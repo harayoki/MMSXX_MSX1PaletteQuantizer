@@ -1,0 +1,3 @@
+[submodule "msx_pyutils"]
+	path = msx_pyutils
+	url = git@github.com:harayoki/msx_pyutils.git

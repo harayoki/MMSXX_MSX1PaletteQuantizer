@@ -4,6 +4,8 @@ The CLI tool `msx1pq_cli` converts PNG images into MSX1/2-style graphics that fo
 
 ## Build
 
+### Windows
+
 Build the Visual Studio project with `msbuild`:
 
 ```bash
@@ -11,6 +13,22 @@ msbuild platform\\Win\\MSX1PaletteQuantizer_CLI.vcxproj /p:Configuration=Release
 ```
 
 The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
+
+### Linux
+
+Install build tools (for example on Ubuntu-based systems):
+
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential
+```
+
+Then build the CLI binary with `make`:
+
+```bash
+make -C platform/Linux
+```
+
+The compiled binary will be placed at `bin/msx1pq_cli`.
 
 ## Usage
 
@@ -26,22 +44,24 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 
 | Option | Description |
 | --- | --- |
-| `--input, -i <file|dir>` | Input PNG file or directory to process. |
+| `--input, -i <file\|dir>` | Input PNG file or directory to process. |
 | `--output, -o <dir>` | Destination directory for converted PNG files. |
-| `--output-prefix <string>` | Prefix added to every output file name. |
-| `--out-sc5` | Save as SCREEN5 `.sc5` binary instead of PNG. |
+| `--out-prefix <string>` | Prefix added to every output file name. |
+| `--out-suffix <string>` | Suffix inserted before the output file extension. |
 | `--out-sc2` | Save as SCREEN2 `.sc2` binary instead of PNG (requires `--8dot` set to anything other than `none`). |
-| `--color-system <msx1|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
+| `--color-system <msx1\|msx2>` | Choose MSX1 (15 colors) or MSX2 palette. Default: `msx1`. |
 | `--dither` / `--no-dither` | Enable or disable dithering. Default: enabled. |
 | `--dark-dither` / `--no-dark-dither` | Use dedicated dark-area patterns or skip them. Default: enabled. |
-| `--no-preprocess` | Skip all preprocessing tweaks (posterize, saturation, gamma, highlight, hue, LUT). |
-| `--8dot <none|fast|basic|best|best-attr|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
-| `--distance <rgb|hsb>` | Color distance mode for palette selection. Default: `hsb`. |
-| `--weight-h`, `--weight-s`, `--weight-b` | Weights (0–1) for hue, saturation, and brightness when `hsb` distance is selected. |
+| `--no-preprocess` | Skip all preprocessing tweaks (posterize, saturation, gamma, contrast, hue, LUT). |
+| `--8dot <none\|fast\|basic\|best\|best-attr\|best-trans>` | Pick the 8-dot/2-color algorithm. Default: `best`. |
+| `--distance <rgb|hsv>` | Color distance mode for palette selection. Default: `rgb`. |
+| `--weight-h`, `--weight-s`, `--weight-v` | Weights (0–1) for hue, saturation, and value when `hsv` distance is selected. |
+| `--weight-r`, `--weight-g`, `--weight-b` | Weights (0–1) for red, green, and blue when `rgb` distance is selected. |
+| `--disable-colors <index|range>...` | Disable specific palette indices (1–15). Ranges are allowed (e.g., `3-5`). At least one color must remain enabled. |
 | `--pre-posterize <0-255>` | Posterize before processing (default: `16`; skipped if `<=1`). |
-| `--pre-sat <0-10>` | Boost saturation before quantizing. Default: `1.0`. |
-| `--pre-gamma <0-10>` | Darken midtones before quantizing. Default: `1.0`. |
-| `--pre-highlight <0-10>` | Brighten highlights before quantizing. Default: `1.0`. |
+| `--pre-sat <0-10>` | Boost saturation before quantizing. Default: `0.0`. |
+| `--pre-gamma <0-10>` | Apply a gamma curve before quantizing. Default: `1.0`. |
+| `--pre-contrast <0-10>` | Adjust contrast before quantizing. Default: `1.0`. |
 | `--pre-hue <-180-180>` | Rotate hue before quantizing. Default: `0.0`. |
 | `--pre-lut <file>` | Apply an RGB LUT (256-row table) or a `.cube` 3D LUT before processing. |
 | `--palette92` | Replace colors with the nearest from the 92-color palette (dithering disabled). |
@@ -51,8 +71,8 @@ The compiled binary will be placed at `platform\\Win\\x64\\msx1pq_cli.exe`.
 | `--help-ja`, `--help-en` | Force Japanese or English help text. |
 
 Notes:
-- `--out-sc2` and `--out-sc5` cannot be used together. When either is specified the output extension changes to `.sc2` or `.sc5` respectively.
 - SCREEN2 export needs the 8-dot/2-color processing enabled (any `--8dot` value other than `none`).
+- You must leave at least one palette color enabled when using `--disable-colors`.
 
 ### Examples
 
