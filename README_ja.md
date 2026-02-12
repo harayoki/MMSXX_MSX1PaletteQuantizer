@@ -59,6 +59,7 @@ MacもXcodeでビルドすれば動作すると思います。
 
 コマンドライン版の使い方については、
 * [CLI の使い方](docs/CLI_guide_ja.md)
+* [@napi-rs/image の composite エラー対処メモ](docs/napi-rs-image_composite_workaround_ja.md)
 
 ## Visual Studio 2022でのビルド手順 (Windows)
 

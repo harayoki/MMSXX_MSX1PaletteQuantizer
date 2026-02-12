@@ -58,6 +58,7 @@ For detailed usage and settings of MSX1PaletteQuantizer, please refer to:
 
 For command line usage, see:
 * [CLI usage guide](docs/CLI_guide_en.md)
+* [Troubleshooting note: `@napi-rs/image` composite limitation (Japanese)](docs/napi-rs-image_composite_workaround_ja.md)
 
 ## Build Instructions for Visual Studio 2022 (Windows)
 
