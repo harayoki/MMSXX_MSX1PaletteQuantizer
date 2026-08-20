@@ -80,6 +80,8 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 *   `platform/Mac/MSX1PaletteQuantizer.xcodeproj` を Xcode で開きます。
 *   `MSX1PaletteQuantizer` ターゲットをビルドして `MSX1PaletteQuantizer.plugin` を生成します。
 
+AE / Premiere向けエフェクトを新規開発する際の振り返り、Windowsでの開発環境構築、macOSでの補足、Linuxを中心にしたクロスプラットフォーム開発の考察は、[プラグイン開発の振り返りと環境構築](docs/plugin_development_retrospective_ja.md)を参照してください。
+
 ## 実装について
 
 プラグインは8ビットエフェクトでGPUレンダリングには対応していません。After Effects のマルチフレームレンダリングに対応しています。
