@@ -85,6 +85,8 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 プラグインは8ビットエフェクトでGPUレンダリングには対応していません。After Effects のマルチフレームレンダリングに対応しています。
 また無料・安価な動画編集ソフトへの移植（OpenFX形式など）など歓迎します。
 
+移植候補、コード共通化、対応プラットフォームの比較は、[無料で利用できる動画ソフトへの対応候補](docs/free_video_software_plugin_candidates_ja.md)を参照してください。
+
 ## ライセンス
 
 * MITライセンスの下で公開されています。
@@ -93,6 +95,5 @@ platform\Win\x64 フォルダに MMSXX_MSX1PaletteQuantizer.aex が生成され�
 * CLI版にはPNGエンコーダ/デコーダライブラリ「lodepng」を使用しています。
   * https://github.com/lvandeve/lodepng/
   * [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)[README_ja.md](README_ja.md)
-
 
 
